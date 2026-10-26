@@ -40,6 +40,16 @@ parameters:
     label: {en_US: Files JSON, zh_Hans: 上传文件 JSON, pt_BR: Files JSON}
     template:
       enabled: true
+  - name: mcp_servers_config
+    type: string
+    required: false
+    label: {en_US: MCP servers JSON, zh_Hans: MCP 服务配置 JSON, pt_BR: MCP servers JSON}
+    help:
+      en_US: Optional remote MCP servers. Supports sse and streamable_http; insert Dify variables in headers.
+      zh_Hans: 可选的远程 MCP 服务，支持 sse 和 streamable_http；可在 headers 中插入 Dify 用户变量。
+      pt_BR: Optional remote MCP servers. Supports sse and streamable_http; insert Dify variables in headers.
+    template:
+      enabled: true
   - name: instruction
     type: string
     required: false

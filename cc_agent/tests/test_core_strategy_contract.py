@@ -73,6 +73,7 @@ class StrategyContractTests(unittest.TestCase):
                 "model",
                 "max_total_context_tokens",
                 "tools",
+                "mcp_servers_config",
                 "agent_state",
                 "runtime_config",
                 "deepseek_thinking_compat",
@@ -81,6 +82,9 @@ class StrategyContractTests(unittest.TestCase):
             ):
                 self.assertIn(required, by_name)
             self.assertEqual(by_name["deepseek_thinking_compat"]["default"], False)
+            self.assertEqual(by_name["mcp_servers_config"]["type"], "string")
+            self.assertFalse(by_name["mcp_servers_config"]["required"])
+            self.assertTrue(by_name["mcp_servers_config"]["template"]["enabled"])
             self.assertEqual(by_name["max_total_context_tokens"]["type"], "number")
             self.assertEqual(by_name["max_total_context_tokens"]["default"], 131072)
             self.assertEqual(by_name["max_total_context_tokens"]["min"], 4096)

@@ -27,6 +27,7 @@ class ToolRegistry:
         external_tools: list[Any] | None = None,
         external_prompt_tools: list[Any] | None = None,
         output_protocol: str = "agui",
+        mcp_tools: list[ToolSpec] | None = None,
     ) -> "ToolRegistry":
         specs: dict[str, ToolSpec] = {}
         for schema in internal_tool_schemas(output_protocol=output_protocol):
@@ -61,6 +62,10 @@ class ToolRegistry:
                 entity=entity,
                 prompt_tool=prompt_tool,
             )
+        for spec in mcp_tools or []:
+            if spec.name in specs:
+                raise ValueError("MCP tool name conflicts with an existing tool.")
+            specs[spec.name] = spec
         return cls(specs)
 
     def resolve(self, name: str) -> ToolSpec | None:

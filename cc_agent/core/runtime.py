@@ -300,10 +300,11 @@ class DifyAgentRuntime:
                 state=state,
                 session=self.strategy.session,
                 skill_runtime=skill_runtime,
+                mcp_provider=env.mcp_provider,
             )
             permission_manager = PermissionManager(
                 state=state,
-                external_tool_names=set(tool_catalog.names_by_kind("external")),
+                external_tool_names=set(tool_catalog.names_by_kind("external") + tool_catalog.names_by_kind("mcp")),
                 always_ask_tools=set(config.tool_confirmation_list or []),
             )
             if not config.user_prompt_response:
@@ -389,6 +390,9 @@ class DifyAgentRuntime:
             logger.exception("cc_agent runtime run failed")
             for event in writer.write_run_error(str(exc), code="runtime_agui_error"):
                 yield event
+        finally:
+            if env is not None:
+                env.close()
     def _init_external_prompt_tools(self, tools: list[Any]) -> list[Any]:
         if not tools:
             return []

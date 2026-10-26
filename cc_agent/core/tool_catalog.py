@@ -8,7 +8,7 @@ from .tool_registry import ToolRegistry, ToolSpec
 
 @dataclass(slots=True)
 class ToolCatalog:
-    """Single owner for model-visible internal and Dify-injected tools."""
+    """Single owner for model-visible internal, Dify-injected and remote MCP tools."""
 
     registry: ToolRegistry
 
@@ -19,11 +19,13 @@ class ToolCatalog:
         external_tools: list[Any] | None = None,
         external_prompt_tools: list[Any] | None = None,
         output_protocol: str = "agui",
+        mcp_tools: list[ToolSpec] | None = None,
     ) -> "ToolCatalog":
         registry = ToolRegistry.create(
             external_tools=external_tools,
             external_prompt_tools=external_prompt_tools,
             output_protocol=output_protocol,
+            mcp_tools=mcp_tools,
         )
         return cls(registry=registry)
 

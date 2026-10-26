@@ -1,6 +1,6 @@
 # CC Agent
 
-CC Agent 是 Dify Agent Strategy 插件，提供工具调用、技能、记忆、任务和跨轮会话状态。会话状态统一通过 Dify 的 `agent_state` 变量流转；文件读取、代码执行、检索和文件生成由 Dify 注入的外部工具提供。
+CC Agent 是 Dify Agent Strategy 插件，提供工具调用、技能、记忆、任务和跨轮会话状态。会话状态统一通过 Dify 的 `agent_state` 变量流转；文件读取、代码执行、检索和文件生成由 Dify 注入的工具或配置的远程 MCP 服务提供。
 
 ## 项目结构
 
@@ -15,7 +15,7 @@ Dify AgentStrategy
   -> RunEnvironment
        -> DifyStateBackend：加载 agent_state
        -> SkillCatalog：内置技能 + app_skills_yaml
-       -> ToolCatalog：内部认知工具 + Dify 外部工具
+       -> ToolCatalog：内部认知工具 + Dify 外部工具 + 远程 MCP 工具
        -> ProtocolRenderer
   -> AgentLoop：上下文预算、模型调用、工具串行调度、权限与结果预算
   -> DifyStateBackend：编码新的 agent_state
@@ -36,6 +36,7 @@ Dify AgentStrategy
 | `model` | 必填。支持工具调用的 Dify 模型。 |
 | `query` | 必填。当前用户输入。 |
 | `tools` | Dify 注入的外部工具。 |
+| `mcp_servers_config` | 可选的远程 MCP 服务 JSON；支持在 headers 中插入 Dify 用户变量。 |
 | `instruction` | 应用的业务角色、约束和回答要求。 |
 | `max_total_context_tokens` | 上下文窗口，默认 131072 tokens，最低 4096。 |
 | `agent_state` | 上一轮输出的编码状态。首轮留空。 |
@@ -87,7 +88,37 @@ Dify AgentStrategy
 
 用户命令包括 `/help`、`/status`、`/context`、`/cost`、`/compact`、`/reset`，以及两个现有的界面演示命令 `/a2ui-demo`、`/weekly-report-card`。
 
-内部工具只处理认知与会话状态。外部文件、执行、搜索和浏览能力由 Dify 工具提供，返回的文字、JSON、图片、链接和 blob 仍按原有协议展示。
+内部工具只处理认知与会话状态。外部文件、执行、搜索和浏览能力由 Dify 工具或配置的远程 MCP 服务提供，返回的文字、JSON、图片、链接和 blob 仍按原有协议展示。
+
+## MCP 工具
+
+两个策略都支持 `mcp_servers_config`。Dify 1.15.0 的 Agent 参数变量替换即可使用，无需依赖原生 MCP 的动态 header 功能。在节点的 MCP 配置框中填写 JSON，并通过变量选择器插入 `sys.user_id`：
+
+```json
+{
+  "business": {
+    "transport": "sse",
+    "url": "http://mcp-service:8000/sse",
+    "headers": {
+      "X-User-Id": "{{#sys.user_id#}}"
+    },
+    "timeout": 50,
+    "sse_read_timeout": 50
+  },
+  "search": {
+    "transport": "streamable_http",
+    "url": "http://search-mcp:8001/mcp"
+  }
+}
+```
+
+也接受 `{ "mcpServers": { ... } }` 包装。留空不连接 MCP；省略 transport 默认为 sse，两个超时值默认均为 50 秒，必须是正数。地址需能从 Dify 插件运行环境访问，`127.0.0.1` 指插件所在环境。配置错误或任一服务初始化失败会结束本轮并返回错误，避免静默缺少工具。
+
+Dify 在调用插件之前完成变量替换，插件不再解释模板。通过 Service API 发起会话时，前端请求中的 `user` 对应 `sys.user_id`；控制台调试使用调试账号身份。MCP 服务根据已验证的身份执行授权；用户 ID 本身不是认证凭证。需要业务 token 时，可在 Authorization 等 header 中插入开始节点或上游节点的 token 变量。复杂动态值可先在代码节点用 JSON 编码生成完整配置，再绑定此参数。
+
+每轮重新建立 MCP 连接并发现 tools，包含分页；工具暴露为 `mcp__服务名__工具名`，特殊字符和过长名称使用稳定摘要，实际请求保持远端原始工具名。它们与 Dify 注入的工具共存，复用结果预算和失败配对。保留工具错误标记、结构化结果与文件产物；不自动包装 MCP resources/prompts，也不支持 stdio。结束、失败、中断或提前关闭运行时释放连接，下一轮重新使用当次注入的 header。
+
+插件不把 MCP 配置写入提示、会话状态或自身输出日志，并脱敏服务回显的配置凭证。Dify 平台对输入变量和节点参数的日志记录仍由 Dify 自身管理。边界取舍见 [ADR-0002](docs/adr/0002-runtime-mcp-tools.md)。
 
 ## 升级说明
 

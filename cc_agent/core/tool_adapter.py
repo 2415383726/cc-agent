@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable
+
+if TYPE_CHECKING:
+    from .mcp_tools import McpToolProvider
 
 from .internal_tools import InternalToolExecutor
 from .messages import AgentState, ToolCall, ToolResult
@@ -21,11 +24,13 @@ class ToolAdapter:
         state: AgentState,
         session: Any | None = None,
         skill_runtime: Any | None = None,
+        mcp_provider: McpToolProvider | None = None,
     ):
         self.catalog = registry if isinstance(registry, ToolCatalog) else None
         self.registry = registry.registry if isinstance(registry, ToolCatalog) else registry
         self.state = state
         self.session = session
+        self.mcp_provider = mcp_provider
         self.internal_executor = InternalToolExecutor(
             state,
             session=session,
@@ -63,6 +68,16 @@ class ToolAdapter:
             )
         if spec.kind == "internal":
             return self.internal_executor.execute(spec.name, tool_call.arguments, tool_call.id)
+        if spec.kind == "mcp":
+            if self.mcp_provider is not None:
+                return self.mcp_provider.execute(spec, tool_call)
+            return ToolResult(
+                tool_call_id=tool_call.id,
+                tool_name=tool_call.name,
+                llm_observation="MCP tool session is not available.",
+                is_error=True,
+                synthetic=True,
+            )
         return self._execute_external(spec, tool_call)
 
     def _execute_external(self, spec: ToolSpec, tool_call: ToolCall) -> ToolResult:

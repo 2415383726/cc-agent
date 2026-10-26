@@ -27,8 +27,8 @@ From `copilotkit-dify/`, use `npm install`, `npm run dev`, `npm run test`, and `
 - Both strategy entries share `core/runtime.py` and `RunEnvironment`: `CC Agent (AG-UI)` emits AG-UI events; `CC Agent (Dify)` emits Dify-native messages. Preserve their separate prompt and tool surfaces.
 - `DifyStateBackend` loads and commits encoded `agent_state`; `state_ref` includes Dify conversation metadata and is used by the frontend. `state_summary` is read-only.
 - `SkillCatalog` combines bundled and application YAML skills. `SkillRuntime` only reads text resources belonging to a skill; preserve its path checks.
-- `ToolCatalog` / `ToolRegistry` register internal and Dify-injected tools. `InternalToolExecutor` owns cognitive tools only.
-- File access, code execution, web search, and browsing must be Dify-injected external tools. Do not add general local I/O or shell tools to the internal tool set.
+- `ToolCatalog` / `ToolRegistry` register internal, Dify-injected, and configured remote MCP tools. MCP connections and headers belong to one run; see [ADR-0002](docs/adr/0002-runtime-mcp-tools.md). `InternalToolExecutor` owns cognitive tools only.
+- File access, code execution, web search, and browsing come from Dify-injected tools or configured remote MCP services. Do not add general local I/O, shell, or stdio MCP execution to the internal tool set.
 - `files` supplies safe attachment metadata to the prompt; it does not grant file-content access. Preserve external tool blob/file/image/link output.
 - MinIO mode, workspaces, internal script execution, and remote skill management have been removed. There is no mode switch, storage configuration, or compatibility backend to maintain. See [ADR-0001](docs/adr/0001-dify-owned-state.md).
 

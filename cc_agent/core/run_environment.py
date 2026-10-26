@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .config import AgentRunConfig
+from .mcp_tools import McpToolProvider
 from .protocol_renderer import ProtocolRenderer
 from .skill_catalog import SkillCatalog, build_skill_catalog
 from .state_backend import DifyStateBackend, StateBackend, StateLoad
@@ -23,6 +24,7 @@ class RunEnvironment:
     state_backend: StateBackend
     loaded_state: StateLoad | None = None
     tool_catalog: ToolCatalog | None = None
+    mcp_provider: McpToolProvider | None = None
 
     @classmethod
     def open(
@@ -58,9 +60,18 @@ class RunEnvironment:
         return self.loaded_state.to_runtime_dict()
 
     def build_tool_catalog(self, *, external_tools: list[Any], external_prompt_tools: list[Any]) -> ToolCatalog:
+        if self.config.mcp_servers:
+            self.mcp_provider = McpToolProvider(self.config.mcp_servers)
+            self.mcp_provider.__enter__()
         self.tool_catalog = ToolCatalog.create(
             external_tools=external_tools,
             external_prompt_tools=external_prompt_tools,
             output_protocol=self.config.output_protocol,
+            mcp_tools=self.mcp_provider.tool_specs() if self.mcp_provider else [],
         )
         return self.tool_catalog
+
+    def close(self) -> None:
+        if self.mcp_provider is not None:
+            self.mcp_provider.close()
+            self.mcp_provider = None

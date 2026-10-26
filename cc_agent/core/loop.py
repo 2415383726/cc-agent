@@ -429,6 +429,9 @@ class AgentLoop:
                     metadata=tool_metadata,
                 )
                 yield from self._tool_activity_events(result)
+                for display_message in result.display_messages:
+                    if isinstance(display_message, dict) and display_message.get("type") == "dify_blob":
+                        yield display_message
                 transcript.append(tool_message(result))
                 if result.metadata.get("inject_user_message"):
                     yield from self._write(

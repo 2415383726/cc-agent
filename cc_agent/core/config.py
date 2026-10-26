@@ -5,6 +5,8 @@ import json
 import logging
 from typing import Any
 
+from .mcp_config import McpServerConfig, parse_mcp_servers
+
 from .profiles import (
     StrategyProfile,
     strategy_profile_for_output,
@@ -22,6 +24,7 @@ class AgentRunConfig:
     flash_model: Any | None = None
     multimodal_model: Any | None = None
     tools: list[Any] | None = None
+    mcp_servers: list[McpServerConfig] = field(default_factory=list, repr=False)
     maximum_iterations: int = 8
     max_observation_chars: int = 8000
     max_history_messages: int = 40
@@ -90,6 +93,7 @@ class AgentRunConfig:
             instruction=str(param("instruction", "") or ""),
             model=model,
             tools=parameters.get("tools") or [],
+            mcp_servers=parse_mcp_servers(param("mcp_servers_config")),
             maximum_iterations=_positive_int(runtime_config.get("maximum_iterations"), 8),
             max_observation_chars=_positive_int(runtime_config.get("max_observation_chars"), 8000),
             max_history_messages=_positive_int(runtime_config.get("max_history_messages"), 40),
