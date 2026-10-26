@@ -26,6 +26,7 @@ ARCH_OUTPUT_SUFFIXES = {
 }
 
 SKIP_NAMES = {
+    ".scratch",
     ".env",
     ".env.example",
     ".git",

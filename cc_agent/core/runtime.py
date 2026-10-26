@@ -7,36 +7,17 @@ from uuid import uuid4
 
 from .config import AgentRunConfig
 from .compression import DifyHistorySummarizer
-from .history import load_history
 from .loop import AgentLoop
 from .messages import AgentRunResult, AgentState, ToolCall
 from .model_adapter import DifyModelAdapter
-from .permissions import PermissionManager, apply_permission_decision, permission_decision
+from .permissions import PermissionManager, apply_permission_decision
 from .profiles import StrategyProfile
 from .protocol_renderer import ProtocolRenderer
-from .run_environment import RunEnvironment, storage_config_from_settings
-from .skill_library import SkillLibrarySession, SkillScope
+from .run_environment import RunEnvironment
 from .skill_runtime import SkillRuntime
 from .skills import filter_denied_skills, load_bundled_skills, render_skill
 from .state_backend import DifyStateBackend, empty_state_load
-from .state_variable import (
-    AgentStateBundle,
-    bundle_from_parts,
-    state_summary,
-)
 from .tool_adapter import ToolAdapter
-from .workspace import (
-    HistoryStoreConflict,
-    StateStoreConflict,
-    WorkspaceSession,
-    WorkspaceScope,
-    load_history_from_storage,
-    load_state_from_storage,
-    save_history_to_storage,
-    save_state_to_storage,
-    state_key,
-)
-
 try:  # pragma: no cover - only present under Dify plugin runtime
     from dify_plugin.config.logger_format import plugin_logger_handler
 except Exception:  # pragma: no cover
@@ -62,7 +43,6 @@ def _dispatch_slash_command(
     summarizer: Any = None,
     state_id: str = "",
     compression_id: str = "",
-    skill_library: Any = None,
 ) -> tuple[Any, dict[str, Any]] | None:
     """Parse /name args from query and dispatch to matching local skill.
 
@@ -93,8 +73,6 @@ def _dispatch_slash_command(
                         all_skills=all_skills,
                         state_id=state_id,
                         compression_id=compression_id,
-                        workspace=getattr(state, "workspace", None),
-                        skill_library=skill_library or getattr(state, "skill_library", None),
                     )
                 except Exception as exc:
                     result_text = f"{name} 执行失败: {exc}"
@@ -105,37 +83,6 @@ def _dispatch_slash_command(
 
     # Skill not found in registry — let LLM handle it
     return None
-
-
-def _merge_prompt_skills(
-    bundled_skills: list[dict[str, Any]],
-    minio_skills: list[dict[str, Any]],
-    warnings: Any = None,
-) -> list[dict[str, Any]]:
-    merged: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for skill in bundled_skills:
-        name = str(skill.get("name") or "").strip()
-        if not name:
-            continue
-        merged.append(skill)
-        seen.add(name.lower())
-    for skill in minio_skills:
-        name = str(skill.get("name") or "").strip()
-        if not name:
-            continue
-        if name.lower() in seen:
-            if isinstance(warnings, list):
-                warnings.append(
-                    {
-                        "path": str(skill.get("path") or skill.get("source") or name),
-                        "reason": f"skill name conflicts with bundled skill: {name}",
-                    }
-                )
-            continue
-        merged.append(skill)
-        seen.add(name.lower())
-    return merged
 
 
 class DifyAgentRuntime:
@@ -173,9 +120,7 @@ class DifyAgentRuntime:
             show_tool_calls=config.show_tool_calls,
         )
         conversation_id = _conversation_id_from_parameters(parameters) or str(_get(self.strategy.session, "conversation_id") or "").strip()
-        state_id = config.storage.scope.conversation_id if config.workspace_requested else conversation_id
-        workspace: WorkspaceSession | None = None
-        skill_library: SkillLibrarySession | None = None
+        state_id = conversation_id
         env: RunEnvironment | None = None
 
         try:
@@ -190,19 +135,10 @@ class DifyAgentRuntime:
                     run_id=run_id,
                     state_id=state_id,
                     renderer=writer if isinstance(writer, ProtocolRenderer) else None,
-                    workspace_session_cls=WorkspaceSession,
-                    skill_library_cls=SkillLibrarySession,
                 )
-                workspace = env.workspace
-                skill_library = env.skill_library
             except Exception as exc:
-                yield from writer.write_run_error(str(exc), code="workspace_config_failed")
+                yield from writer.write_run_error(str(exc), code="environment_failed")
                 return
-            if workspace is not None and workspace.imported_files:
-                yield from writer.write_activity(
-                    "cc_agent.uploaded_files",
-                    {"message": "Files imported to workspace.", "files": workspace.imported_files},
-                )
             reset_effective = config.state_reset or _is_reset_query(config.query)
             if reset_effective and not config.state_reset:
                 config.state_reset = True
@@ -238,11 +174,7 @@ class DifyAgentRuntime:
                 len(prompt_skills),
                 len(env.skill_catalog.warnings),
             )
-            skill_runtime = SkillRuntime(
-                workspace_root=workspace.outputs_dir if workspace is not None else None,
-                max_output_chars=config.max_observation_chars,
-                workspace=workspace,
-            )
+            skill_runtime = SkillRuntime()
             visible_skill_names = {
                 str(skill.get("name") or "").strip().casefold()
                 for skill in prompt_skills
@@ -274,8 +206,6 @@ class DifyAgentRuntime:
                 tasks=loaded["tasks"],
                 permissions=loaded.get("permissions") or {},
                 active_skills=active_skills,
-                workspace=workspace,
-                skill_library=skill_library,
             )
             summarizer = DifyHistorySummarizer(self.strategy.session, config.model_for("flash"))
             all_skills = prompt_skills + local_skills
@@ -289,13 +219,12 @@ class DifyAgentRuntime:
             slash_result = _dispatch_slash_command(
                 config.query, state, config, all_skills,
                 summarizer=summarizer, state_id=state_id, compression_id=manual_compression_id,
-                skill_library=skill_library,
             )
             if slash_result is not None:
                 command_payload, skill_def = slash_result
                 if skill_def.get("kind") == "prompt":
                     skill_args_text = str(command_payload.get("skill_args") or "") if isinstance(command_payload, dict) else ""
-                    injected = _prompt_skill_user_message(skill_def, skill_args_text, skill_runtime)
+                    injected = _prompt_skill_user_message(skill_def, skill_args_text)
                     state.history.append(
                         {
                             "role": "user",
@@ -335,13 +264,6 @@ class DifyAgentRuntime:
                     summary=state.summary,
                     history_schema_version=state.history_version,
                 )
-                yield from self._commit_workspace_result(
-                    result,
-                    workspace,
-                    writer,
-                    state_expected_revision=loaded.get("state_storage_revision"),
-                    state_backend=env.state_backend if env is not None else None,
-                )
                 for event in self._persist_result(
                     result,
                     config=config,
@@ -378,11 +300,6 @@ class DifyAgentRuntime:
                 state=state,
                 session=self.strategy.session,
                 skill_runtime=skill_runtime,
-                workspace=workspace,
-                skill_library=skill_library,
-                user_skill_scripts_enabled=config.user_skill_scripts_enabled,
-                capability_mode=config.capability_mode,
-                skill_denylist=config.skill_denylist,
             )
             permission_manager = PermissionManager(
                 state=state,
@@ -440,13 +357,6 @@ class DifyAgentRuntime:
             if final_result is None:
                 yield from writer.write_run_error("Agent loop finished without a final result", code="missing_final_result")
                 return
-            yield from self._commit_workspace_result(
-                final_result,
-                workspace,
-                writer,
-                state_expected_revision=loaded.get("state_storage_revision"),
-                state_backend=env.state_backend if env is not None else None,
-            )
             for event in self._persist_result(
                 final_result,
                 config=config,
@@ -479,16 +389,6 @@ class DifyAgentRuntime:
             logger.exception("cc_agent runtime run failed")
             for event in writer.write_run_error(str(exc), code="runtime_agui_error"):
                 yield event
-        finally:
-            if skill_library is not None:
-                pass
-            if env is not None:
-                env.close()
-                workspace = None
-                skill_library = None
-            if workspace is not None:
-                workspace.close()
-
     def _init_external_prompt_tools(self, tools: list[Any]) -> list[Any]:
         if not tools:
             return []
@@ -516,24 +416,6 @@ class DifyAgentRuntime:
         previous_revision: int,
         initial_storage_error: str | None,
     ) -> list[dict[str, Any]]:
-        bundle = _bundle_from_result(result, revision=previous_revision)
-        if config.workspace_requested:
-            result.state_summary = result.state_summary or state_summary(bundle)
-            result.emit_inline_state = False
-            result.encoded_agent_state = ""
-            result.encoded_history = ""
-            if result.state_ref is None:
-                result.state_ref = {
-                    "state_id": state_id,
-                    "conversation_id": state_id,
-                    "backend": "minio",
-                    "revision": previous_revision,
-                    "loaded_from": loaded_from,
-                    "persisted": False,
-                    "storage_error": initial_storage_error,
-                }
-            return []
-
         DifyStateBackend(config, state_id=state_id).commit(result, expected_revision=previous_revision)
         state_ref = result.state_ref if isinstance(result.state_ref, dict) else {}
         state_ref["loaded_from"] = loaded_from
@@ -556,225 +438,6 @@ class DifyAgentRuntime:
         if not result.encoded_agent_state:
             return []
         return []
-
-    def _open_workspace(
-        self,
-        config: AgentRunConfig,
-        parameters: dict[str, Any],
-        conversation_id: str,
-        run_id: str,
-    ) -> WorkspaceSession | None:
-        if not config.workspace_requested:
-            return None
-        storage_config = storage_config_from_settings(config.storage)
-        missing = storage_config.missing_required()
-        if missing:
-            raise ValueError(f"MinIO workspace config missing: {', '.join(missing)}")
-        scope = WorkspaceScope(
-            app_id=config.storage.scope.app_id,
-            user_id=config.storage.scope.user_id,
-            conversation_id=config.storage.scope.conversation_id or conversation_id or "default",
-            run_id=run_id,
-        )
-        return WorkspaceSession(
-            config=storage_config,
-            scope=scope,
-            dify_files=config.files or [],
-        ).open()
-
-    def _open_skill_library(
-        self,
-        config: AgentRunConfig,
-        parameters: dict[str, Any],
-        workspace: WorkspaceSession | None,
-    ) -> SkillLibrarySession | None:
-        if not config.workspace_requested:
-            return None
-        storage_config = storage_config_from_settings(config.storage)
-        missing = storage_config.missing_required()
-        if missing:
-            logger.info("cc_agent skill library disabled because MinIO config is missing: %s", missing)
-            return None
-        shared_storage = getattr(workspace, "storage", None) if workspace is not None else None
-        if workspace is not None and shared_storage is None:
-            logger.info("cc_agent skill library disabled because workspace storage is unavailable")
-            return None
-        if shared_storage is not None and not hasattr(shared_storage, "list_objects"):
-            logger.info("cc_agent skill library disabled because storage does not support prefix listing")
-            return None
-        scope = SkillScope(
-            app_id=config.storage.scope.app_id,
-            user_id=config.storage.scope.user_id,
-        )
-        return SkillLibrarySession(
-            config=storage_config,
-            scope=scope,
-            storage=shared_storage,
-            workspace=workspace,
-            max_package_bytes=config.skill_package_max_bytes,
-        ).open()
-
-    def _commit_workspace_result(
-        self,
-        result: AgentRunResult,
-        workspace: WorkspaceSession | None,
-        writer: Any,
-        state_expected_revision: int | None = None,
-        state_backend: Any | None = None,
-    ) -> list[dict[str, Any]]:
-        if workspace is None:
-            return []
-        workspace.commit()
-        scope = getattr(workspace, "scope", None)
-        workspace_prefix = str(getattr(scope, "workspace_prefix", "") or "")
-        workspace_conversation_id = str(getattr(scope, "conversation_id", "") or "")
-        # Save complete agent state to MinIO. The legacy history object is also written
-        # for older smoke tests and manual inspection, but state/current.json is the
-        # authoritative MinIO state record.
-        state_committed = False
-        storage = getattr(workspace, "storage", None)
-        if storage is None or not workspace_prefix:
-            if isinstance(result.execution_metadata, dict):
-                result.execution_metadata["state_commit_error"] = "workspace storage unavailable"
-        else:
-            try:
-                if state_backend is not None:
-                    state_backend.commit(result, expected_revision=state_expected_revision)
-                    state_committed = True
-                else:
-                    saved_state = save_state_to_storage(
-                        storage,
-                        workspace.scope.workspace_prefix,
-                        _bundle_from_result(result, revision=0),
-                        expected_revision=state_expected_revision,
-                    )
-                    state_committed = True
-                    revision = int(saved_state.get("revision") or (state_expected_revision or 0))
-                    result.state_summary = saved_state.get("state_summary") or state_summary(_bundle_from_result(result, revision=revision))
-                    result.state_ref = {
-                        "state_id": workspace_conversation_id,
-                        "conversation_id": workspace_conversation_id,
-                        "storage_key": state_key(workspace_prefix) if workspace_prefix else "",
-                        "backend": "minio",
-                        "revision": revision,
-                        "persisted": True,
-                        "storage_error": None,
-                        "storage_version": 1,
-                    }
-            except StateStoreConflict:
-                raise
-            except Exception as exc:
-                logger.warning("cc_agent workspace state save failed: %s", exc)
-                if isinstance(result.execution_metadata, dict):
-                    result.execution_metadata["state_commit_error"] = str(exc)
-            try:
-                save_history_to_storage(
-                    storage,
-                    workspace.scope.workspace_prefix,
-                    messages=result.history,
-                    summary=result.summary or "",
-                    version=result.history_schema_version,
-                    expected_revision=None,
-                )
-            except HistoryStoreConflict:
-                raise
-            except Exception as exc:
-                logger.warning("cc_agent workspace legacy history save failed: %s", exc)
-        if not state_committed:
-            revision = int(state_expected_revision or 0)
-            result.state_summary = result.state_summary or state_summary(_bundle_from_result(result, revision=revision))
-            result.state_ref = result.state_ref or {
-                "state_id": workspace_conversation_id,
-                "conversation_id": workspace_conversation_id,
-                "storage_key": state_key(workspace_prefix) if workspace_prefix else "",
-                "backend": "minio",
-                "revision": revision,
-                "persisted": False,
-                "storage_error": result.execution_metadata.get("state_commit_error"),
-                "storage_version": 1,
-            }
-        activity = workspace.activity_payload()
-        files = activity.get("files") if isinstance(activity, dict) else []
-        if isinstance(result.execution_metadata, dict):
-            result.execution_metadata["workspace"] = {
-                "files": files if isinstance(files, list) else [],
-            }
-        if not files:
-            return []
-        return writer.write_activity("cc_agent.workspace", activity)
-
-
-def _upgrade_state_from_workspace(
-    loaded: dict[str, Any],
-    workspace: WorkspaceSession | None,
-    config: AgentRunConfig,
-) -> None:
-    """Load complete state from MinIO workspace storage in MinIO mode."""
-    if not config.workspace_requested:
-        return
-    if config.state_reset:
-        config.use_dify_history = False
-        return
-    if workspace is None:
-        config.use_dify_history = False
-        return
-    try:
-        stored_state = load_state_from_storage(workspace.storage, workspace.scope.workspace_prefix)
-    except Exception:
-        stored_state = None
-    if stored_state is not None:
-        loaded["history_state"] = load_history(stored_state.history)
-        loaded["memory"] = stored_state.memory
-        loaded["tasks"] = stored_state.tasks
-        loaded["permissions"] = stored_state.permissions
-        loaded["active_skills"] = stored_state.active_skills
-        loaded["last_execution_metadata"] = stored_state.last_execution_metadata
-        loaded["loaded_from"] = "minio_workspace"
-        loaded["state_storage_revision"] = int(stored_state.revision or 0)
-        loaded["previous_revision"] = int(stored_state.revision or 0)
-        config.use_dify_history = False
-        return
-    try:
-        stored_history = load_history_from_storage(workspace.storage, workspace.scope.workspace_prefix)
-    except Exception:
-        stored_history = None
-    if isinstance(stored_history, dict) and stored_history.get("messages"):
-        loaded["history_state"] = load_history(stored_history)
-        loaded["loaded_from"] = "minio_workspace_legacy_history"
-        loaded["state_storage_revision"] = 0
-        loaded["previous_revision"] = 0
-    config.use_dify_history = False
-
-
-def _upgrade_history_from_workspace(
-    loaded: dict[str, Any],
-    workspace: WorkspaceSession | None,
-    config: AgentRunConfig,
-) -> None:
-    """Load history from MinIO workspace storage; fall back to Dify model history."""
-    if config.state_reset:
-        return
-    # 1. MinIO workspace history — preferred
-    if workspace is not None:
-        try:
-            stored = load_history_from_storage(
-                workspace.storage, workspace.scope.workspace_prefix
-            )
-        except Exception:
-            stored = None
-        if isinstance(stored, dict) and stored.get("messages"):
-            loaded["history_state"] = load_history(stored)
-            loaded["loaded_from"] = "minio_workspace"
-            loaded["history_storage_revision"] = int(stored.get("revision") or 0)
-            loaded["previous_revision"] = int(stored.get("revision") or 0)
-            config.use_dify_history = False
-            return
-    # 2. Fallback: Dify model.history_prompt_messages
-    dify_messages = _extract_dify_history(config)
-    if dify_messages:
-        loaded["history_state"] = load_history({"messages": dify_messages, "summary": "", "version": 1})
-        loaded["loaded_from"] = "dify_model"
-        config.use_dify_history = True
 
 
 def _extract_dify_history(config: AgentRunConfig) -> list[dict[str, Any]]:
@@ -823,12 +486,6 @@ def prompt_tool_from_any(tool: Any) -> Any | None:
 
 
 def _load_state(config: AgentRunConfig) -> dict[str, Any]:
-    if config.workspace_requested:
-        loaded_state = empty_state_load("minio_workspace").to_runtime_dict()
-        loaded_state["loaded_from"] = "minio_workspace"
-        loaded_state["state_storage_revision"] = 0
-        config.use_dify_history = False
-        return loaded_state
     return DifyStateBackend(config, state_id="").load().to_runtime_dict()
 
 
@@ -840,7 +497,7 @@ def _empty_loaded_state(loaded_from: str = "temporary") -> dict[str, Any]:
     return empty_state_load(loaded_from).to_runtime_dict()
 
 
-def _prompt_skill_user_message(skill_def: dict[str, Any], raw_args: str, skill_runtime: SkillRuntime) -> str:
+def _prompt_skill_user_message(skill_def: dict[str, Any], raw_args: str) -> str:
     argv = _split_args(raw_args)
     args: dict[str, Any] = {"_raw": raw_args, "_argv": argv}
     for index, value in enumerate(argv, start=1):
@@ -1215,20 +872,6 @@ def _join_errors(*errors: str | None) -> str | None:
     return "; ".join(dict.fromkeys(messages))
 
 
-def _bundle_from_result(result: AgentRunResult, revision: int = 0) -> AgentStateBundle:
-    return bundle_from_parts(
-        revision=revision,
-        history={
-            "messages": result.history,
-            "summary": result.summary or "",
-            "version": result.history_schema_version,
-        },
-        memory=result.memory,
-        tasks=result.tasks,
-        permissions=result.permissions,
-        active_skills=result.active_skills,
-        last_execution_metadata=result.execution_metadata,
-    )
 
 
 def _count_items(value: Any) -> int:
@@ -1267,39 +910,10 @@ def _run_id_from_parameters(parameters: dict[str, Any]) -> str:
     return str(parameters.get("run_id") or inputs.get("run_id") or f"run_{uuid4().hex}")
 
 
-def _app_id_from_parameters(parameters: dict[str, Any], strategy: Any) -> str:
-    inputs = parameters.get("inputs") if isinstance(parameters.get("inputs"), dict) else {}
-    session = _get(strategy, "session")
-    candidates = [
-        parameters.get("app_id"),
-        inputs.get("app_id"),
-        _get(session, "app_id"),
-        _get(_get(strategy, "runtime"), "app_id"),
-    ]
-    return _first_non_empty(candidates) or "default"
 
 
-def _user_id_from_parameters(parameters: dict[str, Any], strategy: Any) -> str:
-    inputs = parameters.get("inputs") if isinstance(parameters.get("inputs"), dict) else {}
-    session = _get(strategy, "session")
-    candidates = [
-        parameters.get("user"),
-        parameters.get("user_id"),
-        inputs.get("user"),
-        inputs.get("user_id"),
-        _get(session, "user_id"),
-        _get(session, "user"),
-        _get(_get(strategy, "runtime"), "user_id"),
-    ]
-    return _first_non_empty(candidates) or "default"
 
 
-def _first_non_empty(values: list[Any]) -> str:
-    for value in values:
-        text = str(value or "").strip()
-        if text:
-            return text
-    return ""
 
 
 def _make_writer(output_protocol: str, thread_id: str, run_id: str, show_tool_calls: bool = True) -> Any:
@@ -1338,16 +952,12 @@ def _permission_decision_activities(writer: Any, history: list[dict[str, Any]]) 
         if decision not in {"allow_once", "allow_conversation", "deny"}:
             continue
         request = metadata.get("permission_request") if isinstance(metadata.get("permission_request"), dict) else {}
-        script_key = str(request.get("skill_script_key") or "")
-        skill_name, script_name = _split_script_key(script_key)
         events.extend(
             writer.write_activity(
                 "cc_agent.permission_decision",
                 _drop_none(
                     {
                         "toolName": request.get("tool_name") or message.get("name"),
-                        "skillName": skill_name,
-                        "scriptName": script_name,
                         "decision": decision,
                         "scope": "conversation" if decision == "allow_conversation" else "once",
                     }
@@ -1357,13 +967,6 @@ def _permission_decision_activities(writer: Any, history: list[dict[str, Any]]) 
         metadata["permission_decision_activity_emitted"] = True
         message["metadata"] = metadata
     return events
-
-
-def _split_script_key(value: str) -> tuple[str, str]:
-    if "/" not in value:
-        return "", ""
-    skill_name, script_name = value.split("/", 1)
-    return skill_name, script_name
 
 
 def _drop_none(value: dict[str, Any]) -> dict[str, Any]:

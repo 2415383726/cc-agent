@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from .config import AgentRunConfig
 from .context_budget import ContextBudget, estimate_context_tokens
 from .messages import AgentState
-from .skills import list_skills
 
 
 def register_all() -> list[dict[str, Any]]:
@@ -17,7 +15,6 @@ def register_all() -> list[dict[str, Any]]:
         {"name": "cost", "kind": "local", "description": "Show token usage", "handler": _cost_handler},
         {"name": "compact", "kind": "local", "description": "Force compact conversation history", "handler": _compact_handler},
         {"name": "reset", "kind": "local", "description": "Reset history, memory, and tasks", "handler": _reset_handler},
-        {"name": "skill", "kind": "local", "description": "Manage user-level skills", "handler": _skill_handler},
         {"name": "a2ui-demo", "kind": "local", "description": "Render an A2UI report card demo", "handler": _a2ui_demo_handler},
         {"name": "weekly-report-card", "kind": "local", "description": "Render an A2UI weekly report card", "handler": _weekly_report_card_handler},
     ]
@@ -63,7 +60,7 @@ def _context_handler(state: AgentState, args: str, *, config: AgentRunConfig | N
     )
 
 
-def _reset_handler(state: AgentState, args: str, *, workspace: Any = None, **_: Any) -> str:
+def _reset_handler(state: AgentState, args: str, **_: Any) -> str:
     state.history.clear()
     state.summary = ""
     state.memory.clear()
@@ -74,12 +71,6 @@ def _reset_handler(state: AgentState, args: str, *, workspace: Any = None, **_: 
         "- memory: cleared",
         "- tasks: cleared",
     ]
-    if workspace is not None and hasattr(workspace, "clear"):
-        try:
-            workspace.clear()
-            lines.append("- workspace: cleared")
-        except Exception as exc:
-            lines.append(f"- workspace clear failed: {exc}")
     return "\n".join(lines)
 
 
@@ -102,106 +93,6 @@ def _cost_handler(state: AgentState, args: str, **_: Any) -> str:
             f"- completion_tokens: {totals['completion_tokens']}",
         ]
     )
-
-
-def _skill_handler(
-    state: AgentState,
-    args: str,
-    *,
-    skill_library: Any = None,
-    config: AgentRunConfig | None = None,
-    **_: Any,
-) -> str:
-    library = skill_library or getattr(state, "skill_library", None)
-    if library is None:
-        return "Skill library is not configured for this run."
-    text = str(args or "").strip()
-    if not text or text.lower() == "help":
-        return "\n".join(
-            [
-                "Skill commands",
-                "- /skill list",
-                "- /skill show <name>",
-                "- /skill add [file_id|filename]",
-                "- /skill validate [file_id|filename]",
-                "- /skill delete <name>",
-                "- /skill restore <name>",
-            ]
-        )
-    command, _, rest = text.partition(" ")
-    command = command.strip().lower()
-    rest = rest.strip()
-    if command == "list":
-        skills = list_skills(state.skills if state.skills else [])
-        if not skills:
-            return "No skills loaded."
-        lines = ["Skills:"]
-        for skill in skills:
-            lines.append(
-                f"- {skill.get('name')} [{skill.get('layer') or skill.get('source')}] "
-                f"{skill.get('status') or 'active'} - {skill.get('description') or ''}"
-            )
-        warnings = getattr(library, "warnings", []) or []
-        if warnings:
-            lines.append("")
-            lines.append("Warnings:")
-            for warning in warnings:
-                lines.append(f"- {warning.get('path')}: {warning.get('reason')}")
-        return "\n".join(lines)
-    if command == "show":
-        name = rest.strip()
-        for skill in state.skills or []:
-            if skill.get("name") == name or skill.get("id") == name:
-                return json.dumps({"status": "found", "skill": _redacted_skill(skill)}, ensure_ascii=False, indent=2)
-        return json.dumps({"status": "not_found", "message": f"skill not found: {name}"}, ensure_ascii=False)
-    if command in {"add", "install"}:
-        result = library.install(from_file_id=rest)
-        _sync_library_to_state(state, library, config=config)
-        return _skill_command_result(result)
-    if command == "validate":
-        return _skill_command_result(library.validate(rest))
-    if command in {"delete", "remove"}:
-        result = library.remove(rest)
-        _sync_library_to_state(state, library, config=config)
-        return _skill_command_result(result)
-    if command == "restore":
-        result = library.restore(rest)
-        _sync_library_to_state(state, library, config=config)
-        return _skill_command_result(result)
-    return f"Unknown /skill command: {command}"
-
-
-def _sync_library_to_state(
-    state: AgentState,
-    library: Any,
-    *,
-    config: AgentRunConfig | None = None,
-) -> None:
-    from .skills import filter_denied_skills, load_bundled_skills, merge_prompt_skills
-
-    bundled = load_bundled_skills(config.bundled_skill_groups if config else None)
-    minio = list(getattr(library, "skills", []) or [])
-    merged = merge_prompt_skills(bundled, minio, getattr(library, "warnings", None))
-    state.skills = filter_denied_skills(merged, config.skill_denylist if config else None)
-
-
-def _redacted_skill(skill: dict[str, Any]) -> dict[str, Any]:
-    return {
-        key: value
-        for key, value in skill.items()
-        if key not in {"body", "path"}
-    }
-
-
-def _skill_command_result(result: dict[str, Any]) -> str:
-    status = str(result.get("status") or "")
-    name = str(result.get("name") or "")
-    message = str(result.get("message") or "")
-    if status and name:
-        return f"Skill {name}: {status}" + (f"\n{message}" if message else "")
-    if status:
-        return f"Skill command: {status}" + (f"\n{message}" if message else "")
-    return json.dumps(result, ensure_ascii=False)
 
 
 def _a2ui_demo_handler(state: AgentState, args: str, **_: Any) -> dict[str, Any]:

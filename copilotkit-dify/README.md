@@ -82,7 +82,7 @@ interface CcDifyAssistantProps {
 
 宿主视角只需要关心：连哪里 `baseUrl`，你是谁 `apiKey + user`，agent 鉴权 `token`，以及可选的业务字段 `inputs`。
 
-不要把 `show_tool_calls`、`capability_mode`、`app_skills_yaml`、`state_id` 暴露给宿主业务系统；这些属于后端 CC Agent/Dify 应用内部配置。
+不要把 `show_tool_calls`、`app_skills_yaml`、`state_id` 暴露给宿主业务系统；这些属于后端 CC Agent/Dify 应用内部配置。
 
 ### 暴露方法
 

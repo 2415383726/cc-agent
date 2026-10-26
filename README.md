@@ -1,457 +1,125 @@
 # CC Agent
 
-CC Agent 是一个 Dify Agent Strategy 插件，用来在 Dify 生态里提供更完整的通用 agent 能力。它不是纯代码 agent，而是面向日常文件处理、工具调用、技能扩展、长对话状态和可下载产物的 agent capability extension。
+CC Agent 是 Dify Agent Strategy 插件，提供工具调用、技能、记忆、任务和跨轮会话状态。会话状态统一通过 Dify 的 `agent_state` 变量流转；文件读取、代码执行、检索和文件生成由 Dify 注入的外部工具提供。
 
-项目当前有两个运行模式：
+## 项目结构
 
-- `dify_only`: 只依赖 Dify 入参/出参。状态通过 encoded `agent_state` 在 Dify workflow 中流转；不启用 workspace、文件工具、脚本执行和用户 skill 管理。
-- `minio`: MinIO/S3 是状态、workspace、skills 的权威持久化层。启用文件管理、MinIO skill 包、`run_python`、`SkillRunScript`、用户 skill 安装/删除和产物下载。
+- `cc_agent/`：Python ≥3.12 的 Dify 插件，包含共享运行时、两个策略入口、内置技能和测试。
+- `copilotkit-dify/`：Vue 3 + Vite 前端，消费 AG-UI / Dify 流并展示工具过程、结构化答案、附件和交互中断。
 
-## Directory Layout
-
-```text
-.
-├── cc_agent/                         # Dify plugin
-│   ├── manifest.yaml                 # Plugin manifest
-│   ├── main.py                       # Dify plugin entry
-│   ├── provider/
-│   │   └── agent.yaml                # Provider registration
-│   ├── strategies/
-│   │   ├── base.py                   # Shared AgentStrategy adapter
-│   │   ├── cc_agent_agui.py         # AG-UI strategy entry
-│   │   ├── cc_agent_dify.py         # Dify-native strategy entry
-│   │   ├── cc_agent_agui.yaml       # AG-UI strategy schema
-│   │   └── cc_agent_dify.yaml       # Dify-native strategy schema
-│   ├── core/                 # Agent runtime implementation
-│   ├── skills/                       # Bundled agent skills
-│   ├── tests/                        # Python tests
-│   └── scripts/                      # Offline package scripts
-└── copilotkit-dify/                  # Frontend renderer for AG-UI/Dify output
-```
-
-`core` is the shared runtime package used by both Strategy entries.
-
-## Runtime Architecture
-
-The runtime is intentionally lightweight. It uses four thin ports and a single explicit run environment instead of a DI container or generic event bus.
+## 运行流程
 
 ```text
 Dify AgentStrategy
   -> AgentRunConfig
   -> RunEnvironment
-       -> StateBackend
-       -> SkillCatalog
-       -> ToolCatalog
+       -> DifyStateBackend：加载 agent_state
+       -> SkillCatalog：内置技能 + app_skills_yaml
+       -> ToolCatalog：内部认知工具 + Dify 外部工具
        -> ProtocolRenderer
-       -> WorkspaceSession      (minio only)
-       -> SkillLibrarySession   (minio only)
-  -> AgentLoop
-  -> commit state/workspace
-  -> render final output
+  -> AgentLoop：上下文预算、模型调用、工具串行调度、权限与结果预算
+  -> DifyStateBackend：编码新的 agent_state
+  -> 输出最终结果和 state_summary
 ```
 
-The four ports are:
+两个策略共享同一运行时和状态路径：
 
-| Port | Responsibility |
+| 策略 | 输出与交互 |
 | --- | --- |
-| `StateBackend` | Load and commit agent state. Dify-only uses encoded `agent_state`; MinIO mode reads/writes MinIO state and ignores input `agent_state`. |
-| `SkillCatalog` | Merge bundled, app YAML, MinIO agent/app/user skills, then render visible skill context. User skill management requires MinIO. |
-| `ToolCatalog` | Centralize visible tools by profile, schema generation, external tool conflict naming and executor-side profile checks. |
-| `ProtocolRenderer` | Render the same internal events to AG-UI or Dify native output. Writer state stays inside each renderer. |
+| `CC Agent (AG-UI)` | AG-UI 事件；提供 `UserPrompt` 中断和 `answers-ui` / `answers-charts` 技能。 |
+| `CC Agent (Dify)` | Dify 原生 text、JSON、blob 和 log；不注入结构化答案提示或 `UserPrompt` 工具。 |
 
-## Strategies
+## Dify 配置
 
-The provider exposes two fixed Strategy surfaces:
+| 参数 | 用途 |
+| --- | --- |
+| `model` | 必填。支持工具调用的 Dify 模型。 |
+| `query` | 必填。当前用户输入。 |
+| `tools` | Dify 注入的外部工具。 |
+| `instruction` | 应用的业务角色、约束和回答要求。 |
+| `max_total_context_tokens` | 上下文窗口，默认 131072 tokens，最低 4096。 |
+| `agent_state` | 上一轮输出的编码状态。首轮留空。 |
+| `files` | Dify 上传附件的 JSON；提供安全的文件标识、名称、类型和大小信息。 |
+| `app_skills_yaml` | 应用级技能定义。 |
+| `runtime_config` | 可选的高级运行参数 JSON。 |
+| `show_tool_calls` | 是否展示工具过程，默认开启。 |
+| `deepseek_thinking_compat` | DeepSeek thinking 兼容回退，默认关闭。 |
 
-- `CC Agent (AG-UI)`: emits AG-UI events and enables the bundled `answers-ui` and `answers-charts` skills.
-- `CC Agent (Dify)`: emits Dify-native text, JSON, blob and log messages without structured-answer prompting.
+将最终输出的 `agent_state` 写回 Dify 对话变量，并在下一轮映射到同名入参。`files` 元数据不代表模型已经读取文件内容；应用需为文件处理配置相应的 Dify 外部工具。
 
-`capability_mode` remains independent from this choice. In either Strategy, `create-skill` is bundled only when `capability_mode=minio`.
-
-## Strategy Parameters
-
-Core parameters:
-
-| Parameter | Required | Mode | Description |
-| --- | --- | --- | --- |
-| `model` | yes | both | Dify model selector with tool-call capability. |
-| `tools` | no | both | Dify-injected external tools. |
-| `query` | yes | both | Current user input. |
-| `instruction` | no | both | App-level behavior, business rules and answer style. |
-| `capability_mode` | no | both | `dify_only` or `minio`. Defaults to `dify_only`. |
-| `agent_state` | no | dify_only | Encoded state from the previous turn. Ignored in MinIO mode. |
-| `storage` | minio only | minio | JSON string with MinIO connection and scope. See the contract below. |
-| `files` | no | minio | Dify uploaded files JSON. Imported into MinIO workspace for the current turn. |
-| `app_skills_yaml` | no | both | App-level skill definitions. In MinIO mode it is treated as app-level overlay. |
-| `runtime_config` | no | both | Optional advanced runtime config JSON. Defaults are suitable for normal setup. |
-| `show_tool_calls` | no | both | Whether to emit visible tool activity. |
-| `deepseek_thinking_compat` | no | both | Compatibility fallback for DeepSeek thinking mode. |
-
-Runtime config:
+`runtime_config` 示例：
 
 ```json
 {
   "maximum_iterations": 8,
   "max_observation_chars": 8000,
   "max_history_messages": 40,
-  "max_total_context_chars": 64000,
+  "max_total_context_tokens": 131072,
   "max_repeated_tool_calls": 3,
   "max_consecutive_tool_errors": 3,
   "state_reset": false
 }
 ```
 
-`runtime_config` can be left empty. Unknown fields are ignored and do not enter prompts or final output.
+通常可留空。未知字段被忽略。节点上的 `max_total_context_tokens` 优先于 runtime_config；旧 `max_total_context_chars` 配置别名仍被接受，但按 token 限额解释。
 
-Removed parameters:
+## 会话状态
 
-- `history`, `memory`, `tasks`, `skills`: replaced by `agent_state`.
-- `workspace_enabled`, `skills_enabled`: replaced by `capability_mode`.
-- `app_id`, `user_id`, `conversation_id`, flat `minio_*` parameters: replaced by `storage`.
-- `workspace_scope_id`: removed. It is not part of the storage scope or object paths.
-- `think_model`, `flash_model`, `multimodal_model`: removed; CC Agent uses the single `model`.
-- flat loop/budget fields: replaced by `runtime_config`.
-- `tool_allowlist`, `tool_denylist`, `tool_confirmation_list`, `skill_package_max_bytes`: removed from public strategy parameters.
-- `output_protocol`, `skill_denylist`, `user_skill_scripts_enabled`: removed from the public schema; protocol and bundled skill visibility are fixed by the selected Strategy.
+`agent_state` 使用 `ccagent-state:v1:gzip-base64:` 前缀，包含历史与摘要、记忆、任务、工具授权、已加载技能和上一轮执行元信息。编码器会按 Dify 对话变量约 190KB 的限制压缩或裁剪状态。
 
-## Storage JSON Contract
+输出还包含：
 
-`storage` is the only MinIO configuration entry. It is passed as a JSON string when `capability_mode=minio`.
+- `state_summary`：历史、记忆、任务数量及等待用户、结束原因等只读摘要，不用于恢复状态。
+- `state_ref`：`backend=conversation_variable` 的状态元信息，包含会话标识、版本和保存状态。前端可用它恢复会话标识。
 
-Standard format:
+上下文溢出时先压缩历史再重试一次。工具失败会生成配对的错误 observation，每个 assistant tool call 都必须在下一次模型调用前得到 tool result。
 
-```json
-{
-  "provider": "minio",
-  "endpoint": "http://localhost:19000",
-  "bucket": "cc-agent",
-  "access_key": "minioadmin",
-  "secret_key": "minioadmin123",
-  "secure": false,
-  "public_download_base_url": "",
-  "presign_expiry_seconds": 3600,
-  "ttl_days": 30,
-  "scope": {
-    "app_id": "app-dev",
-    "user_id": "user-dev",
-    "conversation_id": "conversation-dev"
-  }
-}
+## 技能和工具
+
+技能来源为随插件打包的 `skills/*/SKILL.md` 和 `app_skills_yaml`。应用技能不能覆盖保留的内置技能名称。`Skill` 按需加载技能正文，`SkillReadResource` 读取技能自身的文本参考资料，并校验路径边界。
+
+内部工具：
+
+- 技能：`SkillList`、`Skill`、`SkillReadResource`。
+- 记忆：`MemoryList`、`MemorySearch`、`MemorySave`、`MemoryDelete`。
+- 任务：`TaskCreate`、`TaskUpdate`、`TaskGet`、`TaskList`。
+- AG-UI 交互：`UserPrompt`。
+
+用户命令包括 `/help`、`/status`、`/context`、`/cost`、`/compact`、`/reset`，以及两个现有的界面演示命令 `/a2ui-demo`、`/weekly-report-card`。
+
+内部工具只处理认知与会话状态。外部文件、执行、搜索和浏览能力由 Dify 工具提供，返回的文字、JSON、图片、链接和 blob 仍按原有协议展示。
+
+## 升级说明
+
+MinIO 模式及其配置参数 `capability_mode`、`storage` 已移除。工作区、内置文件 CRUD、`run_python`、`SkillRunScript`、`SkillInstall`、`SkillRemove` 和 `/skill` 管理命令一并撤除。
+
+升级旧工作流时，请重新配置节点，移除旧参数并接好 `agent_state` 对话变量。运行时不再读取旧存储参数，也不提供模式兼容或远端状态迁移；原 MinIO 桶内数据不会被访问或删除。需要的文件和执行能力请改为 Dify 外部工具。
+
+该取舍见 [ADR-0001](docs/adr/0001-dify-owned-state.md)。
+
+## 测试与打包
+
+从仓库根目录运行：
+
+```bash
+python -B -m unittest discover -s cc_agent/tests
 ```
 
-Required fields in MinIO mode:
+前端：
 
-| Field | Description |
-| --- | --- |
-| `provider` | Must be `minio`. If omitted, `minio` is assumed. |
-| `endpoint` | MinIO/S3 endpoint. Include scheme, for example `http://localhost:19000`. |
-| `bucket` | Bucket name used by CC Agent. |
-| `access_key` | MinIO access key. Configuration only; never exposed to prompt or final JSON. |
-| `secret_key` | MinIO secret key. Configuration only; never exposed to prompt or final JSON. |
-| `scope.app_id` | Application scope id. |
-| `scope.user_id` | User scope id. |
-| `scope.conversation_id` | Conversation scope id. |
-
-Optional fields:
-
-| Field | Default | Description |
-| --- | --- | --- |
-| `secure` | `false` | Whether to use HTTPS semantics for the MinIO client. |
-| `public_download_base_url` | empty | Optional public gateway base for downloads. Empty means presigned MinIO URLs are used. |
-| `presign_expiry_seconds` | `3600` | Download URL expiry. |
-| `ttl_days` | `30` | Workspace retention hint used by workspace metadata and cleanup policy. |
-
-Accepted but non-standard aliases:
-
-- `accessKey` for `access_key`
-- `secretKey` for `secret_key`
-- `publicDownloadBaseUrl` or `download_base_url` for `public_download_base_url`
-- `presignExpirySeconds` for `presign_expiry_seconds`
-- `ttlDays` for `ttl_days`
-- `scope.appId`, `scope.userId`, `scope.conversationId`
-
-Use the standard snake_case fields for new workflows.
-
-### Dify Template Example
-
-In Dify, `storage` is a string parameter, so pass a serialized JSON object. Example:
-
-```json
-{"provider":"minio","endpoint":"http://localhost:19000","bucket":"cc-agent","access_key":"minioadmin","secret_key":"minioadmin123","secure":false,"presign_expiry_seconds":3600,"ttl_days":30,"scope":{"app_id":"{{app.id}}","user_id":"{{user.id}}","conversation_id":"{{conversation.id}}"}}
-```
-
-If your workflow does not expose those exact template variables, map them to stable equivalents. The only rule is that the same app/user/conversation tuple must be passed on every turn of the same conversation.
-
-### MinIO Object Scope
-
-All MinIO state and workspace paths are scoped by:
-
-```text
-scope.app_id / scope.user_id / scope.conversation_id
-```
-
-There is no `workspace_scope_id`.
-
-Conceptual layout:
-
-```text
-{app_id}/users/{user_id}/conversations/{conversation_id}/workspace/manifest.json
-{app_id}/users/{user_id}/conversations/{conversation_id}/workspace/lock.json
-{app_id}/users/{user_id}/conversations/{conversation_id}/state/agent_state.json
-{app_id}/users/{user_id}/skills/{skill_id}/...
-{app_id}/skills/{skill_id}/...
-_cc_agent/skills/agent/{skill_id}/...
-objects/sha256/{first2}/{sha256}
-```
-
-The exact internal file names may evolve, but the scope contract must not.
-
-## Mode Behavior
-
-### `dify_only`
-
-Use this mode when you want a deployable Dify-only strategy without external storage.
-
-Enabled:
-
-- Dify-injected external tools
-- bundled agent skills
-- `app_skills_yaml`
-- memory/task tools
-- `AskUserQuestion`
-- encoded `agent_state`
-- AG-UI or Dify native output
-
-Disabled:
-
-- workspace and file tools
-- `run_python`
-- `SkillRunScript`
-- `SkillInstall` / `SkillRemove`
-- MinIO skill packages
-- downloadable workspace artifacts
-
-State flow:
-
-1. Workflow passes previous final `agent_state` into the next run.
-2. Runtime decodes `ccagent-state:v1:gzip-base64:...`.
-3. Runtime returns a new `agent_state` plus a readable `state_summary`.
-
-### `minio`
-
-Use this mode when you want persistent workspace, uploaded files, downloadable artifacts, skill packages and code execution.
-
-Enabled:
-
-- all Dify-only features
-- file import from Dify uploads
-- `list_files`, `inspect_file`, `read_file`, `write_file`
-- `run_python`
-- `SkillRunScript`
-- `SkillInstall`, `SkillRemove`
-- MinIO-backed state/workspace/skills
-- workspace activity payloads with `download_url`
-
-State flow:
-
-1. Runtime validates `storage`.
-2. Runtime loads state from MinIO and ignores input `agent_state`.
-3. Runtime imports current-turn Dify files into the MinIO workspace.
-4. Runtime commits state, workspace manifest and generated artifacts back to MinIO.
-5. Final output returns `state_ref` and `state_summary`, not encoded state.
-
-Configuration errors fail the run. Runtime MinIO/tool failures are returned as structured errors where possible.
-
-## Agent State
-
-The state bundle contains:
-
-```json
-{
-  "revision": 1,
-  "history": {},
-  "summary": "",
-  "memory": [],
-  "tasks": [],
-  "permissions": {},
-  "active_skills": [],
-  "last_execution_metadata": {}
-}
-```
-
-Dify-only encoded prefix:
-
-```text
-ccagent-state:v1:gzip-base64:
-```
-
-Old `ccagent:v3:gzip-base64:` values are intentionally not part of the new contract.
-
-`state_summary` is read-only metadata for workflows and UI. It is useful for checks such as memory count, task count and active skill names, but it is not a recovery source.
-
-## Skills
-
-Skill sources by mode:
-
-| Mode | Sources |
-| --- | --- |
-| `dify_only` | bundled agent skills + `app_skills_yaml` |
-| `minio` | bundled agent skills + MinIO agent/app/user packages + `app_skills_yaml` overlay |
-
-Merge priority:
-
-```text
-bundled agent > MinIO agent > MinIO app > app_skills_yaml > MinIO user
-```
-
-User skill management is only available in MinIO mode. In Dify-only mode, install/remove returns:
-
-```text
-Skill management requires MinIO storage
-```
-
-MinIO skill package layout:
-
-```text
-skill.json
-files/SKILL.md
-files/README.md
-files/references/**
-files/assets/**
-files/scripts/**
-```
-
-`skill.json` minimal format:
-
-```json
-{
-  "id": "spreadsheet",
-  "name": "spreadsheet",
-  "display_name": "Spreadsheet",
-  "layer": "user",
-  "version": 1,
-  "status": "active",
-  "description": "Analyze CSV and Excel files.",
-  "updated_at": "2026-06-22T00:00:00Z"
-}
-```
-
-`id` and `name` must match `[A-Za-z0-9_-]{1,64}`.
-
-## Tools By Mode
-
-Always available, subject to allowlist/denylist:
-
-- `SkillList`
-- `Skill`
-- `MemoryList`
-- `MemorySearch`
-- `MemorySave`
-- `MemoryDelete`
-- `TaskCreate`
-- `TaskUpdate`
-- `TaskGet`
-- `TaskList`
-- `AskUserQuestion`
-- Dify-injected external tools
-
-MinIO-only tools:
-
-- `list_files`
-- `inspect_file`
-- `read_file`
-- `write_file`
-- `run_python`
-- `SkillReadResource`
-- `SkillRunScript`
-- `SkillInstall`
-- `SkillRemove`
-
-There is no generic bash/full shell tool. Python execution is constrained to the current workspace and writes artifacts through the workspace outputs flow.
-
-## Output Protocols
-
-CC Agent exposes output style as two separate Strategy entries:
-
-- `CC Agent (AG-UI)` always emits AG-UI stream events.
-- `CC Agent (Dify)` always emits Dify-native text, JSON, blob and log messages.
-
-The protocol is no longer a runtime parameter, so a saved node cannot accidentally drift to the wrong frontend contract.
-
-Workspace activity event name:
-
-```text
-cc_agent.workspace
-```
-
-Workspace files exposed to the frontend only include:
-
-```json
-{
-  "id": "file-id",
-  "name": "report.xlsx",
-  "size": 12345,
-  "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "status": "ready",
-  "download_url": "https://...",
-  "expires_at": "2026-06-22T12:00:00Z"
-}
-```
-
-Internal references such as MinIO object keys, `workspace://...` and `dify-file://...` must not be shown to users.
-
-## Development
-
-Python tests:
-
-```powershell
-python -B -m unittest discover cc_agent\tests
-```
-
-Frontend tests:
-
-```powershell
+```bash
 cd copilotkit-dify
+npm install
 npm run test
+npm run build
 ```
 
-Build offline Dify package:
+离线包（Python 3.12，依赖 wheel 已在 `cc_agent/wheels/`）：
 
-```powershell
-python cc_agent\scripts\build_offline_package.py
+```bash
+python cc_agent/scripts/build_offline_package.py
 ```
 
-Useful smoke tests:
+脚本验证 Linux amd64/arm64 的离线依赖解析，再生成 `cc_agent/dist/*.difypkg`。更新依赖时需同时维护依赖声明、锁文件和离线 wheels。
 
-- Dify-only: run two turns and pass final `agent_state` from turn one into turn two.
-- MinIO: upload CSV, ask the agent to generate XLSX with `run_python`, confirm `list_files` shows the artifact and the `download_url` works.
-
-## Current Boundaries
-
-In scope:
-
-- Dify-native tool-call loop
-- dual mode capability profile
-- encoded state for Dify-only
-- MinIO-backed state/workspace/skills
-- workspace file tools
-- Python runner
-- skill package install/remove in user layer
-- AG-UI and Dify native output
-- offline Linux amd64/arm64 package build
-
-Out of scope for now:
-
-- generic bash/full shell
-- arbitrary package installation at runtime
-- browser automation inside the agent runtime
-- subagents/forked skills
-- user-configurable shell hooks
-- OS-level seccomp/container isolation beyond the hosting Dify/plugin sandbox
-
-## Security Notes
-
-- `access_key` and `secret_key` are configuration only. They must not enter prompts, logs, tool metadata, final JSON or frontend payloads.
-- MinIO mode must fail on missing required storage fields instead of silently falling back to Dify-only.
-- Tool visibility is enforced twice: at schema registration time and again before execution.
-- Generated artifacts are collected from the workspace outputs directory, not arbitrary filesystem paths.
+手工验收：连续两轮传递 `agent_state`，确认记忆和任务保留；调用一个 Dify 外部工具并检查结果展示；在 AG-UI 中完成一次 `UserPrompt` 中断与恢复；确认 Dify blob 附件可展示和下载。

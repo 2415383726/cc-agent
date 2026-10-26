@@ -21,26 +21,15 @@ class ToolAdapter:
         state: AgentState,
         session: Any | None = None,
         skill_runtime: Any | None = None,
-        workspace: Any | None = None,
-        skill_library: Any | None = None,
-        user_skill_scripts_enabled: bool = True,
-        capability_mode: str = "dify_only",
-        skill_denylist: list[str] | None = None,
     ):
         self.catalog = registry if isinstance(registry, ToolCatalog) else None
         self.registry = registry.registry if isinstance(registry, ToolCatalog) else registry
         self.state = state
         self.session = session
-        self.workspace = workspace
         self.internal_executor = InternalToolExecutor(
             state,
             session=session,
-            workspace=workspace,
-            skill_library=skill_library,
-            user_skill_scripts_enabled=user_skill_scripts_enabled,
             skill_runtime=skill_runtime,
-            capability_mode=capability_mode,
-            skill_denylist=skill_denylist,
         )
 
     def execute(self, tool_call: ToolCall) -> ToolResult:

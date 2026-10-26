@@ -172,7 +172,6 @@ def _parameter_summary(parameters: dict[str, Any]) -> dict[str, Any]:
         "query_len": len(str(parameters.get("query") or "")),
         "tools_count": len(tools),
         "files_count": _count_items(parameters.get("files") or inputs.get("files")),
-        "capability_mode": parameters.get("capability_mode") or inputs.get("capability_mode") or "dify_only",
         "agent_state_present": bool(parameters.get("agent_state") or inputs.get("agent_state")),
         "state_id": parameters.get("state_id"),
         "input_state_id": inputs.get("state_id"),
@@ -184,8 +183,6 @@ def _parameter_summary(parameters: dict[str, Any]) -> dict[str, Any]:
         "app_skills_yaml_len": len(str(parameters.get("app_skills_yaml") or "")),
         "input_app_skills_yaml_len": len(str(inputs.get("app_skills_yaml") or "")),
         "model_history_prompt_count": _count_items(_get(model, "history_prompt_messages")),
-        "storage_present": bool(parameters.get("storage") or inputs.get("storage")),
-        "storage_summary": _storage_summary(parameters.get("storage") or inputs.get("storage")),
     }
 
 
@@ -209,37 +206,6 @@ def _count_items(value: Any) -> int:
         return len(value or [])
     except TypeError:
         return 0
-
-
-def _storage_summary(value: Any) -> dict[str, Any]:
-    if not value:
-        return {"present": False}
-    if isinstance(value, dict):
-        payload = value
-    else:
-        try:
-            payload = json.loads(str(value))
-            if isinstance(payload, str):
-                payload = json.loads(payload)
-        except Exception:
-            return {"present": True, "valid": False}
-    if not isinstance(payload, dict):
-        return {"present": True, "valid": False}
-    scope = payload.get("scope") if isinstance(payload.get("scope"), dict) else {}
-    return {
-        "present": True,
-        "valid": True,
-        "provider": str(payload.get("provider") or payload.get("type") or ""),
-        "endpoint_present": bool(payload.get("endpoint")),
-        "bucket_present": bool(payload.get("bucket")),
-        "access_key_present": bool(payload.get("access_key") or payload.get("accessKey")),
-        "secret_key_present": bool(payload.get("secret_key") or payload.get("secretKey")),
-        "scope": {
-            "app_id_present": bool(scope.get("app_id") or scope.get("appId")),
-            "user_id_present": bool(scope.get("user_id") or scope.get("userId")),
-            "conversation_id_present": bool(scope.get("conversation_id") or scope.get("conversationId")),
-        },
-    }
 
 
 def _runtime_config_summary(value: Any) -> dict[str, Any]:

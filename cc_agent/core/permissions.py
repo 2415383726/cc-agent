@@ -65,15 +65,12 @@ def normalize_permissions(value: Any) -> dict[str, Any]:
     normalized = {
         "schema_version": PERMISSIONS_SCHEMA_VERSION,
         "allowed_tools": {},
-        "allowed_skills": {},
-        "allowed_skill_scripts": {},
     }
     if not isinstance(value, dict):
         return normalized
-    for key in ("allowed_tools", "allowed_skills", "allowed_skill_scripts"):
-        raw = value.get(key)
-        if isinstance(raw, dict):
-            normalized[key] = {str(name): str(scope) for name, scope in raw.items() if name and scope}
+    raw = value.get("allowed_tools")
+    if isinstance(raw, dict):
+        normalized["allowed_tools"] = {str(name): str(scope) for name, scope in raw.items() if name and scope}
     return normalized
 
 
@@ -88,11 +85,10 @@ def apply_permission_decision(state: AgentState, response: dict[str, Any], metad
             permissions["allowed_tools"][tool_name] = "conversation"
     state.permissions = permissions
     logger.info(
-        "cc_agent permission decision applied: decision=%s tool=%s allowed_tools=%s allowed_skill_scripts=%s",
+        "cc_agent permission decision applied: decision=%s tool=%s allowed_tools=%s",
         decision,
         str(request.get("tool_name") or "").strip(),
         sorted(permissions.get("allowed_tools", {}).keys()),
-        sorted(permissions.get("allowed_skill_scripts", {}).keys()),
     )
     return decision
 

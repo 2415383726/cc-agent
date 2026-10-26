@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from .internal_tools import INTERNAL_TOOL_NAMES, internal_tool_schemas
-from .profiles import DIFY_ONLY
 
 
 @dataclass(slots=True)
@@ -27,11 +26,10 @@ class ToolRegistry:
         cls,
         external_tools: list[Any] | None = None,
         external_prompt_tools: list[Any] | None = None,
-        capability_mode: str = DIFY_ONLY,
         output_protocol: str = "agui",
     ) -> "ToolRegistry":
         specs: dict[str, ToolSpec] = {}
-        for schema in internal_tool_schemas(capability_mode=capability_mode, output_protocol=output_protocol):
+        for schema in internal_tool_schemas(output_protocol=output_protocol):
             specs[schema["name"]] = ToolSpec(
                 name=schema["name"],
                 kind="internal",

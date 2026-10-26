@@ -1,4 +1,3 @@
-import json
 import unittest
 from types import SimpleNamespace
 
@@ -6,40 +5,6 @@ from cc_agent.core.messages import AgentRunResult
 from cc_agent.core.runtime import DifyAgentRuntime
 from cc_agent.core import runtime as runtime_module
 from cc_agent.core.state_variable import AgentStateBundle, encode_agent_state
-
-
-def storage_json(app_id="app-1", user_id="user-1", conversation_id="conv-1"):
-    return json.dumps(
-        {
-            "provider": "minio",
-            "endpoint": "minio:9000",
-            "bucket": "cc-agent",
-            "access_key": "access",
-            "secret_key": "secret",
-            "scope": {
-                "app_id": app_id,
-                "user_id": user_id,
-                "conversation_id": conversation_id,
-            },
-        }
-    )
-
-
-class FakeStorage:
-    def __init__(self):
-        self.data = {}
-
-    def exist(self, key):
-        return key in self.data
-
-    def get(self, key):
-        return self.data[key]
-
-    def set(self, key, value):
-        self.data[key] = value
-
-    def delete(self, key):
-        self.data.pop(key, None)
 
 
 class RuntimeAgUiBoundaryTests(unittest.TestCase):
@@ -73,7 +38,7 @@ class RuntimeAgUiBoundaryTests(unittest.TestCase):
             app_id="app-1",
             session_id="session-1",
             conversation_id="conv-1",
-            storage=FakeStorage(),
+            storage=SimpleNamespace(data={}),
         )
         strategy = SimpleNamespace(
             session=session,
@@ -113,7 +78,7 @@ class RuntimeAgUiBoundaryTests(unittest.TestCase):
                 yield
 
         runtime_module.AgentLoop = FakeLoop
-        storage = FakeStorage()
+        storage = SimpleNamespace(data={})
         session = SimpleNamespace(app_id="app-1", session_id="session-1", conversation_id="", storage=storage)
         strategy = SimpleNamespace(
             session=session,
@@ -154,7 +119,7 @@ class RuntimeAgUiBoundaryTests(unittest.TestCase):
                 yield
 
         runtime_module.AgentLoop = FakeLoop
-        storage = FakeStorage()
+        storage = SimpleNamespace(data={})
         session = SimpleNamespace(app_id="app-1", session_id="session-1", conversation_id="", storage=storage)
         strategy = SimpleNamespace(
             session=session,
@@ -174,6 +139,23 @@ class RuntimeAgUiBoundaryTests(unittest.TestCase):
         self.assertEqual(run_finished["result"]["state_ref"]["backend"], "conversation_variable")
         self.assertEqual(run_finished["result"]["state_ref"]["variable_name"], "agent_state")
         self.assertEqual(storage.data, {})
+
+    def test_external_tool_permission_decision_activity_is_emitted_once(self):
+        history = [{
+            "role": "tool", "name": "read_file", "tool_call_id": "call-1",
+            "metadata": {
+                "permission_decision": "allow_conversation",
+                "permission_request": {"tool_name": "read_file"},
+            },
+        }]
+        writer = runtime_module._make_writer("agui", "conv-1", "run-1")
+        events = runtime_module._permission_decision_activities(writer, history)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["activityType"], "cc_agent.permission_decision")
+        self.assertEqual(events[0]["content"], {
+            "toolName": "read_file", "decision": "allow_conversation", "scope": "conversation",
+        })
+        self.assertEqual(runtime_module._permission_decision_activities(writer, history), [])
 
     def test_runtime_loads_state_from_input_agent_state(self):
         captured = {}
@@ -225,7 +207,11 @@ class RuntimeAgUiBoundaryTests(unittest.TestCase):
                 {
                     "query": "continue",
                     "conversation_id": "conv-1",
-                    "inputs": {"agent_state": encoded.value},
+                    "inputs": {
+                        "agent_state": encoded.value,
+                        "capability_mode": "minio",
+                        "storage": "obsolete settings are not parsed",
+                    },
                 }
             )
         )
@@ -240,75 +226,6 @@ class RuntimeAgUiBoundaryTests(unittest.TestCase):
         self.assertEqual(run_finished["result"]["state_ref"]["revision"], 6)
         self.assertIn("agent_state", run_finished["result"])
         self.assertNotIn("history", run_finished["result"])
-
-    def test_minio_mode_ignores_input_agent_state_and_does_not_emit_encoded_state(self):
-        captured = {}
-
-        class FakeWorkspaceSession:
-            def __init__(self, config, scope, dify_files=None):
-                self.config = config
-                self.scope = scope
-                self.storage = SimpleNamespace(get_json=lambda key: None, put_json=lambda key, value: None)
-                self.outputs_dir = ""
-                self.imported_files = []
-
-            def open(self):
-                return self
-
-            def commit(self):
-                pass
-
-            def activity_payload(self):
-                return {"message": "Workspace files updated.", "files": []}
-
-            def close(self):
-                pass
-
-        class FakeLoop:
-            def __init__(self, **kwargs):
-                captured["state"] = kwargs["state"]
-                self.final_result = None
-
-            def run(self):
-                self.final_result = AgentRunResult(
-                    answer="ok",
-                    history=[],
-                    memory=[],
-                    tasks=[],
-                    execution_metadata={"finish_reason": "final"},
-                )
-                return
-                yield
-
-        original_workspace_session = runtime_module.WorkspaceSession
-        runtime_module.WorkspaceSession = FakeWorkspaceSession
-        runtime_module.AgentLoop = FakeLoop
-        try:
-            strategy = SimpleNamespace(
-                session=SimpleNamespace(app_id="app-1", session_id="session-1", conversation_id="conv-1"),
-                runtime=SimpleNamespace(user_id="user-1"),
-                _init_prompt_tools=lambda tools: [],
-            )
-            events = list(
-                DifyAgentRuntime(strategy).run(
-                    {
-                        "query": "continue",
-                        "capability_mode": "minio",
-                        "agent_state": "ccagent-state:v1:gzip-base64:not-read",
-                        "storage": storage_json(),
-                    }
-                )
-            )
-        finally:
-            runtime_module.WorkspaceSession = original_workspace_session
-            runtime_module.AgentLoop = self.original_loop
-
-        run_finished = next(event for event in events if event.get("type") == "RUN_FINISHED")
-        self.assertEqual(captured["state"].history, [])
-        self.assertIn("state_ref", run_finished["result"])
-        self.assertEqual(run_finished["result"]["state_ref"]["backend"], "minio")
-        self.assertNotIn("agent_state", run_finished["result"])
-        self.assertFalse(any(event.get("type") == "dify_variable" and event.get("name") == "agent_state" for event in events))
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ from cc_agent.core.messages import AgentState
 class BuiltinSkillsTests(unittest.TestCase):
     def test_register_all_returns_expected_local_skills(self):
         skills = register_all()
-        self.assertEqual(len(skills), 9)
+        self.assertEqual(len(skills), 8)
         names = [s["name"] for s in skills]
         self.assertEqual(
             names,
@@ -19,7 +19,6 @@ class BuiltinSkillsTests(unittest.TestCase):
                 "cost",
                 "compact",
                 "reset",
-                "skill",
                 "a2ui-demo",
                 "weekly-report-card",
             ],

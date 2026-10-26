@@ -7,10 +7,7 @@ requires-python = ">=3.12"
 # Managed with uv; refresh the lockfile with `uv lock`.
 dependencies = [
     "ag-ui-protocol==0.1.18",
-    "argon2-cffi==25.1.0",
-    "argon2-cffi-bindings==21.2.0",
     "dify_plugin>=0.4.0",
-    "minio>=7.2.0",
     "openpyxl==3.1.5",
     "pandas==2.2.3",
     "pillow==11.0.0",

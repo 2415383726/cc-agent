@@ -243,35 +243,3 @@ def _read_resource_text(skill_dir: Path, group: str, rel_path: str, limit: int) 
     if len(text) > limit:
         return f"loaded; truncated to {limit} chars", text[:limit]
     return "loaded", text
-
-
-def merge_prompt_skills(
-    bundled_skills: list[dict[str, Any]],
-    minio_skills: list[dict[str, Any]],
-    warnings: Any = None,
-) -> list[dict[str, Any]]:
-    """Merge bundled and MinIO skills; bundled takes priority on name conflict."""
-    merged: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for skill in bundled_skills:
-        name = str(skill.get("name") or "").strip()
-        if not name:
-            continue
-        merged.append(skill)
-        seen.add(name.lower())
-    for skill in minio_skills:
-        name = str(skill.get("name") or "").strip()
-        if not name:
-            continue
-        if name.lower() in seen:
-            if isinstance(warnings, list):
-                warnings.append(
-                    {
-                        "path": str(skill.get("path") or skill.get("source") or name),
-                        "reason": f"skill name conflicts with bundled skill: {name}",
-                    }
-                )
-            continue
-        merged.append(skill)
-        seen.add(name.lower())
-    return merged

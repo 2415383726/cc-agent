@@ -1,5 +1,4 @@
 import json
-import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,8 +9,6 @@ from cc_agent.core.messages import AgentState
 from cc_agent.core.skills import list_skills, render_skill
 from cc_agent.core.skill_runtime import (
     SkillRuntime,
-    collect_declared_artifacts,
-    render_dynamic_shell_blocks,
 )
 from cc_agent.core.runtime import _prompt_skill_user_message
 
@@ -285,66 +282,6 @@ Build documents for $ARGUMENTS[0].
         self.assertTrue(result.is_error)
         self.assertIn("no resource directory", result.llm_observation)
 
-    def test_skill_runtime_runs_python_script_and_collects_artifact(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            skill_dir = Path(tmp) / "demo"
-            (skill_dir / "scripts").mkdir(parents=True)
-            script = skill_dir / "scripts" / "make.py"
-            script.write_text(
-                """import json, os, pathlib
-out = pathlib.Path(os.environ["CC_AGENT_OUTPUTS_DIR"]) / "deck.pptx"
-out.write_bytes(b"PPTX")
-print(json.dumps({"artifacts": [{"path": str(out), "name": "deck.pptx", "mime_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation"}]}))
-""",
-                encoding="utf-8",
-            )
-            runtime = SkillRuntime()
-            result = runtime.run_script({"name": "demo", "path": str(skill_dir / "SKILL.md")}, "scripts/make.py", {})
-
-        self.assertFalse(result.is_error, result.llm_observation)
-        artifacts = result.metadata.get("artifacts") or []
-        self.assertEqual(len(artifacts), 1)
-        self.assertEqual(artifacts[0]["name"], "deck.pptx")
-        self.assertEqual(artifacts[0]["bytes"], b"PPTX")
-        self.assertIn("attached to the chat output", result.llm_observation)
-
-    def test_user_skill_scripts_can_be_disabled(self):
-        state = AgentState(
-            skills=[
-                {
-                    "name": "user-demo",
-                    "description": "Demo",
-                    "path": "missing/SKILL.md",
-                    "layer": "user",
-                    "resources": {"scripts": ["scripts/run.py"]},
-                }
-            ]
-        )
-
-        result = InternalToolExecutor(
-            state,
-            user_skill_scripts_enabled=False,
-            capability_mode="minio",
-        ).execute(
-            "SkillRunScript",
-            {"skill": "user-demo", "script": "scripts/run.py"},
-            "call_script",
-        )
-
-        self.assertTrue(result.is_error)
-        self.assertIn("User skill scripts are disabled", result.llm_observation)
-
-    def test_collect_declared_artifacts_accepts_json_stdout(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            output = Path(tmp) / "report.md"
-            output.write_text("done", encoding="utf-8")
-            artifacts = collect_declared_artifacts(
-                json.dumps({"artifacts": [{"path": str(output), "name": "report.md", "mime_type": "text/markdown"}]}),
-                Path(tmp),
-            )
-
-        self.assertEqual(artifacts[0]["name"], "report.md")
-        self.assertEqual(artifacts[0]["bytes"], b"done")
 
     def test_skill_tool_does_not_execute_dynamic_shell_blocks(self):
         state = AgentState(
@@ -376,25 +313,18 @@ print(json.dumps({"artifacts": [{"path": str(out), "name": "deck.pptx", "mime_ty
                 "shell": "powershell",
             },
             "",
-            SkillRuntime(),
         )
 
         self.assertIn("!`Write-Output SHOULD_NOT_RUN`", injected)
         self.assertNotIn("Before\nSHOULD_NOT_RUN\nAfter", injected)
 
-    def test_dynamic_shell_blocks_are_preserved_without_execution(self):
-        text = "Before\n!`Write-Output hello`\nAfter"
-
-        rendered = render_dynamic_shell_blocks(text, shell="powershell", cwd=Path.cwd(), timeout_seconds=30)
-
-        self.assertEqual(rendered, text)
 
     def test_bundled_skills_include_default_skills(self):
         from cc_agent.core.skills import load_bundled_skills
 
         names = {skill["name"] for skill in load_bundled_skills()}
 
-        self.assertEqual(names, {"answers-charts", "answers-ui", "create-skill"})
+        self.assertEqual(names, {"answers-charts", "answers-ui"})
 
     def test_answers_charts_skill_is_bundled_with_reference_and_ui_metadata(self):
         skills_root = Path(__file__).resolve().parent.parent / "skills"

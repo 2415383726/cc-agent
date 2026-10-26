@@ -34,25 +34,6 @@ parameters:
     type: array[tools]
     required: false
     label: {en_US: External tools, zh_Hans: 外部工具, pt_BR: External tools}
-  - name: capability_mode
-    type: string
-    required: false
-    default: dify_only
-    label: {en_US: Capability mode, zh_Hans: 运行模式, pt_BR: Capability mode}
-    help:
-      en_US: Use dify_only or minio.
-      zh_Hans: 填写 dify_only 或 minio。
-      pt_BR: Use dify_only or minio.
-  - name: storage
-    type: string
-    required: false
-    label: {en_US: Storage JSON, zh_Hans: MinIO 存储配置 JSON, pt_BR: Storage JSON}
-    help:
-      en_US: MinIO storage JSON for minio mode. Include provider, endpoint, bucket, access_key, secret_key, and scope.app_id/user_id/conversation_id.
-      zh_Hans: MinIO 模式的存储配置，需包含 provider、endpoint、bucket、access_key、secret_key 和 scope.app_id/user_id/conversation_id。
-      pt_BR: MinIO storage JSON for minio mode.
-    template:
-      enabled: true
   - name: files
     type: string
     required: false

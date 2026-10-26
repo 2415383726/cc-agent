@@ -6,103 +6,11 @@ import logging
 from typing import Any
 
 from .profiles import (
-    DIFY_ONLY,
-    MINIO,
     StrategyProfile,
-    normalize_capability_mode,
-    profile_for_mode,
     strategy_profile_for_output,
 )
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(slots=True)
-class StorageScopeConfig:
-    app_id: str = ""
-    user_id: str = ""
-    conversation_id: str = ""
-
-
-@dataclass(slots=True)
-class StorageSettings:
-    provider: str = ""
-    endpoint: str = ""
-    bucket: str = ""
-    access_key: str = ""
-    secret_key: str = ""
-    secure: bool = False
-    public_download_base_url: str = ""
-    presign_expiry_seconds: int = 3600
-    ttl_days: int = 30
-    scope: StorageScopeConfig = field(default_factory=StorageScopeConfig)
-
-    @classmethod
-    def from_value(cls, value: Any) -> "StorageSettings":
-        if value in (None, ""):
-            return cls()
-        payload = _json_object(value, field_name="storage")
-        provider = str(payload.get("provider") or payload.get("type") or "minio").strip().lower()
-        scope_payload = payload.get("scope") if isinstance(payload.get("scope"), dict) else {}
-        return cls(
-            provider=provider,
-            endpoint=str(payload.get("endpoint") or ""),
-            bucket=str(payload.get("bucket") or ""),
-            access_key=str(payload.get("access_key") or payload.get("accessKey") or ""),
-            secret_key=str(payload.get("secret_key") or payload.get("secretKey") or ""),
-            secure=_bool(payload.get("secure"), False),
-            public_download_base_url=str(
-                payload.get("public_download_base_url")
-                or payload.get("publicDownloadBaseUrl")
-                or payload.get("download_base_url")
-                or ""
-            ),
-            presign_expiry_seconds=_positive_int(
-                payload.get("presign_expiry_seconds") or payload.get("presignExpirySeconds"),
-                3600,
-            ),
-            ttl_days=_positive_int(payload.get("ttl_days") or payload.get("ttlDays"), 30),
-            scope=StorageScopeConfig(
-                app_id=str(scope_payload.get("app_id") or scope_payload.get("appId") or ""),
-                user_id=str(scope_payload.get("user_id") or scope_payload.get("userId") or ""),
-                conversation_id=str(
-                    scope_payload.get("conversation_id") or scope_payload.get("conversationId") or ""
-                ),
-            ),
-        )
-
-    def missing_required(self) -> list[str]:
-        required = {
-            "endpoint": self.endpoint,
-            "bucket": self.bucket,
-            "access_key": self.access_key,
-            "secret_key": self.secret_key,
-            "scope.app_id": self.scope.app_id,
-            "scope.user_id": self.scope.user_id,
-            "scope.conversation_id": self.scope.conversation_id,
-        }
-        missing = [key for key, value in required.items() if not str(value or "").strip()]
-        if self.provider and self.provider != "minio":
-            missing.insert(0, "provider=minio")
-        return missing
-
-    def redacted_summary(self) -> dict[str, Any]:
-        return {
-            "provider": self.provider or "minio",
-            "endpoint": self.endpoint,
-            "bucket": self.bucket,
-            "secure": self.secure,
-            "public_download_base_url": self.public_download_base_url,
-            "presign_expiry_seconds": self.presign_expiry_seconds,
-            "ttl_days": self.ttl_days,
-            "scope": {
-                "app_id": self.scope.app_id,
-                "user_id": self.scope.user_id,
-                "conversation_id": self.scope.conversation_id,
-            },
-            "access_key_present": bool(self.access_key),
-            "secret_key_present": bool(self.secret_key),
-        }
 
 
 @dataclass(slots=True)
@@ -129,12 +37,11 @@ class AgentRunConfig:
     show_tool_calls: bool = True
     conversation_id: str = ""
     state_id: str = ""
-    capability_mode: str = DIFY_ONLY
     agent_state_variable: str = ""
     history_variable: str = ""
     state_reset: bool = False
     emit_inline_state: bool = True
-    use_dify_history: bool = True  # True when MinIO history unavailable; let Dify inject
+    use_dify_history: bool = True
     stream: bool = True
     model_features: list[str] | None = None
     tool_call_supported: bool = True
@@ -144,11 +51,8 @@ class AgentRunConfig:
     strategy_profile: StrategyProfile | None = None
     app_skills_yaml: str = ""
     skill_denylist: list[str] | None = None
-    skill_package_max_bytes: int = 20 * 1024 * 1024
-    user_skill_scripts_enabled: bool = True
     files: list[Any] | None = None
     runtime_config: dict[str, Any] = field(default_factory=dict)
-    storage: StorageSettings = field(default_factory=StorageSettings)
 
     def __post_init__(self) -> None:
         legacy_limit = _optional_positive_int(self.max_total_context_chars)
@@ -178,8 +82,6 @@ class AgentRunConfig:
         legacy_context_limit = _optional_positive_int(runtime_config.get("max_total_context_chars"))
         configured_context_limit = node_context_limit or runtime_context_limit or legacy_context_limit
         resolved_context_limit = configured_context_limit or extract_model_context_limit(model, 131072)
-        capability_mode = normalize_capability_mode(param("capability_mode", DIFY_ONLY))
-        explicit_strategy_profile = strategy_profile is not None
         selected_strategy_profile = strategy_profile or strategy_profile_for_output(
             _output_protocol(param("output_protocol", True))
         )
@@ -199,7 +101,6 @@ class AgentRunConfig:
             show_tool_calls=_bool(param("show_tool_calls"), True),
             conversation_id=str(param("conversation_id", parameters.get("conversation_id") or "") or ""),
             state_id=str(param("state_id", "") or ""),
-            capability_mode=capability_mode,
             agent_state_variable=str(param("agent_state", "") or ""),
             history_variable=str(param("agent_state", "") or ""),
             state_reset=_bool(runtime_config.get("state_reset"), False),
@@ -213,14 +114,8 @@ class AgentRunConfig:
             strategy_profile=selected_strategy_profile,
             app_skills_yaml=str(param("app_skills_yaml", "") or ""),
             skill_denylist=_string_list(param("skill_denylist")),
-            user_skill_scripts_enabled=(
-                selected_strategy_profile.user_skill_scripts_enabled
-                if explicit_strategy_profile
-                else _bool(param("user_skill_scripts_enabled"), True)
-            ),
             files=_file_list(param("files")),
             runtime_config=runtime_config,
-            storage=StorageSettings.from_value(param("storage", "")),
         )
 
     @property
@@ -228,8 +123,6 @@ class AgentRunConfig:
         if self.strategy_profile is None:
             return None
         groups = list(self.strategy_profile.bundled_skill_groups)
-        if self.workspace_requested:
-            groups.append("minio")
         return tuple(dict.fromkeys(groups))
 
     @property
@@ -254,14 +147,6 @@ class AgentRunConfig:
             "flash_model": "flash",
         }
         return self.model_profiles.get(aliases.get(key, key), self.model)
-
-    @property
-    def workspace_requested(self) -> bool:
-        return self.capability_mode == MINIO
-
-    @property
-    def profile(self):
-        return profile_for_mode(self.capability_mode)
 
 
 def _safe_len(value: Any) -> int:

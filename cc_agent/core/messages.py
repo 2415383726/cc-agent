@@ -74,8 +74,6 @@ class AgentState:
     tasks: list[dict[str, Any]] = field(default_factory=list)
     permissions: dict[str, Any] = field(default_factory=dict)
     active_skills: list[dict[str, Any]] = field(default_factory=list)
-    workspace: Any | None = None
-    skill_library: Any | None = None
 
 
 @dataclass(slots=True)

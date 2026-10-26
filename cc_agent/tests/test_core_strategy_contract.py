@@ -22,6 +22,8 @@ class StrategyContractTests(unittest.TestCase):
             "cc_agent_dify.yaml": ("cc_agent_dify", "CC Agent (Dify)"),
         }
         forbidden_public_parameters = {
+            "capability_mode",
+            "storage",
             "output_protocol",
             "skill_denylist",
             "user_skill_scripts_enabled",
@@ -72,15 +74,12 @@ class StrategyContractTests(unittest.TestCase):
                 "max_total_context_tokens",
                 "tools",
                 "agent_state",
-                "capability_mode",
                 "runtime_config",
                 "deepseek_thinking_compat",
                 "app_skills_yaml",
                 "files",
-                "storage",
             ):
                 self.assertIn(required, by_name)
-            self.assertEqual(by_name["capability_mode"]["default"], "dify_only")
             self.assertEqual(by_name["deepseek_thinking_compat"]["default"], False)
             self.assertEqual(by_name["max_total_context_tokens"]["type"], "number")
             self.assertEqual(by_name["max_total_context_tokens"]["default"], 131072)
@@ -111,19 +110,10 @@ class StrategyContractTests(unittest.TestCase):
 
         agui_names = {skill["name"] for skill in build_skill_catalog(config=agui).prompt_skills}
         dify_names = {skill["name"] for skill in build_skill_catalog(config=dify).prompt_skills}
-        minio_dify = AgentRunConfig.from_parameters(
-            {"query": "hello", "capability_mode": "minio"},
-            strategy_profile=DIFY_STRATEGY_PROFILE,
-        )
-        minio_names = {
-            skill["name"] for skill in build_skill_catalog(config=minio_dify).prompt_skills
-        }
-
         self.assertTrue({"answers-charts", "answers-ui"}.issubset(agui_names))
         self.assertTrue({"answers-charts", "answers-ui"}.isdisjoint(dify_names))
         self.assertNotIn("create-skill", agui_names)
         self.assertNotIn("create-skill", dify_names)
-        self.assertIn("create-skill", minio_names)
     def test_strategy_entry_modules_export_one_strategy_subclass(self):
         from cc_agent.strategies import base, cc_agent_agui, cc_agent_dify
 
@@ -136,30 +126,25 @@ class StrategyContractTests(unittest.TestCase):
                 and issubclass(value, base.BaseCCAgentStrategy)
             ]
             self.assertEqual(len(subclasses), 1, module.__name__)
-    def test_agent_run_config_defaults_to_dify_only(self):
+    def test_agent_run_config_defaults_to_dify_state(self):
         config = AgentRunConfig.from_parameters({"query": "hello"})
 
-        self.assertEqual(config.capability_mode, "dify_only")
-        self.assertFalse(config.workspace_requested)
+        self.assertFalse(hasattr(config, "capability_mode"))
+        self.assertFalse(hasattr(config, "storage"))
         self.assertEqual(config.agent_state_variable, "")
         self.assertEqual(config.max_total_context_tokens, 131072)
 
-    def test_agent_run_config_minio_mode_enables_workspace(self):
-        config = AgentRunConfig.from_parameters(
-            {
-                "query": "hello",
-                "capability_mode": "minio",
-                "agent_state": "ignored-in-minio",
-            }
-        )
 
-        self.assertEqual(config.capability_mode, "minio")
-        self.assertTrue(config.workspace_requested)
-        self.assertEqual(config.agent_state_variable, "ignored-in-minio")
-
-    def test_agent_run_config_rejects_invalid_capability_mode(self):
-        with self.assertRaises(ValueError):
-            AgentRunConfig.from_parameters({"query": "hello", "capability_mode": "workspace"})
+    def test_removed_storage_parameters_are_ignored_without_parsing(self):
+        config = AgentRunConfig.from_parameters({
+            "query": "hello",
+            "capability_mode": "minio",
+            "storage": "invalid JSON that must not be parsed",
+            "agent_state": "previous-state",
+        })
+        self.assertEqual(config.agent_state_variable, "previous-state")
+        self.assertFalse(hasattr(config, "capability_mode"))
+        self.assertFalse(hasattr(config, "storage"))
 
     def test_agent_run_config_reads_runtime_config_json(self):
         config = AgentRunConfig.from_parameters(
@@ -227,7 +212,7 @@ class StrategyContractTests(unittest.TestCase):
         self.assertIsNone(config.tool_allowlist)
         self.assertIsNone(config.tool_denylist)
         self.assertIsNone(config.tool_confirmation_list)
-        self.assertEqual(config.skill_package_max_bytes, 20 * 1024 * 1024)
+        self.assertFalse(hasattr(config, "skill_package_max_bytes"))
 
     def test_node_context_limit_overrides_runtime_and_model_metadata(self):
         model = type("Model", (), {"entity": type("Entity", (), {"context_size": 32000})()})()
@@ -288,10 +273,10 @@ class StrategyContractTests(unittest.TestCase):
 
         rendered = str(summary)
         self.assertEqual(summary["files_count"], 1)
-        self.assertEqual(summary["capability_mode"], "minio")
+        self.assertNotIn("capability_mode", summary)
         self.assertTrue(summary["agent_state_present"])
-        self.assertTrue(summary["storage_summary"]["access_key_present"])
-        self.assertTrue(summary["storage_summary"]["secret_key_present"])
+        self.assertNotIn("storage_summary", summary)
+        self.assertNotIn("storage_present", summary)
         self.assertNotIn("AKIA_TEST_VALUE", rendered)
         self.assertNotIn("MINIO_SECRET_VALUE", rendered)
         self.assertNotIn("SECRET", rendered)

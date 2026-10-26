@@ -1,40 +1,15 @@
-import json
 import unittest
 
-from cc_agent.core.config import AgentRunConfig, StorageSettings
+from cc_agent.core.config import AgentRunConfig
 from cc_agent.core.messages import AgentRunResult
 from cc_agent.core.protocol_renderer import AgentEvent, ProtocolRenderer
-from cc_agent.core.skill_catalog import SKILL_MANAGEMENT_REQUIRES_MINIO, build_skill_catalog
+from cc_agent.core.skill_catalog import build_skill_catalog
 from cc_agent.core.state_backend import DifyStateBackend
 from cc_agent.core.state_variable import decode_agent_state
 from cc_agent.core.tool_catalog import ToolCatalog
 
 
 class ArchitecturePortTests(unittest.TestCase):
-    def test_storage_settings_require_minio_scope_without_workspace_scope_id(self):
-        settings = StorageSettings.from_value(
-            json.dumps(
-                {
-                    "provider": "minio",
-                    "endpoint": "minio:9000",
-                    "bucket": "cc-agent",
-                    "access_key": "access",
-                    "secret_key": "secret",
-                    "scope": {
-                        "app_id": "app-1",
-                        "user_id": "user-1",
-                        "conversation_id": "conv-1",
-                    },
-                }
-            )
-        )
-
-        self.assertEqual(settings.missing_required(), [])
-        self.assertEqual(settings.scope.app_id, "app-1")
-        self.assertEqual(settings.scope.user_id, "user-1")
-        self.assertEqual(settings.scope.conversation_id, "conv-1")
-        self.assertFalse(hasattr(settings.scope, "workspace_scope_id"))
-        self.assertNotIn("secret_key\": \"secret", json.dumps(settings.redacted_summary()))
 
     def test_state_backend_commits_dify_agent_state(self):
         config = AgentRunConfig.from_parameters({"query": "hello"})
@@ -55,28 +30,51 @@ class ArchitecturePortTests(unittest.TestCase):
         self.assertEqual(result.state_ref["backend"], "conversation_variable")
         self.assertEqual(result.state_summary["last_finish_reason"], "final")
 
-    def test_tool_catalog_filters_internal_tools_by_profile(self):
-        dify_only = ToolCatalog.create(capability_mode="dify_only")
-        minio = ToolCatalog.create(capability_mode="minio")
-        dify_native = ToolCatalog.create(capability_mode="dify_only", output_protocol="dify_native")
+    def test_tool_catalog_exposes_dify_tools_and_protocol_specific_interrupt(self):
+        dify_only = ToolCatalog.create()
+        dify_native = ToolCatalog.create(output_protocol="dify_native")
 
         self.assertNotIn("run_python", dify_only.names())
         self.assertNotIn("SkillInstall", dify_only.names())
         self.assertIn("Skill", dify_only.names())
         self.assertIn("UserPrompt", dify_only.names())
         self.assertNotIn("AskUserQuestion", dify_only.names())
-        self.assertIn("run_python", minio.names())
-        self.assertIn("SkillInstall", minio.names())
         self.assertNotIn("UserPrompt", dify_native.names())
         self.assertNotIn("AskUserQuestion", dify_native.names())
 
-    def test_dify_only_skill_catalog_rejects_user_management(self):
-        catalog = build_skill_catalog(config=AgentRunConfig.from_parameters({"query": "hello"}))
 
-        with self.assertRaisesRegex(NotImplementedError, SKILL_MANAGEMENT_REQUIRES_MINIO):
-            catalog.install_user_skill(name="demo")
-        with self.assertRaisesRegex(NotImplementedError, SKILL_MANAGEMENT_REQUIRES_MINIO):
-            catalog.remove_user_skill(name="demo")
+    def test_removed_internal_tools_can_only_be_provided_externally(self):
+        from cc_agent.core.internal_tools import InternalToolExecutor
+        from cc_agent.core.messages import AgentState, ToolCall
+        from cc_agent.core.tool_adapter import ToolAdapter
+
+        retired = {
+            "list_files", "inspect_file", "read_file", "write_file", "delete_file",
+            "run_python", "SkillRunScript", "SkillInstall", "SkillRemove",
+        }
+        state = AgentState()
+        catalog = ToolCatalog.create()
+        self.assertTrue(retired.isdisjoint(catalog.names()))
+        for name in retired:
+            with self.subTest(name=name):
+                result = InternalToolExecutor(state).execute(name, {}, "removed-call")
+                self.assertTrue(result.is_error)
+                self.assertEqual(result.tool_call_id, "removed-call")
+                missing = ToolAdapter(catalog, state).execute(ToolCall("missing-call", name, {}))
+                self.assertTrue(missing.is_error)
+                self.assertEqual(missing.tool_call_id, "missing-call")
+
+        calls = []
+        from types import SimpleNamespace
+        session = SimpleNamespace(tool=SimpleNamespace(invoke=lambda **kwargs: calls.append(kwargs) or []))
+        catalog = ToolCatalog.create(
+            external_tools=[{"name": "read_file", "provider": "files"}],
+            external_prompt_tools=[{"name": "read_file", "parameters": {}}],
+        )
+        result = ToolAdapter(catalog, state, session=session).execute(ToolCall("external-call", "read_file", {"id": "1"}))
+        self.assertFalse(result.is_error)
+        self.assertEqual(catalog.resolve("read_file").kind, "external")
+        self.assertEqual(calls[0]["tool_name"], "read_file")
 
     def test_skill_catalog_excludes_denied_prompt_and_local_skills(self):
         config = AgentRunConfig.from_parameters(
@@ -90,13 +88,13 @@ class ArchitecturePortTests(unittest.TestCase):
         self.assertIn("help", {skill["name"] for skill in catalog.local_skills})
 
     def test_protocol_renderer_uses_immutable_agent_event_data(self):
-        event = AgentEvent("activity", {"activity_type": "cc_agent.workspace", "content": {"files": []}})
+        event = AgentEvent("activity", {"activity_type": "cc_agent.uploaded_files", "content": {"files": []}})
         renderer = ProtocolRenderer("agui", thread_id="conv-1", run_id="run-1")
 
         rendered = renderer.render(event)
 
         self.assertEqual(rendered[0]["type"], "ACTIVITY_SNAPSHOT")
-        self.assertEqual(rendered[0]["activityType"], "cc_agent.workspace")
+        self.assertEqual(rendered[0]["activityType"], "cc_agent.uploaded_files")
         self.assertEqual(event.payload["content"], {"files": []})
 
 

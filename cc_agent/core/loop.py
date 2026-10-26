@@ -21,7 +21,6 @@ from .guards import ToolGuard, ToolGuardConfig
 from .prompt_builder import PromptBuilder
 from .permissions import PermissionManager
 from .result_budget import ResultBudget
-from .skill_runtime import artifact_activity_content, artifact_events
 from .tool_adapter import ToolAdapter
 from .tool_registry import ToolRegistry
 from .tool_scheduler import SerialToolScheduler
@@ -430,19 +429,6 @@ class AgentLoop:
                     metadata=tool_metadata,
                 )
                 yield from self._tool_activity_events(result)
-                artifacts = result.metadata.get("artifacts") if isinstance(result.metadata, dict) else None
-                if isinstance(artifacts, list) and artifacts and not result.metadata.get("suppress_artifact_activity"):
-                    for artifact_event in artifact_events(artifacts):
-                        yield artifact_event
-                    yield from self._write(
-                        "write_activity",
-                        "cc_agent.skill_artifact",
-                        artifact_activity_content(
-                            artifacts,
-                            skill_name=str(result.metadata.get("skill_name") or ""),
-                            script_name=str(result.metadata.get("script_name") or ""),
-                        ),
-                    )
                 transcript.append(tool_message(result))
                 if result.metadata.get("inject_user_message"):
                     yield from self._write(
