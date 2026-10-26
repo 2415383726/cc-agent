@@ -121,6 +121,7 @@ import SearchToolCard from '../tool-cards/SearchToolCard.vue'
 import WriteFileToolCard from '../tool-cards/WriteFileToolCard.vue'
 import { buildDifyAttachmentUploadResult } from '../../lib/difyAttachments'
 import { copilotDifyDebug } from '../../lib/debugLog'
+import { loadPendingHistory, waitForVisibleAgent } from '../../lib/conversationCoordinator'
 import type { AssistantCatalog, AssistantSkill } from '../../lib/assistantCatalog'
 import { defaultAssistantCatalog } from '../../lib/assistantCatalog'
 import type { DifyConversation } from '../../lib/difyTransport'
@@ -279,14 +280,7 @@ const chatAttachments = computed(() => ({
 }))
 
 async function visibleAgentForEmit() {
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    await nextTick()
-    const current = agent.value as any
-    if (!expectedThreadId.value || current?.threadId === expectedThreadId.value) return current
-    await new Promise((resolve) => setTimeout(resolve, 0))
-  }
-  const current = agent.value as any
-  return !expectedThreadId.value || current?.threadId === expectedThreadId.value ? current : undefined
+  return waitForVisibleAgent(() => agent.value as any, () => expectedThreadId.value, nextTick)
 }
 
 function openDrawer() {
@@ -446,25 +440,12 @@ watch(
     handledHistoryLoadKey = loadKey
     const targetThreadId = pending.threadId
     try {
-      const current = await visibleAgentForEmit() as any
-      if (
-        pendingHistoryLoadId.value !== pending.requestId ||
-        pendingHistoryConversationId.value !== pending.conversationId ||
-        expectedThreadId.value !== targetThreadId
-      ) return
-      if (!current?.selectConversation) throw new Error('当前 Agent 不支持加载历史会话')
-      const result = await current.selectConversation(pending.conversationId)
-      if (
-        pendingHistoryLoadId.value !== pending.requestId ||
-        pendingHistoryConversationId.value !== pending.conversationId ||
-        expectedThreadId.value !== targetThreadId
-      ) return
-      emit('historyLoaded', {
-        conversationId: pending.conversationId,
-        threadId: current.threadId || targetThreadId,
-        requestId: pending.requestId,
-        result,
-      })
+      const ticket = { conversationId: pending.conversationId, requestId: pending.requestId, threadId: targetThreadId }
+      const loaded = await loadPendingHistory(ticket, () =>
+        activeView.value === 'conversation' && pendingHistoryConversationId.value && pendingHistoryLoadId.value
+          ? { conversationId: pendingHistoryConversationId.value, requestId: pendingHistoryLoadId.value, threadId: expectedThreadId.value }
+          : null, visibleAgentForEmit)
+      if (loaded) emit('historyLoaded', { ...ticket, result: loaded.result })
     } catch (error: any) {
       emit('historyLoadFailed', {
         conversationId: pending.conversationId,
@@ -479,24 +460,23 @@ watch(
 
 async function prepareFreshConversation() {
   openDrawer()
-  const current = await visibleAgentForEmit()
-  emit('newConversation', current, { openConversation: true })
+  emit('newConversation', undefined, { openConversation: true })
   chatInputValue.value = ''
   chatInputSkill.value = null
   await nextTick()
-  return (await visibleAgentForEmit()) || current || agent.value
+  return visibleAgentForEmit()
 }
 
 async function handleConversationSelect(conversationId: string) {
   chatInputValue.value = ''
   chatInputSkill.value = null
-  emit('selectConversation', conversationId, await visibleAgentForEmit())
+  emit('selectConversation', conversationId)
 }
 
 async function handleNewConversation() {
   chatInputValue.value = ''
   chatInputSkill.value = null
-  emit('newConversation', await visibleAgentForEmit())
+  emit('newConversation')
   await focusHomeInputSoon()
 }
 
@@ -604,7 +584,8 @@ async function handleStructuredIntent(value: string) {
   inlineIntentRunning.value = true
   submitError.value = ''
   try {
-    const currentAgent = (await visibleAgentForEmit()) || agent.value
+    const currentAgent = await visibleAgentForEmit()
+    if (!currentAgent) return
     currentAgent?.addMessage?.({
       id: globalThis.crypto?.randomUUID?.() || `structured-intent-${Date.now()}`,
       role: 'user',

@@ -1,7 +1,6 @@
 import { EventType, type AGUIEvent } from '@ag-ui/core'
 
 export type NormalizedDifyEvent =
-  | { kind: 'agui_run_started'; protocol?: string; runId?: string; threadId?: string; raw?: any }
   | { kind: 'text_delta'; protocol?: string; text: string; messageId?: string; raw?: any }
   | { kind: 'thinking_delta'; protocol?: string; text: string; messageId?: string; raw?: any }
   | { kind: 'tool_event'; protocol?: string; state: 'call' | 'result' | 'error'; toolName?: string; toolCallId?: string | null; input?: any; output?: any; error?: any; observation?: any; raw?: any }
@@ -107,139 +106,8 @@ function toolInputOf(data: Record<string, any>) {
   return get(data, 'arguments', 'input', 'tool_input', 'parameters') ?? null
 }
 
-function normalizeAgUiEvent(event: Record<string, any>): NormalizedDifyEvent[] {
-  const type = String(event.type || '')
-  if (type === EventType.RUN_STARTED) {
-    return [{ kind: 'agui_run_started', protocol: 'ag-ui', runId: event.runId, threadId: event.threadId, raw: event }]
-  }
-  if (type === EventType.TEXT_MESSAGE_CONTENT || type === EventType.TEXT_MESSAGE_CHUNK) {
-    const text = String(get(event, 'delta') || '')
-    return text ? [{ kind: 'text_delta', protocol: 'ag-ui', text, messageId: event.messageId, raw: event }] : []
-  }
-  if (type === EventType.REASONING_MESSAGE_CONTENT || type === EventType.REASONING_MESSAGE_CHUNK) {
-    const text = String(get(event, 'delta') || '')
-    return text ? [{ kind: 'thinking_delta', protocol: 'ag-ui', text, messageId: event.messageId, raw: event }] : []
-  }
-  if (type === EventType.TOOL_CALL_START) {
-    return [{
-      kind: 'tool_event',
-      protocol: 'ag-ui',
-      state: 'call',
-      toolName: String(event.toolCallName || 'unknown_tool'),
-      toolCallId: event.toolCallId || null,
-      input: null,
-      output: null,
-      error: null,
-      observation: null,
-      raw: event,
-    }]
-  }
-  if (type === EventType.TOOL_CALL_ARGS) {
-    return [{
-      kind: 'tool_event',
-      protocol: 'ag-ui',
-      state: 'call',
-      toolName: 'unknown_tool',
-      toolCallId: event.toolCallId || null,
-      input: parseMaybeJson(event.delta) ?? event.delta,
-      output: undefined,
-      error: undefined,
-      observation: undefined,
-      raw: event,
-    }]
-  }
-  if (type === EventType.TOOL_CALL_RESULT) {
-    const content = get(event, 'content')
-    const parsed = parseMaybeJson(content)
-    const observation = typeof content === 'string' ? content : (content == null ? '' : JSON.stringify(content))
-    return [{
-      kind: 'tool_event',
-      protocol: 'ag-ui',
-      state: 'result',
-      toolName: get(event, 'toolCallName', 'toolName') || 'unknown_tool',
-      toolCallId: get(event, 'toolCallId', 'tool_call_id') || null,
-      input: undefined,
-      output: parsed ?? (observation ? { value: observation } : undefined),
-      error: null,
-      observation: observation || undefined,
-      raw: event,
-    }]
-  }
-  if (type === EventType.ACTIVITY_SNAPSHOT) {
-    const content = event.content && typeof event.content === 'object' && !Array.isArray(event.content) ? event.content : {}
-    if (event.activityType === 'cc_agent.skill_apply') {
-      return [{
-        kind: 'skill_event',
-        protocol: 'ag-ui',
-        text: String(content.text || ''),
-        toolName: String(content.toolName || 'Skill'),
-        toolCallId: content.toolCallId || null,
-        skillName: content.skillName || null,
-        messageId: event.messageId,
-        raw: event,
-      }]
-    }
-    if (event.activityType === 'cc_agent.guard_triggered') {
-      return [{
-        kind: 'guard_event',
-        protocol: 'ag-ui',
-        toolName: String(content.toolName || 'unknown_tool'),
-        toolCallId: content.toolCallId || null,
-        observation: content.observation || content.message || content.summary || '',
-        messageId: event.messageId,
-        raw: event,
-      }]
-    }
-    if (event.activityType === 'cc_agent.compression') {
-      return [{
-        kind: 'compression_event',
-        protocol: 'ag-ui',
-        metadata: content,
-        messageId: event.messageId,
-        raw: event,
-      }]
-    }
-    return [{
-      kind: 'generic_activity',
-      protocol: 'ag-ui',
-      label: event.activityType || 'ACTIVITY_SNAPSHOT',
-      data: content,
-      messageId: event.messageId,
-      raw: event,
-    }]
-  }
-  if (type === EventType.CUSTOM && event.name === 'cc_agent.ui_card') {
-    const value = event.value || {}
-    return [{
-      kind: 'tool_event',
-      protocol: 'ag-ui',
-      state: 'result',
-      toolName: String(value.toolName || 'unknown_tool'),
-      toolCallId: value.toolCallId || value.id || null,
-      input: value.input ?? null,
-      output: value.output ?? null,
-      error: value.error ?? null,
-      observation: value.observation ?? null,
-      raw: event,
-    }]
-  }
-  if (type === EventType.RUN_FINISHED) {
-    return [{
-      kind: 'final_state',
-      protocol: 'ag-ui',
-      payload: event.result || { event: 'agent_finished' },
-      outcome: event.outcome,
-      raw: event,
-    }]
-  }
-  if (type === EventType.RUN_ERROR) {
-    return [{ kind: 'error', protocol: 'ag-ui', message: String(event.message || event.code || 'AG-UI run error'), raw: event }]
-  }
-  return []
-}
-
 function normalizeLogPayload(data: Record<string, any>, raw: Record<string, any>): NormalizedDifyEvent[] {
-  if (isAgUiEvent(data)) return normalizeAgUiEvent(data)
+  if (isAgUiEvent(data)) return []
   const type = String(data?.type || data?.event || '').trim()
   const finalPayload = findFinalPayload(data)
   if (finalPayload) return [{ kind: 'final_state', payload: finalPayload, raw }]
@@ -293,14 +161,12 @@ function normalizeLogPayload(data: Record<string, any>, raw: Record<string, any>
 
 export function normalizeDifyEvent(event: Record<string, any>): NormalizedDifyEvent[] {
   if (!event || typeof event !== 'object') return []
-  if (isAgUiEvent(event)) return normalizeAgUiEvent(event)
+  if (isAgUiEvent(event)) return []
   if ((event.event === 'message' || event.event === 'agent_message') && event.answer) {
     return [{ kind: 'text_delta', text: String(event.answer), raw: event }]
   }
   if (event.event === 'message' || event.event === 'agent_message') return []
 
-  // agent_log must be handled BEFORE findFinalPayload so that RUN_FINISHED
-  // events go through normalizeAgUiEvent which preserves the outcome field.
   if (event.event === 'agent_thought' || event.event === 'agent_log') {
     let payload = pickPayload(event)
     if (!isAgUiEvent(payload) && payload && typeof payload === 'object' && !Array.isArray(payload)) {
@@ -310,7 +176,7 @@ export function normalizeDifyEvent(event: Record<string, any>): NormalizedDifyEv
         payload = inner
       }
     }
-    if (isAgUiEvent(payload)) return normalizeAgUiEvent(payload)
+    if (isAgUiEvent(payload)) return []
     if (payload) return normalizeLogPayload(payload, event)
   }
 

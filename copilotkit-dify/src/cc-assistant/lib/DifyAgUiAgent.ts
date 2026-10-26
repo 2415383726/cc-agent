@@ -1,10 +1,8 @@
 import { AbstractAgent, type AgentSubscriber, type RunAgentInput, type RunAgentParameters, type RunAgentResult } from '@ag-ui/client'
 import type { BaseEvent } from '@ag-ui/core'
 import { Observable } from 'rxjs'
-import { createDifyBlobAccumulator, isDifyBlobEvent } from './difyBlob'
-import { extractAgUiEvent, normalizeDifyEvent } from './difyEventBridge'
 import { MISSING_ANSWER_NOTICE, isLikelyWorkflowPlaceholder } from './difyHistoryMessages'
-import { createDifyRunEmitter } from './difyRunAdapter'
+import { createRunStream } from './runStream'
 import { listMessages, stopChat, streamChat, uploadFile as uploadDifyFile, type DifyUploadedFile } from './difyTransport'
 import { copilotDifyDebug } from './debugLog'
 import { buildInterruptResumePayload, type InterruptQuestion } from './question'
@@ -157,48 +155,6 @@ function interruptEventPayload(parameters: RunAgentParameters | undefined) {
 function resumeAnswer(parameters: RunAgentParameters | undefined) {
   const resume = resumePayload(parameters)
   return typeof resume?.answer === 'string' ? resume.answer.trim() : ''
-}
-
-function interruptValueFromAgUiEvent(event: any) {
-  if (event?.type !== 'RUN_FINISHED') return null
-  const payload = event.result || {}
-  const metadata = payload.executionMetadata || payload.execution_metadata || {}
-  const outcome = event.outcome || null
-
-  if (!(outcome?.type === 'interrupt' || metadata.finishReason === 'awaiting_user' || metadata.finish_reason === 'awaiting_user')) {
-    return null
-  }
-
-  if (outcome?.interrupts?.[0]) {
-    const intr = outcome.interrupts[0]
-    return {
-      id: intr.id || intr.toolCallId || '',
-      question: intr.message || intr.reason || '',
-      purpose: intr.metadata?.purpose || 'clarification',
-      options: intr.metadata?.options || [],
-      allowCustomInput: intr.metadata?.allowCustomInput ?? true,
-      multiSelect: intr.metadata?.multiSelect ?? false,
-      fields: intr.metadata?.fields || [],
-    }
-  }
-
-  const question = metadata.question || {}
-  return {
-    id: question.id || question.toolCallId || question.tool_call_id || '',
-    question: question.question || question.text || '',
-    purpose: question.purpose || 'clarification',
-    options: question.options || [],
-    allowCustomInput: question.allowCustomInput ?? true,
-    multiSelect: question.multiSelect ?? false,
-    fields: question.fields || [],
-  }
-}
-
-function conversationIdFromAgUiEvent(event: any) {
-  if (event?.type !== 'RUN_FINISHED') return ''
-  const result = event.result || {}
-  const stateRef = result.state_ref || result.stateRef || {}
-  return String(stateRef.conversation_id || stateRef.conversationId || '').trim()
 }
 
 function permissionResumePayloadFromText(question: InterruptQuestion | null, answer: string) {
@@ -435,85 +391,19 @@ export class DifyAgUiAgent extends AbstractAgent {
 
           const runId = input.runId || nextMessageId('run')
           const threadId = this.threadId || 'default'
-          const emitter = createDifyRunEmitter(observer, { runId, threadId })
-          let emittedRunStarted = false
-          let emittedUploadedFiles = false
-          let nativeAgUiSeen = false
-          const blobAccumulator = createDifyBlobAccumulator()
-          const emitUploadedFiles = () => {
-            if (emittedUploadedFiles || ctx.files.length === 0) return
-            observer.next(uploadedFilesActivity(ctx.files))
-            emittedUploadedFiles = true
-          }
-          const ensureRunStarted = () => {
-            if (emittedRunStarted) return
-            emitter.emitRunStarted()
-            emittedRunStarted = true
-            emitUploadedFiles()
-          }
+          const stream = createRunStream(observer, {
+            runId, threadId,
+            uploadedFiles: ctx.files.length ? uploadedFilesActivity(ctx.files) : undefined,
+            onConversationId: (id) => this.setConversationId(id),
+            onTaskId: (id) => { this.currentTaskId = id },
+            onInterrupt: (question) => { this.pendingInterrupt = question },
+          })
 
           this.setConversationId(result.response.conversationId || this.conversationId)
           this.currentTaskId = result.response.taskId || this.currentTaskId
 
-          for await (const rawEvent of result.events) {
-            if (rawEvent?.task_id) this.currentTaskId = String(rawEvent.task_id)
-            if (rawEvent?.conversation_id) this.setConversationId(String(rawEvent.conversation_id))
-
-            const blobActivity = blobAccumulator.ingest(rawEvent)
-            if (isDifyBlobEvent(rawEvent)) {
-              if (blobActivity) {
-                if (!emittedRunStarted) ensureRunStarted()
-                observer.next({
-                  type: 'ACTIVITY_SNAPSHOT',
-                  messageId: blobActivity.messageId,
-                  activityType: blobActivity.activityType,
-                  content: blobActivity.content,
-                } as BaseEvent)
-              }
-              continue
-            }
-
-            const aguiEvent = extractAgUiEvent(rawEvent)
-            if (aguiEvent) {
-              nativeAgUiSeen = true
-              if (!emittedRunStarted && aguiEvent.type !== 'RUN_STARTED') ensureRunStarted()
-              emittedRunStarted = emittedRunStarted || aguiEvent.type === 'RUN_STARTED'
-              const stateRefConversationId = conversationIdFromAgUiEvent(aguiEvent)
-              if (stateRefConversationId) this.setConversationId(stateRefConversationId)
-              const interruptValue = interruptValueFromAgUiEvent(aguiEvent)
-              if (interruptValue) {
-                this.pendingInterrupt = interruptValue
-                observer.next({
-                  type: 'CUSTOM',
-                  name: 'on_interrupt',
-                  value: interruptValue,
-                } as BaseEvent)
-              } else if (aguiEvent.type === 'RUN_FINISHED' || aguiEvent.type === 'RUN_ERROR') {
-                this.pendingInterrupt = null
-              }
-              observer.next(aguiEvent as BaseEvent)
-              if (aguiEvent.type === 'RUN_STARTED') emitUploadedFiles()
-              continue
-            }
-
-            if (nativeAgUiSeen && rawEvent?.event !== 'error') {
-              continue
-            }
-
-            const normalizedEvents = normalizeDifyEvent(rawEvent)
-            if (normalizedEvents.length === 0) continue
-
-            ensureRunStarted()
-            for (const normalized of normalizedEvents) {
-              if (normalized.kind === 'error') {
-                observer.error(new Error(String(normalized.message || 'Dify event error')))
-                return
-              }
-              emitter.emitNormalized(normalized)
-            }
-          }
-
-          emitter.closeOpenMessages()
+          for await (const rawEvent of result.events) stream.ingest(rawEvent)
+          stream.finish()
           observer.complete()
         } catch (error: any) {
           if (error?.name === 'AbortError') {

@@ -1,114 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeDifyEvent } from './difyEventBridge'
+import { extractAgUiEvent, normalizeDifyEvent } from './difyEventBridge'
 
-describe('normalizeDifyEvent', () => {
-  it('unwraps stringified AG-UI RUN_FINISHED payload nested under agent_log.data.data', () => {
-    const event = {
-      event: 'agent_log',
-      data: {
-        data: JSON.stringify({
-          type: 'RUN_FINISHED',
-          result: {
-            answer: 'Which account?',
-            executionMetadata: {
-              finishReason: 'awaiting_user',
-            },
-          },
-          outcome: {
-            type: 'interrupt',
-            interrupts: [
-              {
-                id: 'call_1',
-                toolCallId: 'call_1',
-                message: 'Which account?',
-                metadata: {
-                  purpose: 'clarification',
-                  options: [{ label: 'A', value: 'a', description: '' }],
-                  allowCustomInput: true,
-                  multiSelect: false,
-                },
-              },
-            ],
-          },
-        }),
-      },
-    }
-
-    const normalized = normalizeDifyEvent(event as any)
-
-    expect(normalized).toHaveLength(1)
-    expect(normalized[0]).toMatchObject({
-      kind: 'final_state',
-      outcome: {
-        type: 'interrupt',
-        interrupts: [{ id: 'call_1', toolCallId: 'call_1', message: 'Which account?' }],
-      },
-      payload: {
-        answer: 'Which account?',
-      },
-    })
+describe('Dify stream extraction', () => {
+  it('unwraps native events without interpreting or dropping extension fields', () => {
+    const native = { type: 'RUN_FINISHED', result: { answer: 'done' }, outcome: { type: 'interrupt' }, extension: { value: 1 } }
+    expect(extractAgUiEvent({ event: 'agent_log', data: { data: JSON.stringify(native) } })).toEqual(native)
   })
-
-  it('keeps a2ui-surface activities as generic activity payloads', () => {
-    const event = {
-      type: 'ACTIVITY_SNAPSHOT',
-      messageId: 'activity_1',
-      activityType: 'a2ui-surface',
-      content: {
-        a2ui_operations: [
-          { type: 'create_surface', surfaceId: 'report-demo', catalogId: 'copilotkit://basic' },
-        ],
-      },
-    }
-
-    const normalized = normalizeDifyEvent(event as any)
-
-    expect(normalized).toEqual([
-      {
-        kind: 'generic_activity',
-        protocol: 'ag-ui',
-        label: 'a2ui-surface',
-        data: {
-          a2ui_operations: [
-            { type: 'create_surface', surfaceId: 'report-demo', catalogId: 'copilotkit://basic' },
-          ],
-        },
-        messageId: 'activity_1',
-        raw: event,
-      },
-    ])
+  it('interprets a real Dify final result and legacy tool event', () => {
+    const payload = { event: 'agent_finished', answer: 'done', execution_metadata: { finish_reason: 'final' } }
+    expect(normalizeDifyEvent({ event: 'workflow_finished', data: { outputs: { result: payload } } })).toMatchObject([{ kind: 'final_state', payload }])
+    expect(normalizeDifyEvent({ event: 'agent_log', data: { type: 'tool_call', name: 'Search', tool_call_id: 't' } })).toMatchObject([{ kind: 'tool_event', toolName: 'Search', toolCallId: 't' }])
   })
-
-  it('keeps skill artifact activities as generic activity payloads', () => {
-    const event = {
-      type: 'ACTIVITY_SNAPSHOT',
-      messageId: 'artifact_1',
-      activityType: 'cc_agent.skill_artifact',
-      content: {
-        skillName: 'deck-writer',
-        scriptName: 'scripts/build.py',
-        message: 'Generated files were attached to this chat response.',
-        files: [{ name: 'slides.pptx', size: 4096, status: 'attached' }],
-      },
-    }
-
-    const normalized = normalizeDifyEvent(event as any)
-
-    expect(normalized).toEqual([
-      {
-        kind: 'generic_activity',
-        protocol: 'ag-ui',
-        label: 'cc_agent.skill_artifact',
-        data: {
-          skillName: 'deck-writer',
-          scriptName: 'scripts/build.py',
-          message: 'Generated files were attached to this chat response.',
-          files: [{ name: 'slides.pptx', size: 4096, status: 'attached' }],
-        },
-        messageId: 'artifact_1',
-        raw: event,
-      },
-    ])
-  })
-
 })

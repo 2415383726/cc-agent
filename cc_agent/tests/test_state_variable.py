@@ -16,7 +16,6 @@ class AgentStateCodecTests(unittest.TestCase):
         self.assertIsNone(loaded.error)
         self.assertEqual(loaded.bundle.revision, 0)
         self.assertEqual(loaded.bundle.history, {"messages": [], "summary": "", "version": 1})
-        self.assertEqual(loaded.bundle.memory, [])
         self.assertEqual(loaded.bundle.tasks, [])
         self.assertEqual(loaded.bundle.permissions, {})
 
@@ -29,7 +28,6 @@ class AgentStateCodecTests(unittest.TestCase):
                     "summary": "prior summary",
                     "version": 1,
                 },
-                memory=[{"key": "project", "content": "cc-agent"}],
                 tasks=[{"id": "task-1", "subject": "ship"}],
                 permissions={"schema_version": 1, "allowed_tools": {"current_time": "conversation"}},
                 last_execution_metadata={"finish_reason": "final"},
@@ -45,7 +43,6 @@ class AgentStateCodecTests(unittest.TestCase):
         self.assertEqual(loaded.bundle.revision, 3)
         self.assertEqual(loaded.bundle.history["messages"][0]["content"], "from agent_state")
         self.assertEqual(loaded.bundle.history["summary"], "prior summary")
-        self.assertEqual(loaded.bundle.memory[0]["key"], "project")
         self.assertEqual(loaded.bundle.tasks[0]["id"], "task-1")
         self.assertEqual(loaded.bundle.permissions["allowed_tools"]["current_time"], "conversation")
         self.assertEqual(loaded.bundle.active_skills[0]["name"], "slides")
@@ -60,7 +57,6 @@ class AgentStateCodecTests(unittest.TestCase):
                     "summary": "summary",
                     "version": 1,
                 },
-                memory=[{"key": "m1"}, {"key": "m2"}],
                 tasks=[{"id": "t1"}],
                 permissions={"allowed_tools": {"run_python": "conversation", "x": "once"}},
                 active_skills=[{"name": "slides"}, {"id": "tables"}],
@@ -70,7 +66,6 @@ class AgentStateCodecTests(unittest.TestCase):
 
         self.assertEqual(summary["revision"], 7)
         self.assertEqual(summary["history_message_count"], 1)
-        self.assertEqual(summary["memory_count"], 2)
         self.assertEqual(summary["task_count"], 1)
         self.assertEqual(summary["permission_tool_count"], 2)
         self.assertEqual(summary["active_skill_names"], ["slides", "tables"])
@@ -118,7 +113,6 @@ class AgentStateCodecTests(unittest.TestCase):
                 "summary": "prior summary",
                 "version": 1,
             },
-            memory=[{"key": "project", "content": "cc-agent"}],
             tasks=[{"id": "task-1", "subject": "ship"}],
             permissions={"schema_version": 1, "allowed_tools": {"current_time": "conversation"}},
             last_execution_metadata={"finish_reason": "final"},

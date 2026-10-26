@@ -5,24 +5,17 @@ import time
 from typing import Any
 
 from .config import AgentRunConfig
-from .context_budget import ContextBudget, estimate_context_tokens, limit_text_to_tokens
 from .history import sanitize_history
-from .internal_events import (
-    InternalEvent,
-    LoopIteration,
-    ModelEnded,
-    ModelError,
-    ModelStarted,
-)
+from .internal_events import InternalEvent, LoopIteration, ModelEnded, ModelError, ModelStarted
 from .messages import AgentRunResult, AgentState, AssistantTurn, assistant_message, tool_message
-from .model_stream import AssistantTurnCompleted, TextDelta, ThinkingDelta
-from .error_classifier import ContextOverflowError, classify_error, extract_context_numbers
+from .model_stream import AssistantTurnCompleted
+from .error_classifier import ContextOverflowError, classify_error
 from .guards import ToolGuard, ToolGuardConfig
-from .prompt_builder import PromptBuilder
-from .permissions import PermissionManager
+from .model_requests import ModelRequests
+from .interrupts import UserInterrupts
 from .result_budget import ResultBudget
 from .tool_adapter import ToolAdapter
-from .tool_registry import ToolRegistry
+from .tool_catalog import ToolCatalog
 from .tool_scheduler import SerialToolScheduler
 
 try:  # pragma: no cover - only present under Dify plugin runtime
@@ -44,13 +37,13 @@ class AgentLoop:
         self,
         config: AgentRunConfig,
         state: AgentState,
-        registry: ToolRegistry,
+        registry: ToolCatalog,
         model_adapter: Any,
         tool_adapter: ToolAdapter,
         summarizer: Any | None = None,
         include_user_query: bool = True,
         writer: Any | None = None,
-        permission_manager: PermissionManager | None = None,
+        interrupts: UserInterrupts | None = None,
     ):
         self.config = config
         self.state = state
@@ -61,26 +54,25 @@ class AgentLoop:
         self.include_user_query = include_user_query
         self.writer = writer
         self.final_result: AgentRunResult | None = None
-        self.prompt_builder = PromptBuilder(config, state, summarizer=summarizer)
-        self.context_budget = ContextBudget(
-            max_history_messages=config.max_history_messages,
-            max_observation_chars=config.max_observation_chars,
-            max_total_context_chars=config.resolved_context_limit or config.max_total_context_tokens,
+        self.requests = ModelRequests(
+            config, state, registry, model_adapter, summarizer, self._write, self._record_timing
         )
         self.guard = ToolGuard(
             ToolGuardConfig(
                 allowlist=config.tool_allowlist,
                 denylist=config.tool_denylist,
-                require_confirmation=config.tool_confirmation_list,
                 max_repeated_calls=config.max_repeated_tool_calls,
                 max_consecutive_errors=config.max_consecutive_tool_errors,
             )
+        )
+        self.interrupts = interrupts or UserInterrupts(
+            state, confirmation_tools=set(config.tool_confirmation_list or [])
         )
         self.scheduler = SerialToolScheduler(
             tool_adapter=tool_adapter,
             result_budget=ResultBudget(config.max_observation_chars),
             guard=self.guard,
-            permission_manager=permission_manager,
+            interrupts=self.interrupts,
         )
         self.events: list[InternalEvent] = []
         self._timings_ms = {
@@ -89,7 +81,6 @@ class AgentLoop:
             "tool_ms": 0.0,
             "compaction_ms": 0.0,
         }
-        self._last_budget_metadata: dict[str, Any] = {}
         self._tool_batch_truncated = False
 
     def _write(self, method_name: str, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
@@ -103,7 +94,7 @@ class AgentLoop:
     def run(self):
         for key in self._timings_ms:
             self._timings_ms[key] = 0.0
-        self._last_budget_metadata = {}
+        self.requests.reset()
         self._tool_batch_truncated = False
         initial_messages = [*self.state.history]
         if self.include_user_query:
@@ -118,9 +109,6 @@ class AgentLoop:
         finish_reason = "final"
         answer = ""
         awaiting_user_question: dict[str, Any] | None = None
-        context_overflow_detected = False
-        context_retry_count = 0
-        context_error_numbers: list[int] = []
         continuation_count = 0
         continuation_error = ""
 
@@ -131,13 +119,13 @@ class AgentLoop:
                 len(transcript),
             )
             compression_id = self._compression_id("auto", iteration)
-            if self._should_compact_transcript(transcript, force=False):
+            if self.requests.needs_compaction(transcript, force=False):
                 yield from self._write(
                     "write_activity",
                     "cc_agent.compression",
                     _compression_activity("started", "auto", compression_id),
                 )
-            compaction_metadata = self._compact_transcript(transcript, force=False)
+            compaction_metadata = self.requests.compact(transcript, force=False)
             compressed = compressed or bool(compaction_metadata.get("compressed"))
             compressed_reason.extend(compaction_metadata.get("compressed_reason") or [])
             truncated_observations += int(compaction_metadata.get("truncated_observations") or 0)
@@ -150,9 +138,10 @@ class AgentLoop:
                 )
 
             try:
-                prompt_messages, budget_metadata = self._build_prompt(transcript, force_final=False)
+                prompt_messages, budget_metadata = self.requests.prepare(
+                    transcript, force_final=False
+                )
             except ContextOverflowError as exc:
-                context_overflow_detected = True
                 self._set_final_result(
                     self._error_result(
                         "context_overflow",
@@ -180,7 +169,9 @@ class AgentLoop:
                 yield from self._write(
                     "write_activity",
                     "cc_agent.compression",
-                    _compression_activity("completed", "auto", budget_compression_id, budget_metadata),
+                    _compression_activity(
+                        "completed", "auto", budget_compression_id, budget_metadata
+                    ),
                 )
             event = ModelStarted(
                 iteration=iteration,
@@ -191,7 +182,9 @@ class AgentLoop:
 
             try:
                 turn = None
-                for event in self._model_events(prompt_messages, force_final=False, iteration=iteration):
+                for event in self.requests.stream(
+                    prompt_messages, transcript, force_final=False, iteration=iteration
+                ):
                     if isinstance(event, AssistantTurnCompleted):
                         turn = event.turn
                     else:
@@ -205,81 +198,17 @@ class AgentLoop:
                     type(exc).__name__,
                     exc,
                 )
-                classified = classify_error(exc)
-                if classified == "context_overflow":
-                    context_overflow_detected = True
-                    context_error_numbers.extend(extract_context_numbers(exc))
-                    context_retry_count += 1
-                    compression_id = self._compression_id("context_overflow", iteration)
-                    yield from self._write(
-                        "write_activity",
-                        "cc_agent.compression",
-                        _compression_activity("started", "context_overflow", compression_id),
+                self._set_final_result(
+                    self._error_result(
+                        classify_error(exc),
+                        exc,
+                        transcript,
+                        compressed,
+                        total_tool_calls,
+                        total_tokens,
                     )
-                    forced_metadata = self._compact_transcript(transcript, force=True)
-                    compressed = compressed or bool(forced_metadata.get("compressed"))
-                    compressed_reason.extend(forced_metadata.get("compressed_reason") or [])
-                    truncated_observations += int(forced_metadata.get("truncated_observations") or 0)
-                    summarized_messages += int(forced_metadata.get("summarized_messages") or 0)
-                    yield from self._write(
-                        "write_activity",
-                        "cc_agent.compression",
-                        {
-                            **_compression_activity("completed", "context_overflow", compression_id, forced_metadata),
-                            "context_overflow_detected": True,
-                            "context_retry_count": context_retry_count,
-                            "context_error_numbers": list(dict.fromkeys(context_error_numbers)),
-                        },
-                    )
-                    try:
-                        prompt_messages, retry_budget_metadata = self._build_prompt(
-                            transcript, force_final=False
-                        )
-                        compressed = compressed or bool(retry_budget_metadata.get("compressed"))
-                        compressed_reason.extend(retry_budget_metadata.get("compressed_reason") or [])
-                        turn = None
-                        for event in self._model_events(prompt_messages, force_final=False, iteration=iteration):
-                            if isinstance(event, AssistantTurnCompleted):
-                                turn = event.turn
-                            else:
-                                yield event
-                        if turn is None:
-                            raise RuntimeError("model stream finished without assistant turn")
-                    except Exception as retry_exc:
-                        if isinstance(retry_exc, ContextOverflowError):
-                            self._set_final_result(
-                                self._error_result(
-                                    "context_overflow",
-                                    retry_exc,
-                                    transcript,
-                                    compressed,
-                                    total_tool_calls,
-                                    total_tokens,
-                                )
-                            )
-                            return
-                        if classify_error(retry_exc) != "context_overflow":
-                            self._set_final_result(self._error_result(classify_error(retry_exc), retry_exc, transcript, compressed, total_tool_calls, total_tokens))
-                            return
-                        context_error_numbers.extend(extract_context_numbers(retry_exc))
-                        context_retry_count += 1
-                        try:
-                            turn = None
-                            for event in self._model_events(self._reactive_compact(prompt_messages), force_final=False, iteration=iteration):
-                                if isinstance(event, AssistantTurnCompleted):
-                                    turn = event.turn
-                                else:
-                                    yield event
-                            if turn is None:
-                                raise RuntimeError("model stream finished without assistant turn")
-                            compressed = True
-                            compressed_reason.append("reactive_compact")
-                        except Exception as reactive_exc:
-                            self._set_final_result(self._error_result(classify_error(reactive_exc), reactive_exc, transcript, compressed, total_tool_calls, total_tokens))
-                            return
-                else:
-                    self._set_final_result(self._error_result(classified, exc, transcript, compressed, total_tool_calls, total_tokens))
-                    return
+                )
+                return
             total_tokens += int(turn.usage.get("total_tokens") or 0)
             transcript.append(assistant_message(turn))
             event = ModelEnded(
@@ -305,7 +234,7 @@ class AgentLoop:
                     }
                     transcript.append(continuation_message)
                     try:
-                        continuation_prompt, continuation_budget = self._build_prompt(
+                        continuation_prompt, continuation_budget = self.requests.prepare(
                             transcript, force_final=True
                         )
                         compressed = compressed or bool(continuation_budget.get("compressed"))
@@ -319,10 +248,8 @@ class AgentLoop:
                             )
                         )
                         continuation_turn = None
-                        for event in self._model_events(
-                            continuation_prompt,
-                            force_final=True,
-                            iteration=iteration,
+                        for event in self.requests.stream(
+                            continuation_prompt, transcript, force_final=True, iteration=iteration
                         ):
                             if isinstance(event, AssistantTurnCompleted):
                                 continuation_turn = event.turn
@@ -350,11 +277,15 @@ class AgentLoop:
                             type(exc).__name__,
                             exc,
                         )
-                        finish_reason = turn.finish_reason or "length"
+                        finish_reason = (
+                            "context_overflow"
+                            if classify_error(exc) == "context_overflow"
+                            else turn.finish_reason or "length"
+                        )
                     break
                 if not answer.strip() and total_tool_calls > 0:
                     try:
-                        final_prompt_messages, final_budget_metadata = self._build_prompt(
+                        final_prompt_messages, final_budget_metadata = self.requests.prepare(
                             transcript, force_final=True
                         )
                     except ContextOverflowError as exc:
@@ -371,8 +302,12 @@ class AgentLoop:
                         return
                     compressed = compressed or bool(final_budget_metadata.get("compressed"))
                     compressed_reason.extend(final_budget_metadata.get("compressed_reason") or [])
-                    truncated_observations += int(final_budget_metadata.get("truncated_observations") or 0)
-                    summarized_messages += int(final_budget_metadata.get("summarized_messages") or 0)
+                    truncated_observations += int(
+                        final_budget_metadata.get("truncated_observations") or 0
+                    )
+                    summarized_messages += int(
+                        final_budget_metadata.get("summarized_messages") or 0
+                    )
                     event = ModelStarted(
                         iteration=iteration,
                         tools_enabled=False,
@@ -382,7 +317,9 @@ class AgentLoop:
                     self.events.append(event)
                     try:
                         final_turn = None
-                        for event in self._model_events(final_prompt_messages, force_final=True, iteration=iteration):
+                        for event in self.requests.stream(
+                            final_prompt_messages, transcript, force_final=True, iteration=iteration
+                        ):
                             if isinstance(event, AssistantTurnCompleted):
                                 final_turn = event.turn
                             else:
@@ -390,7 +327,16 @@ class AgentLoop:
                         if final_turn is None:
                             raise RuntimeError("model stream finished without assistant turn")
                     except Exception as exc:
-                        self._set_final_result(self._error_result(classify_error(exc), exc, transcript, compressed, total_tool_calls, total_tokens))
+                        self._set_final_result(
+                            self._error_result(
+                                classify_error(exc),
+                                exc,
+                                transcript,
+                                compressed,
+                                total_tool_calls,
+                                total_tokens,
+                            )
+                        )
                         return
                     total_tokens += int(final_turn.usage.get("total_tokens") or 0)
                     transcript.append(assistant_message(final_turn))
@@ -403,7 +349,9 @@ class AgentLoop:
                 break
 
             for tool_call in turn.tool_calls:
-                yield from self._write("write_tool_call", tool_call.id, tool_call.name, tool_call.arguments)
+                yield from self._write(
+                    "write_tool_call", tool_call.id, tool_call.name, tool_call.arguments
+                )
 
             tool_started = time.perf_counter()
             scheduled_results = self.scheduler.execute(turn.tool_calls, iteration)
@@ -418,20 +366,7 @@ class AgentLoop:
                 total_tool_calls += 1
                 for scheduled_event in scheduled.events:
                     self.events.append(scheduled_event)
-                tool_metadata = _safe_tool_metadata(result.metadata)
-                yield from self._write(
-                    "write_tool_result",
-                    result.tool_call_id,
-                    result.tool_name,
-                    result.llm_observation,
-                    output=tool_metadata.get("output"),
-                    is_error=result.is_error,
-                    metadata=tool_metadata,
-                )
-                yield from self._tool_activity_events(result)
-                for display_message in result.display_messages:
-                    if isinstance(display_message, dict) and display_message.get("type") == "dify_blob":
-                        yield display_message
+                yield from self.render_tool_result(result)
                 transcript.append(tool_message(result))
                 if result.metadata.get("inject_user_message"):
                     yield from self._write(
@@ -442,38 +377,21 @@ class AgentLoop:
                                 "toolName": result.tool_name,
                                 "toolCallId": result.tool_call_id,
                                 "skillName": result.metadata.get("skill_name"),
-                                "text": result.metadata.get("injected_message") or result.llm_observation,
+                                "text": result.metadata.get("injected_message")
+                                or result.llm_observation,
                             }
                         ),
                     )
                     transcript.append(
                         {
                             "role": "user",
-                            "content": result.metadata.get("injected_message") or result.llm_observation,
+                            "content": result.metadata.get("injected_message")
+                            or result.llm_observation,
                             "metadata": {"internal": True, "source_tool": result.tool_name},
                         }
                     )
                 if result.metadata.get("requires_user_input"):
-                    raw_question = result.metadata.get("question") or result.llm_observation
-                    if isinstance(raw_question, dict):
-                        awaiting_user_question = {
-                            **raw_question,
-                            "tool_call_id": raw_question.get("tool_call_id") or result.tool_call_id,
-                            "tool_name": raw_question.get("tool_name") or result.tool_name,
-                        }
-                    else:
-                        question_text = str(raw_question)
-                        awaiting_user_question = {
-                            "id": result.tool_call_id,
-                            "question": question_text,
-                            "text": question_text,
-                            "purpose": "clarification",
-                            "options": [],
-                            "multiSelect": False,
-                            "allowCustomInput": True,
-                            "tool_call_id": result.tool_call_id,
-                            "tool_name": result.tool_name,
-                        }
+                    awaiting_user_question = self.interrupts.question_from_result(result)
                     answer = str(awaiting_user_question["question"])
                     finish_reason = "awaiting_user"
                     break
@@ -491,7 +409,9 @@ class AgentLoop:
             finish_reason = "max_iterations"
             final_iteration = self.config.maximum_iterations + 1
             try:
-                prompt_messages, budget_metadata = self._build_prompt(transcript, force_final=True)
+                prompt_messages, budget_metadata = self.requests.prepare(
+                    transcript, force_final=True
+                )
             except ContextOverflowError as exc:
                 self._set_final_result(
                     self._error_result(
@@ -514,7 +434,9 @@ class AgentLoop:
             self.events.append(event)
             try:
                 final_turn = None
-                for event in self._model_events(prompt_messages, force_final=True, iteration=final_iteration):
+                for event in self.requests.stream(
+                    prompt_messages, transcript, force_final=True, iteration=final_iteration
+                ):
                     if isinstance(event, AssistantTurnCompleted):
                         final_turn = event.turn
                     else:
@@ -522,32 +444,59 @@ class AgentLoop:
                 if final_turn is None:
                     raise RuntimeError("model stream finished without assistant turn")
             except Exception as exc:
-                self._set_final_result(self._error_result(classify_error(exc), exc, transcript, compressed, total_tool_calls, total_tokens))
+                self._set_final_result(
+                    self._error_result(
+                        classify_error(exc),
+                        exc,
+                        transcript,
+                        compressed,
+                        total_tool_calls,
+                        total_tokens,
+                    )
+                )
                 return
             total_tokens += int(final_turn.usage.get("total_tokens") or 0)
-            answer = final_turn.text or "Maximum iteration limit reached before a final answer was produced."
+            answer = (
+                final_turn.text
+                or "Maximum iteration limit reached before a final answer was produced."
+            )
             if not final_turn.text:
                 yield from self._write("write_text_delta", answer, iteration=final_iteration)
-            event = ModelEnded(iteration=final_iteration, text=answer, tool_calls=[], force_final=True)
+            event = ModelEnded(
+                iteration=final_iteration, text=answer, tool_calls=[], force_final=True
+            )
             self.events.append(event)
-            transcript.append(assistant_message(AssistantTurn(text=answer, usage=final_turn.usage, finish_reason="max_iterations")))
+            transcript.append(
+                assistant_message(
+                    AssistantTurn(
+                        text=answer, usage=final_turn.usage, finish_reason="max_iterations"
+                    )
+                )
+            )
 
         self.state.history = sanitize_history(transcript)
         metadata = {
             "finish_reason": finish_reason,
-            "iterations": min(self.config.maximum_iterations, len([e for e in self.events if isinstance(e, LoopIteration)])),
+            "iterations": min(
+                self.config.maximum_iterations,
+                len([e for e in self.events if isinstance(e, LoopIteration)]),
+            ),
             "tool_calls": total_tool_calls,
-            "compressed": compressed,
-            "compressed_reason": list(dict.fromkeys(compressed_reason)),
-            "truncated_observations": truncated_observations,
-            "summarized_messages": summarized_messages,
+            "compressed": compressed or self.requests.recovery_compaction["compressed"],
+            "compressed_reason": list(
+                dict.fromkeys(
+                    [*compressed_reason, *self.requests.recovery_compaction["compressed_reason"]]
+                )
+            ),
+            "truncated_observations": truncated_observations
+            + self.requests.recovery_compaction["truncated_observations"],
+            "summarized_messages": summarized_messages
+            + self.requests.recovery_compaction["summarized_messages"],
             "total_tokens": total_tokens,
             "model_features": self.config.model_features or [],
             "stream_mode": self.config.stream,
             "tool_call_supported": self.config.tool_call_supported,
-            "context_overflow_detected": context_overflow_detected,
-            "context_retry_count": context_retry_count,
-            "context_error_numbers": list(dict.fromkeys(context_error_numbers)),
+            **self.requests.recovery_metadata,
             "continuation_count": continuation_count,
             "compaction_failures": int(getattr(self.summarizer, "failure_count", 0) or 0),
             "tool_batch_truncated": self._tool_batch_truncated,
@@ -570,7 +519,6 @@ class AgentLoop:
             AgentRunResult(
                 answer=answer,
                 history=self.state.history,
-                memory=self.state.memory,
                 tasks=self.state.tasks,
                 permissions=self.state.permissions,
                 active_skills=self.state.active_skills,
@@ -581,136 +529,25 @@ class AgentLoop:
             )
         )
 
-    def _build_prompt(
-        self,
-        transcript: list[dict[str, Any]],
-        force_final: bool = False,
-    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-        started = time.perf_counter()
-        tools = self._model_tools(force_final)
-        preflight_compactions = 0
-        combined_reasons: list[str] = []
-        combined_truncated = 0
-        combined_summarized = 0
-        try:
-            for attempt in range(4):
-                prompt, metadata = self.prompt_builder.build(transcript, tools=tools)
-                if not metadata.get("request_over_budget"):
-                    if preflight_compactions:
-                        metadata["compressed"] = True
-                        combined_reasons.append("request_budget")
-                    metadata["compressed_reason"] = list(
-                        dict.fromkeys([*combined_reasons, *(metadata.get("compressed_reason") or [])])
-                    )
-                    metadata["truncated_observations"] = (
-                        combined_truncated + int(metadata.get("truncated_observations") or 0)
-                    )
-                    metadata["summarized_messages"] = (
-                        combined_summarized + int(metadata.get("summarized_messages") or 0)
-                    )
-                    metadata["preflight_compactions"] = preflight_compactions
-                    self._last_budget_metadata = dict(metadata)
-                    return prompt, metadata
-                if attempt >= 3:
-                    break
-                before = (len(transcript), estimate_context_tokens(transcript), self.state.summary)
-                compacted = self._compact_transcript(transcript, force=True)
-                preflight_compactions += 1
-                combined_reasons.extend(compacted.get("compressed_reason") or [])
-                combined_truncated += int(compacted.get("truncated_observations") or 0)
-                combined_summarized += int(compacted.get("summarized_messages") or 0)
-                summary_limit = min(8192, max(512, self.context_budget.input_budget_tokens // 5))
-                self.state.summary = limit_text_to_tokens(self.state.summary, summary_limit)
-                after = (len(transcript), estimate_context_tokens(transcript), self.state.summary)
-                if after == before:
-                    break
-
-            prompt, metadata = self.prompt_builder.build(transcript, tools=tools)
-            reason = (
-                "static_context_too_large"
-                if int(metadata.get("static_context_tokens") or 0)
-                >= int(metadata.get("input_budget_tokens") or 0)
-                else "history_could_not_be_compacted_to_fit"
-            )
-            self._last_budget_metadata = dict(metadata)
-            raise ContextOverflowError(
-                "CC Agent request exceeds the configured input budget before model invocation: "
-                f"reason={reason}, estimated_tokens={metadata.get('request_estimated_tokens')}, "
-                f"input_budget_tokens={metadata.get('input_budget_tokens')}"
-            )
-        finally:
-            self._record_timing("prompt_build_ms", started)
-
-    def _compact_transcript(self, transcript: list[dict[str, Any]], force: bool = False) -> dict[str, Any]:
-        started = time.perf_counter()
-        try:
-            result = self.context_budget.compact_history(
-                transcript,
-                existing_summary=self.state.summary,
-                summarizer=self.summarizer,
-                force=force,
-                max_summary_tokens=min(8192, max(512, self.context_budget.input_budget_tokens // 5)),
-            )
-            if result.metadata.get("compressed"):
-                transcript[:] = result.messages
-                self.state.summary = result.summary
-            return result.metadata
-        finally:
-            self._record_timing("compaction_ms", started)
-
-    def _should_compact_transcript(self, transcript: list[dict[str, Any]], force: bool = False) -> bool:
-        if force:
-            return True
-        threshold = self.context_budget.input_budget_tokens
-        return len(transcript) > self.context_budget.max_history_messages or estimate_context_tokens(transcript) > threshold
+    def render_tool_result(self, result):
+        tool_metadata = _safe_tool_metadata(result.metadata)
+        yield from self._write(
+            "write_tool_result",
+            result.tool_call_id,
+            result.tool_name,
+            result.llm_observation,
+            output=tool_metadata.get("output"),
+            is_error=result.is_error,
+            metadata=tool_metadata,
+        )
+        yield from self._tool_activity_events(result)
+        # Dify already forwards its own tool artifacts; only direct MCP blobs need forwarding.
+        for display_message in result.display_messages:
+            if isinstance(display_message, dict) and display_message.get("type") == "dify_blob":
+                yield display_message
 
     def _compression_id(self, trigger: str, iteration: int) -> str:
         return f"compression:{trigger}:{iteration}"
-
-    def _invoke_model(self, prompt_messages: list[dict[str, Any]], force_final: bool) -> AssistantTurn:
-        return self.model_adapter.invoke(
-            prompt_messages,
-            self._model_tools(force_final),
-            force_final=force_final,
-        )
-
-    def _model_events(self, prompt_messages: list[dict[str, Any]], force_final: bool, iteration: int):
-        started = time.perf_counter()
-        try:
-            tools = self._model_tools(force_final)
-            if hasattr(self.model_adapter, "invoke_stream"):
-                events = self.model_adapter.invoke_stream(prompt_messages, tools, force_final=force_final)
-            else:
-                turn = self.model_adapter.invoke(prompt_messages, tools, force_final=force_final)
-                stream_chunks = turn.stream_chunks or (
-                    [TextDelta(text=turn.text)] if turn.text else []
-                )
-                events = [*stream_chunks, AssistantTurnCompleted(turn=turn)]
-            seq = 0
-            for event in events:
-                if isinstance(event, AssistantTurnCompleted):
-                    yield event
-                    continue
-                seq += 1
-                if isinstance(event, TextDelta):
-                    normalized = TextDelta(text=event.text, iteration=iteration, seq=seq)
-                    yield from self._write("write_text_delta", normalized.text, iteration=iteration)
-                    continue
-                if isinstance(event, ThinkingDelta):
-                    normalized = ThinkingDelta(text=event.text, iteration=iteration, seq=seq)
-                    yield from self._write("write_reasoning_delta", normalized.text, iteration=iteration)
-                    continue
-                yield event
-        finally:
-            self._record_timing("model_ms", started, iteration=iteration)
-
-    def _model_tools(self, force_final: bool) -> list[Any]:
-        if force_final:
-            return []
-        tools = self.registry.prompt_tools()
-        if not tools:
-            return []
-        return tools
 
     def _set_final_result(self, result: AgentRunResult) -> AgentRunResult:
         self.final_result = result
@@ -739,27 +576,6 @@ class AgentLoop:
             )
         return events
 
-    def _reactive_compact(self, prompt_messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        messages = [{"role": "system", "content": self.prompt_builder.system_prompt()}]
-        summary = limit_text_to_tokens(
-            self.state.summary,
-            min(8192, max(512, self.context_budget.input_budget_tokens // 5)),
-        )
-        if summary:
-            messages.append({"role": "system", "content": f"Conversation summary:\n{summary}"})
-        messages.append({"role": "user", "content": self.config.query})
-        prepared, metadata = self.context_budget.prepare(
-            messages,
-            tools=self._model_tools(force_final=False),
-        )
-        if metadata.get("request_over_budget"):
-            raise ContextOverflowError(
-                "Reactive compact request still exceeds the configured input budget: "
-                f"estimated_tokens={metadata.get('request_estimated_tokens')}, "
-                f"input_budget_tokens={metadata.get('input_budget_tokens')}"
-            )
-        return prepared
-
     def _record_timing(self, key: str, started: float, iteration: int = 0) -> float:
         elapsed_ms = (time.perf_counter() - started) * 1000
         self._timings_ms[key] = self._timings_ms.get(key, 0.0) + elapsed_ms
@@ -776,8 +592,9 @@ class AgentLoop:
         return {key: round(value, 3) for key, value in self._timings_ms.items()}
 
     def _budget_execution_metadata(self) -> dict[str, int | bool]:
-        metadata = self._last_budget_metadata
+        metadata = self.requests.last_budget_metadata
         return {
+            **self.requests.recovery_metadata,
             "request_estimated_tokens": int(metadata.get("request_estimated_tokens") or 0),
             "input_budget_tokens": int(metadata.get("input_budget_tokens") or 0),
             "static_context_tokens": int(metadata.get("static_context_tokens") or 0),
@@ -798,7 +615,6 @@ class AgentLoop:
         return AgentRunResult(
             answer="",
             history=self.state.history,
-            memory=self.state.memory,
             tasks=self.state.tasks,
             permissions=self.state.permissions,
             active_skills=self.state.active_skills,
@@ -806,7 +622,7 @@ class AgentLoop:
                 "finish_reason": finish_reason,
                 "iterations": len([e for e in self.events if isinstance(e, LoopIteration)]),
                 "tool_calls": total_tool_calls,
-                "compressed": compressed,
+                "compressed": compressed or self.requests.recovery_compaction["compressed"],
                 "compressed_reason": [],
                 "truncated_observations": 0,
                 "summarized_messages": 0,

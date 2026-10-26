@@ -583,18 +583,18 @@ class McpRuntimeTests(unittest.TestCase):
 
         from cc_agent.core.profiles import AGUI_STRATEGY_PROFILE, DIFY_STRATEGY_PROFILE
         from cc_agent.core.runtime import DifyAgentRuntime
-        from cc_agent.core.state_variable import decode_agent_state
+        from cc_agent.core.state_variable import AgentStateBundle, decode_agent_state, encode_agent_state
         from cc_agent.tests.mcp_test_server import mcp_server
 
         for profile in (AGUI_STRATEGY_PROFILE, DIFY_STRATEGY_PROFILE):
-            cases = ("binary", "interrupt") if profile == AGUI_STRATEGY_PROFILE else ("binary",)
+            cases = ("binary", "resume_binary", "interrupt") if profile == AGUI_STRATEGY_PROFILE else ("binary", "resume_binary")
             for case in cases:
                 with self.subTest(profile=profile.name, case=case), mcp_server() as (url, requests):
                     prompts = []
 
                     def invoke_llm(case=case, prompts=prompts, **kwargs):
                         prompts.append(kwargs)
-                        if len(prompts) > 1:
+                        if len(prompts) > 1 or case == "resume_binary":
                             return SimpleNamespace(
                                 message=SimpleNamespace(content="done", tool_calls=[]), usage=None
                             )
@@ -623,9 +623,22 @@ class McpRuntimeTests(unittest.TestCase):
                             model=SimpleNamespace(llm=SimpleNamespace(invoke=invoke_llm)),
                         )
                     )
+                    resume_parameters = {}
+                    if case == "resume_binary":
+                        call = {"id": "call-1", "name": "mcp__one__echo", "arguments": {"text": "binary"}}
+                        pending = {
+                            "role": "tool", "name": call["name"], "tool_call_id": call["id"], "content": "waiting",
+                            "metadata": {"requires_user_input": True, "pending_tool_execution": {"name": call["name"], "arguments": call["arguments"]}},
+                        }
+                        state = encode_agent_state(AgentStateBundle(
+                            history={"messages": [{"role": "assistant", "content": "", "tool_calls": [call]}, pending]},
+                            last_execution_metadata={"finish_reason": "awaiting_user", "question": {"id": call["id"]}},
+                        ))
+                        resume_parameters = {"agent_state": state.value, "user_prompt_response": {"promptId": call["id"], "answer": "allow_once"}}
                     events = list(
                         DifyAgentRuntime(strategy, strategy_profile=profile).run(
                             {
+                                **resume_parameters,
                                 "query": "hello",
                                 "stream": False,
                                 "mcp_servers_config": {
@@ -646,7 +659,7 @@ class McpRuntimeTests(unittest.TestCase):
                         and event.get("name") == "agent_state"
                     )
                     decoded = decode_agent_state(state).bundle
-                    if case == "binary":
+                    if case in {"binary", "resume_binary"}:
                         self.assertEqual(
                             [event["blob"] for event in events if event.get("type") == "dify_blob"],
                             [b"runtime image"],

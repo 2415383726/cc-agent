@@ -6,7 +6,8 @@ from typing import Any
 from .app_skills import load_app_skills
 from .builtin_skills import register_all as register_builtin_skills
 from .config import AgentRunConfig
-from .skills import filter_denied_skills, load_bundled_skills, render_skill
+from .messages import AgentState
+from .skills import filter_denied_skills, load_bundled_skills, render_skill, shlex_split
 
 
 @dataclass(slots=True)
@@ -16,11 +17,7 @@ class SkillCatalog:
     warnings: list[dict[str, Any]] = field(default_factory=list)
 
     @classmethod
-    def build(
-        cls,
-        *,
-        config: AgentRunConfig,
-    ) -> "SkillCatalog":
+    def build(cls, *, config: AgentRunConfig) -> SkillCatalog:
         bundled = load_bundled_skills(config.bundled_skill_groups)
         base = bundled
         local = register_builtin_skills()
@@ -41,6 +38,31 @@ class SkillCatalog:
 
     def all_skills(self) -> list[dict[str, Any]]:
         return [*self.prompt_skills, *self.local_skills]
+
+    def restore_active(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        visible = {str(skill.get("name") or "").casefold() for skill in self.prompt_skills}
+        return [
+            record
+            for record in records
+            if isinstance(record, dict) and str(record.get("name") or "").casefold() in visible
+        ][-8:]
+
+    @staticmethod
+    def activate(state: AgentState, name: str, args: dict[str, Any] | str) -> str:
+        skill = next((skill for skill in state.skills if skill.get("name") == name), None)
+        if skill is None:
+            raise KeyError(f"Skill not found: {name}")
+        if isinstance(args, str):
+            argv = shlex_split(args)
+            args = {
+                "_raw": args,
+                "_argv": argv,
+                **{str(i): value for i, value in enumerate(argv, 1)},
+            }
+        rendered = render_skill([skill], name, args)
+        active = [record for record in state.active_skills if record.get("name") != name]
+        state.active_skills = [*active, {"name": name, "summary": rendered[:5000]}][-8:]
+        return f"[Skill: {name}]\n{rendered}"
 
     def render(self, name: str, args: dict[str, Any] | None = None) -> str:
         return render_skill(self.prompt_skills, name, args or {})

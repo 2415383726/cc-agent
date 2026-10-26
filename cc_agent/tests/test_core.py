@@ -1,4 +1,3 @@
-import json
 import unittest
 from types import SimpleNamespace
 
@@ -12,7 +11,7 @@ from cc_agent.core.messages import AgentState, AssistantTurn, ToolCall
 from cc_agent.core.compression import DifyHistorySummarizer
 from cc_agent.core.model_adapter import DifyModelAdapter, StreamToolCallAccumulator, to_dify_prompt_messages
 from cc_agent.core.tool_adapter import ToolAdapter, normalize_tool_invoke_messages
-from cc_agent.core.tool_registry import ToolRegistry
+from cc_agent.core.tool_catalog import ToolCatalog
 
 
 def fake_tool(name: str, provider: str = "demo"):
@@ -34,7 +33,7 @@ class HistoryTests(unittest.TestCase):
                 "tool_calls": [
                     {
                         "id": "call_1",
-                        "name": "MemorySave",
+                        "name": "TaskCreate",
                         "arguments": {"key": "topic", "value": "dify"},
                     }
                 ],
@@ -42,7 +41,7 @@ class HistoryTests(unittest.TestCase):
             {
                 "role": "tool",
                 "tool_call_id": "call_1",
-                "name": "MemorySave",
+                "name": "TaskCreate",
                 "content": "saved",
             },
             {
@@ -81,7 +80,7 @@ class StreamToolCallAccumulatorTests(unittest.TestCase):
                     "index": 0,
                     "id": "",
                     "function": {
-                        "name": "Memory",
+                        "name": "Task",
                         "arguments": "{\"query\":\"di",
                     },
                 }
@@ -92,7 +91,7 @@ class StreamToolCallAccumulatorTests(unittest.TestCase):
                 {
                     "index": 0,
                     "function": {
-                        "name": "Search",
+                        "name": "List",
                         "arguments": "fy\"}",
                     },
                 }
@@ -102,7 +101,7 @@ class StreamToolCallAccumulatorTests(unittest.TestCase):
         calls = acc.finalize()
 
         self.assertEqual(calls[0].id, "call_0")
-        self.assertEqual(calls[0].name, "MemorySearch")
+        self.assertEqual(calls[0].name, "TaskList")
         self.assertEqual(calls[0].arguments, {"query": "dify"})
 
     def test_accepts_cumulative_arguments_and_preserves_raw_invalid_json(self):
@@ -177,7 +176,7 @@ class StreamToolCallAccumulatorTests(unittest.TestCase):
                             SimpleNamespace(
                                 index=0,
                                 id="call_1",
-                                function=SimpleNamespace(name="MemorySearch", arguments='{"query":"dify"}'),
+                                function=SimpleNamespace(name="TaskList", arguments='{"query":"dify"}'),
                             )
                         ],
                     )
@@ -189,7 +188,7 @@ class StreamToolCallAccumulatorTests(unittest.TestCase):
         turn = events[-1].turn
 
         self.assertEqual(turn.reasoning_content, "abc")
-        self.assertEqual(turn.tool_calls[0].name, "MemorySearch")
+        self.assertEqual(turn.tool_calls[0].name, "TaskList")
         self.assertEqual(turn.tool_calls[0].arguments, {"query": "dify"})
 
     def test_blocking_collector_separates_thinking_from_text(self):
@@ -452,7 +451,7 @@ class ToolMessageNormalizationTests(unittest.TestCase):
 
 
 class InternalToolTests(unittest.TestCase):
-    def test_internal_tools_update_memory_tasks_and_render_skills(self):
+    def test_internal_tools_update_tasks_and_render_skills(self):
         state = AgentState(
             skills=[
                 {
@@ -463,18 +462,14 @@ class InternalToolTests(unittest.TestCase):
                     "source": "inline",
                 }
             ],
-            memory=[],
             tasks=[],
         )
         executor = InternalToolExecutor(state)
 
-        memory_result = executor.execute("MemorySave", {"key": "project", "value": "native claws"})
         skill_result = executor.execute("Skill", {"name": "brief", "args": {"audience": "architects", "input": "loop"}})
         task_result = executor.execute("TaskCreate", {"title": "design loop", "status": "open"})
         executor.execute("TaskUpdate", {"id": task_result.metadata["task"]["id"], "status": "done"})
 
-        self.assertFalse(memory_result.is_error)
-        self.assertEqual(state.memory[0]["key"], "project")
         self.assertEqual(skill_result.llm_observation, "Skill brief loaded.")
         self.assertTrue(skill_result.metadata["inject_user_message"])
         self.assertIn("Summarize for architects: loop", skill_result.metadata["injected_message"])
@@ -488,7 +483,6 @@ class InternalToolTests(unittest.TestCase):
                 {"name": "status", "kind": "local", "description": "查看状态", "handler": lambda s, a: "ok"},
                 {"name": "brief", "kind": "prompt", "description": "brief", "body": "Brief for {{topic}} with $ARGUMENTS.", "source": "inline"},
             ],
-            memory=[],
             tasks=[],
         )
         executor = InternalToolExecutor(state)
@@ -506,10 +500,10 @@ class InternalToolTests(unittest.TestCase):
 
 class RegistryAndBudgetTests(unittest.TestCase):
     def test_external_tool_conflicts_are_namespaced_without_overriding_internal_tools(self):
-        registry = ToolRegistry.create(external_tools=[fake_tool("MemorySave", "web"), fake_tool("Search", "web")])
+        registry = ToolCatalog.create(external_tools=[fake_tool("TaskCreate", "web"), fake_tool("Search", "web")])
 
-        self.assertEqual(registry.resolve("MemorySave").kind, "internal")
-        self.assertEqual(registry.resolve("dify__web__MemorySave").kind, "external")
+        self.assertEqual(registry.resolve("TaskCreate").kind, "internal")
+        self.assertEqual(registry.resolve("dify__web__TaskCreate").kind, "external")
         self.assertEqual(registry.resolve("Search").kind, "external")
 
     def test_budget_truncates_large_observations_without_orphaning_tool_pairs(self):
@@ -556,7 +550,7 @@ class LoopTests(unittest.TestCase):
             maximum_iterations=1,
         )
         state = AgentState()
-        registry = ToolRegistry.create(
+        registry = ToolCatalog.create(
             external_tools=[{"tool_name": "get_time", "provider_id": "time_provider"}],
             external_prompt_tools=[external_prompt_tool],
         )
@@ -587,8 +581,8 @@ class LoopTests(unittest.TestCase):
                         tool_calls=[
                             ToolCall(
                                 id="call_1",
-                                name="MemorySave",
-                                arguments={"key": "topic", "value": "dify"},
+                                name="TaskCreate",
+                                arguments={"subject": "record project"},
                             )
                         ],
                     )
@@ -596,7 +590,7 @@ class LoopTests(unittest.TestCase):
 
         config = AgentRunConfig(query="记住这个项目", instruction="你是系统助手", maximum_iterations=3)
         state = AgentState()
-        registry = ToolRegistry.create()
+        registry = ToolCatalog.create()
         loop = AgentLoop(
             config=config,
             state=state,
@@ -610,7 +604,6 @@ class LoopTests(unittest.TestCase):
         self.assertEqual(result.answer, "已记录。")
         tool_messages = [m for m in result.history if m["role"] == "tool"]
         self.assertEqual(tool_messages[0]["tool_call_id"], "call_1")
-        self.assertEqual(state.memory[0]["key"], "topic")
 
     def test_loop_forces_final_answer_after_empty_post_tool_turn(self):
         calls = []
@@ -624,7 +617,7 @@ class LoopTests(unittest.TestCase):
                         tool_calls=[
                             ToolCall(
                                 id="call_1",
-                                name="MemorySearch",
+                                name="TaskList",
                                 arguments={"query": "上一个问题"},
                             )
                         ],
@@ -634,8 +627,8 @@ class LoopTests(unittest.TestCase):
                 return AssistantTurn(text="你的上一个问题是：今天星期几？")
 
         config = AgentRunConfig(query="我上一个问题是什么", instruction="你是系统助手", maximum_iterations=3)
-        state = AgentState(memory=[{"key": "last_question", "value": "今天星期几？"}])
-        registry = ToolRegistry.create()
+        state = AgentState()
+        registry = ToolCatalog.create()
         loop = AgentLoop(
             config=config,
             state=state,

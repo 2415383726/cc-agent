@@ -10,7 +10,7 @@ from cc_agent.core.skills import list_skills, render_skill
 from cc_agent.core.skill_runtime import (
     SkillRuntime,
 )
-from cc_agent.core.runtime import _prompt_skill_user_message
+from cc_agent.core.skill_catalog import SkillCatalog
 
 
 class SkillRegistryTests(unittest.TestCase):
@@ -304,16 +304,14 @@ Build documents for $ARGUMENTS[0].
         self.assertNotIn("Before\nSHOULD_NOT_RUN\nAfter", injected)
 
     def test_slash_prompt_skill_does_not_execute_dynamic_shell_blocks(self):
-        injected = _prompt_skill_user_message(
-            {
+        state = AgentState(skills=[{
                 "name": "demo",
                 "description": "Demo",
                 "body": "Before\n!`Write-Output SHOULD_NOT_RUN`\nAfter",
                 "resources": {},
                 "shell": "powershell",
-            },
-            "",
-        )
+            }])
+        injected = SkillCatalog.activate(state, "demo", "")
 
         self.assertIn("!`Write-Output SHOULD_NOT_RUN`", injected)
         self.assertNotIn("Before\nSHOULD_NOT_RUN\nAfter", injected)

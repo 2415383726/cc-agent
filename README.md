@@ -1,6 +1,6 @@
 # CC Agent
 
-CC Agent 是 Dify Agent Strategy 插件，提供工具调用、技能、记忆、任务和跨轮会话状态。会话状态统一通过 Dify 的 `agent_state` 变量流转；文件读取、代码执行、检索和文件生成由 Dify 注入的工具或配置的远程 MCP 服务提供。
+CC Agent 是 Dify Agent Strategy 插件，提供工具调用、技能、任务和跨轮会话状态。会话状态统一通过 Dify 的 `agent_state` 变量流转；文件读取、代码执行、检索和文件生成由 Dify 注入的工具或配置的远程 MCP 服务提供。
 
 ## 项目结构
 
@@ -17,7 +17,10 @@ Dify AgentStrategy
        -> SkillCatalog：内置技能 + app_skills_yaml
        -> ToolCatalog：内部认知工具 + Dify 外部工具 + 远程 MCP 工具
        -> ProtocolRenderer
-  -> AgentLoop：上下文预算、模型调用、工具串行调度、权限与结果预算
+  -> AgentLoop：编排模型轮次与工具结果配对
+       -> ModelRequests：请求预算、压缩与一次溢出重试
+       -> UserInterrupts：确认、回答匹配与中断恢复
+       -> SerialToolScheduler：策略检查、串行执行与结果预算
   -> DifyStateBackend：编码新的 agent_state
   -> 输出最终结果和 state_summary
 ```
@@ -66,12 +69,14 @@ Dify AgentStrategy
 
 ## 会话状态
 
-`agent_state` 使用 `ccagent-state:v1:gzip-base64:` 前缀，包含历史与摘要、记忆、任务、工具授权、已加载技能和上一轮执行元信息。编码器会按 Dify 对话变量约 190KB 的限制压缩或裁剪状态。
+`agent_state` 使用 `ccagent-state:v1:gzip-base64:` 前缀，包含历史与摘要、任务、工具授权、已加载技能和上一轮执行元信息。编码器会按 Dify 对话变量约 190KB 的限制压缩或裁剪状态。
 
 输出还包含：
 
-- `state_summary`：历史、记忆、任务数量及等待用户、结束原因等只读摘要，不用于恢复状态。
+- `state_summary`：历史、任务数量及等待用户、结束原因等只读摘要，不用于恢复状态。
 - `state_ref`：`backend=conversation_variable` 的状态元信息，包含会话标识、版本和保存状态。前端可用它恢复会话标识。
+
+`state_summary` 根据实际保存的压缩快照生成。会话授权只免除重复确认，仍受工具策略和服务端业务权限限制；批准的待执行工具也经过相同调度检查。
 
 上下文溢出时先压缩历史再重试一次。工具失败会生成配对的错误 observation，每个 assistant tool call 都必须在下一次模型调用前得到 tool result。
 
@@ -82,13 +87,16 @@ Dify AgentStrategy
 内部工具：
 
 - 技能：`SkillList`、`Skill`、`SkillReadResource`。
-- 记忆：`MemoryList`、`MemorySearch`、`MemorySave`、`MemoryDelete`。
 - 任务：`TaskCreate`、`TaskUpdate`、`TaskGet`、`TaskList`。
 - AG-UI 交互：`UserPrompt`。
 
-用户命令包括 `/help`、`/status`、`/context`、`/cost`、`/compact`、`/reset`，以及两个现有的界面演示命令 `/a2ui-demo`、`/weekly-report-card`。
+用户命令包括 `/help`、`/status`、`/context`、`/cost`、`/compact`、`/reset`。
 
-内部工具只处理认知与会话状态。外部文件、执行、搜索和浏览能力由 Dify 工具或配置的远程 MCP 服务提供，返回的文字、JSON、图片、链接和 blob 仍按原有协议展示。
+内部工具只处理认知与会话状态。外部文件、执行、搜索和浏览能力由 Dify 工具或配置的远程 MCP 服务提供。Dify 工具返回重复两半的结果时继续按语义去重，JSON 键顺序不同也保留一份。Dify 注入工具的文件、图片、链接等产物继续沿用原输出路径，插件不额外转发；直连 MCP 的 blob 由插件转发，包括批准中断后的执行结果。
+
+`SkillCatalog` 统一技能选择、恢复和激活；旧会话的已激活技能仍受当前策略与 denylist 限制。slash 与模型 `Skill` 调用使用同一激活路径，资源仍通过 `SkillReadResource` 按需读取。
+
+前端 `runStream.ts` 统一解释原生 AG-UI 和 Dify fallback 运行流，保留原生事件字段、附件及中断。`conversationCoordinator.ts` 管理会话/thread 关联、历史加载请求和过期结果，切换期间不会把消息发送给旧 clone；不自动恢复上次会话。
 
 ## MCP 工具
 
@@ -126,6 +134,8 @@ Dify 在调用插件之前完成变量替换，插件不再解释模板。通过
 
 ## 升级说明
 
+0.0.4 移除四个 Memory 工具及 `/a2ui-demo`、`/weekly-report-card`，保留任务工具。旧 v1 状态中的 `memory` 在加载时忽略，下一次保存时移除；历史、任务、授权、已加载技能和待处理中断继续恢复。升级前请保存仍需要的旧记忆数据。该取舍见 [ADR-0003](docs/adr/0003-agent-feature-scope.md)。
+
 MinIO 模式及其配置参数 `capability_mode`、`storage` 已移除。工作区、内置文件 CRUD、`run_python`、`SkillRunScript`、`SkillInstall`、`SkillRemove` 和 `/skill` 管理命令一并撤除。
 
 升级旧工作流时，请重新配置节点，移除旧参数并接好 `agent_state` 对话变量。运行时不再读取旧存储参数，也不提供模式兼容或远端状态迁移；原 MinIO 桶内数据不会被访问或删除。需要的文件和执行能力请改为 Dify 外部工具。
@@ -146,6 +156,7 @@ python -B -m unittest discover -s cc_agent/tests
 cd copilotkit-dify
 npm install
 npm run test
+npx tsc --noEmit
 npm run build
 ```
 
@@ -157,4 +168,4 @@ python cc_agent/scripts/build_offline_package.py
 
 脚本验证 Linux amd64/arm64 的离线依赖解析，再生成 `cc_agent/dist/*.difypkg`。更新依赖时需同时维护依赖声明、锁文件和离线 wheels。
 
-手工验收：连续两轮传递 `agent_state`，确认记忆和任务保留；调用一个 Dify 外部工具并检查结果展示；在 AG-UI 中完成一次 `UserPrompt` 中断与恢复；确认 Dify blob 附件可展示和下载。
+手工验收：连续两轮传递 `agent_state`，确认任务和授权保留；调用一个 Dify 外部工具并检查结果展示；在 AG-UI 中完成一次 `UserPrompt` 中断与恢复；确认 Dify blob 附件可展示和下载。

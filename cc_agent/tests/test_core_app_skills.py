@@ -17,7 +17,7 @@ class AppSkillsTests(unittest.TestCase):
   description: Summarize sales weekly reports
   when_to_use: Use for sales reports
   argument_hint: raw weekly notes
-  allowed_tools: [MemorySearch, TaskList]
+  allowed_tools: [TaskGet, TaskList]
   instructions: |
     You are a sales report assistant.
     Include progress, risks, and next steps.
@@ -35,7 +35,7 @@ class AppSkillsTests(unittest.TestCase):
         self.assertEqual(skill["description"], "Summarize sales weekly reports")
         self.assertEqual(skill["when_to_use"], "Use for sales reports")
         self.assertEqual(skill["argument_hint"], "raw weekly notes")
-        self.assertEqual(skill["allowed_tools"], ["MemorySearch", "TaskList"])
+        self.assertEqual(skill["allowed_tools"], ["TaskGet", "TaskList"])
         self.assertEqual(skill["kind"], "prompt")
         self.assertEqual(skill["source"], "app")
         self.assertIn("sales report assistant", skill["body"])
@@ -47,7 +47,7 @@ class AppSkillsTests(unittest.TestCase):
 - name: policy-explainer
   description: Explain policies
   allowed_tools:
-    - MemorySearch
+    - TaskGet
     - TaskList
   instructions: |
     Explain the policy clearly.
@@ -55,7 +55,7 @@ class AppSkillsTests(unittest.TestCase):
         )
 
         self.assertEqual(snapshot.warnings, [])
-        self.assertEqual(snapshot.skills[0]["allowed_tools"], ["MemorySearch", "TaskList"])
+        self.assertEqual(snapshot.skills[0]["allowed_tools"], ["TaskGet", "TaskList"])
 
     def test_skips_invalid_and_conflicting_skills(self):
         snapshot = load_app_skills(

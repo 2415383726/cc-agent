@@ -142,7 +142,7 @@ function normalizeInterruptField(raw: any): InterruptField | null {
 
 function normalizeOptions(raw: any): InterruptOption[] {
   if (!Array.isArray(raw)) return []
-  return raw.map((option: any) => {
+  return raw.map((option: any): InterruptOption | null => {
     if (typeof option === 'string') return { label: option, value: option, description: '' }
     const label = String(option?.label || option?.text || option?.value || '').trim()
     if (!label) return null

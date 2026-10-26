@@ -18,7 +18,6 @@ from .state_variable import (
 @dataclass(slots=True)
 class StateLoad:
     history_state: Any
-    memory: list[dict[str, Any]]
     tasks: list[dict[str, Any]]
     permissions: dict[str, Any]
     active_skills: list[dict[str, Any]]
@@ -30,7 +29,6 @@ class StateLoad:
     def to_runtime_dict(self) -> dict[str, Any]:
         return {
             "history_state": self.history_state,
-            "memory": self.memory,
             "tasks": self.tasks,
             "permissions": self.permissions,
             "active_skills": self.active_skills,
@@ -67,7 +65,6 @@ class DifyStateBackend:
             return empty_state_load("empty")
         return StateLoad(
             history_state=load_history(loaded.history_payload),
-            memory=loaded.memory,
             tasks=loaded.tasks,
             permissions=loaded.permissions,
             active_skills=loaded.active_skills,
@@ -76,21 +73,29 @@ class DifyStateBackend:
             previous_revision=loaded.revision,
         )
 
-    def commit(self, result: AgentRunResult, *, expected_revision: int | None = None) -> list[dict[str, Any]]:
+    def commit(
+        self, result: AgentRunResult, *, expected_revision: int | None = None
+    ) -> list[dict[str, Any]]:
         bundle = bundle_from_result(result, revision=int(expected_revision or 0))
         save_result = encode_agent_state(bundle)
-        state_ref = save_result.to_state_ref(conversation_id=self.state_id, loaded_from="conversation_variable")
+        state_ref = save_result.to_state_ref(
+            conversation_id=self.state_id, loaded_from="conversation_variable"
+        )
         result.state_ref = state_ref
         result.emit_inline_state = self.config.emit_inline_state or not save_result.persisted
-        result.state_summary = state_summary(
-            bundle_from_parts(
-                revision=save_result.revision,
-                history=bundle.history,
-                memory=bundle.memory,
-                tasks=bundle.tasks,
-                permissions=bundle.permissions,
-                active_skills=bundle.active_skills,
-                last_execution_metadata=bundle.last_execution_metadata,
+        saved = decode_agent_state(save_result.value) if save_result.persisted else None
+        result.state_summary = (
+            state_summary(saved.bundle)
+            if saved and not saved.error
+            else state_summary(
+                bundle_from_parts(
+                    revision=save_result.revision,
+                    history=bundle.history,
+                    tasks=bundle.tasks,
+                    permissions=bundle.permissions,
+                    active_skills=bundle.active_skills,
+                    last_execution_metadata=bundle.last_execution_metadata,
+                )
             )
         )
         result.encoded_agent_state = save_result.value
@@ -101,7 +106,6 @@ class DifyStateBackend:
 def empty_state_load(loaded_from: str = "temporary") -> StateLoad:
     return StateLoad(
         history_state=load_history(None),
-        memory=[],
         tasks=[],
         permissions={},
         active_skills=[],
@@ -118,7 +122,6 @@ def bundle_from_result(result: AgentRunResult, revision: int = 0) -> AgentStateB
             "summary": result.summary or "",
             "version": result.history_schema_version,
         },
-        memory=result.memory,
         tasks=result.tasks,
         permissions=result.permissions,
         active_skills=result.active_skills,

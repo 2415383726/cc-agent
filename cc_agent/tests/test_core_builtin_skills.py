@@ -8,7 +8,7 @@ from cc_agent.core.messages import AgentState
 class BuiltinSkillsTests(unittest.TestCase):
     def test_register_all_returns_expected_local_skills(self):
         skills = register_all()
-        self.assertEqual(len(skills), 8)
+        self.assertEqual(len(skills), 6)
         names = [s["name"] for s in skills]
         self.assertEqual(
             names,
@@ -19,8 +19,6 @@ class BuiltinSkillsTests(unittest.TestCase):
                 "cost",
                 "compact",
                 "reset",
-                "a2ui-demo",
-                "weekly-report-card",
             ],
         )
         for skill in skills:
@@ -32,13 +30,11 @@ class BuiltinSkillsTests(unittest.TestCase):
         skills = {s["name"]: s for s in register_all()}
         state = AgentState(
             history=[{"role": "user", "content": "hi"}],
-            memory=[{"key": "project", "content": "cc-agent"}],
             tasks=[{"id": "1", "subject": "ship"}],
         )
         result = skills["status"]["handler"](state, "")
         self.assertIn("history messages", result)
         self.assertIn("1", result)
-        self.assertIn("memory records", result)
 
     def test_context_handler_reports_history_and_summary(self):
         skills = {s["name"]: s for s in register_all()}
@@ -82,7 +78,6 @@ class BuiltinSkillsTests(unittest.TestCase):
         state = AgentState(
             history=[{"role": "user", "content": "old"}],
             summary="old summary",
-            memory=[{"key": "old"}],
             tasks=[{"id": "old-task"}],
         )
 
@@ -91,7 +86,6 @@ class BuiltinSkillsTests(unittest.TestCase):
         self.assertIn("State reset", result)
         self.assertEqual(state.history, [])
         self.assertEqual(state.summary, "")
-        self.assertEqual(state.memory, [])
         self.assertEqual(state.tasks, [])
 
     def test_help_handler_lists_all_skills(self):
@@ -113,40 +107,7 @@ class BuiltinSkillsTests(unittest.TestCase):
         names = [s["name"] for s in skills]
         self.assertNotIn("nonexistent", names)
 
-    def test_a2ui_demo_handler_returns_text_and_events_payload(self):
-        skills = {s["name"]: s for s in register_all()}
 
-        result = skills["a2ui-demo"]["handler"](AgentState(), "")
-
-        self.assertIsInstance(result, dict)
-        self.assertIn("text", result)
-        self.assertIn("events", result)
-        self.assertEqual(len(result["events"]), 1)
-        self.assertEqual(result["events"][0]["activity_type"], "a2ui-surface")
-        operations = result["events"][0]["activity"]["a2ui_operations"]
-        self.assertEqual(operations[0]["version"], "v0.9")
-        self.assertIn("createSurface", operations[0])
-        self.assertIn("updateComponents", operations[1])
-        self.assertIn("updateDataModel", operations[2])
-
-    def test_weekly_report_card_handler_returns_filled_a2ui_card(self):
-        skills = {s["name"]: s for s in register_all()}
-
-        result = skills["weekly-report-card"]["handler"](
-            AgentState(),
-            "Completed CopilotKit A2UI validation; fixed interrupt; next week use a real weekly report.",
-        )
-
-        self.assertIsInstance(result, dict)
-        self.assertIn("text", result)
-        self.assertIn("events", result)
-        event = result["events"][0]
-        self.assertEqual(event["activity_type"], "a2ui-surface")
-        components = event["activity"]["a2ui_operations"][1]["updateComponents"]["components"]
-        text_values = [component.get("text") for component in components if component.get("component") == "Text"]
-        self.assertIn("Weekly Work Report", text_values)
-        self.assertTrue(any("Completed CopilotKit A2UI validation" in str(value) for value in text_values))
-        self.assertFalse(any(isinstance(value, dict) and "path" in value for value in text_values))
 
 
 if __name__ == "__main__":

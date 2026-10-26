@@ -129,4 +129,14 @@ describe('submitLauncherMessage', () => {
     expect(runAgent).not.toHaveBeenCalled()
     expect(openDrawer).not.toHaveBeenCalled()
   })
+  it('does not send to an earlier agent if preparing the new conversation was cancelled', async () => {
+    const addMessage = vi.fn()
+    const runAgent = vi.fn()
+    const submitted = await submitLauncherMessage({ text: 'hello', agent: { addMessage }, runAgent,
+      openDrawer: vi.fn(), prepareConversation: async () => undefined })
+    expect(submitted).toBe(false)
+    expect(addMessage).not.toHaveBeenCalled()
+    expect(runAgent).not.toHaveBeenCalled()
+  })
+
 })

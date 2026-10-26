@@ -6,11 +6,10 @@ from dataclasses import dataclass
 
 from .guards import ToolGuard
 from .internal_events import InternalEvent, ToolCompleted, ToolStarted
+from .interrupts import UserInterrupts
 from .messages import ToolCall, ToolResult
-from .permissions import PermissionManager
 from .result_budget import ResultBudget
 from .tool_adapter import ToolAdapter
-
 
 logger = logging.getLogger(__name__)
 SLOW_TOOL_THRESHOLD_MS = 2000.0
@@ -29,27 +28,29 @@ class SerialToolScheduler:
         tool_adapter: ToolAdapter,
         result_budget: ResultBudget | None = None,
         guard: ToolGuard | None = None,
-        permission_manager: PermissionManager | None = None,
+        interrupts: UserInterrupts | None = None,
     ):
         self.tool_adapter = tool_adapter
         self.result_budget = result_budget or ResultBudget()
         self.guard = guard or ToolGuard()
-        self.permission_manager = permission_manager
+        self.interrupts = interrupts
 
     def execute(self, tool_calls: list[ToolCall], iteration: int) -> list[ScheduledToolResult]:
         scheduled: list[ScheduledToolResult] = []
         for tool_call in tool_calls:
             total_started = time.perf_counter()
             events = [
-                ToolStarted(iteration=iteration, tool_call_id=tool_call.id, tool_name=tool_call.name)
+                ToolStarted(
+                    iteration=iteration, tool_call_id=tool_call.id, tool_name=tool_call.name
+                )
             ]
-            permission_started = time.perf_counter()
-            result = self.permission_manager.before_call(tool_call) if self.permission_manager else None
-            permission_ms = (time.perf_counter() - permission_started) * 1000
             guard_started = time.perf_counter()
-            if result is None:
-                result = self.guard.before_call(tool_call)
+            result = self.guard.before_call(tool_call)
             guard_ms = (time.perf_counter() - guard_started) * 1000
+            permission_started = time.perf_counter()
+            if result is None and self.interrupts is not None:
+                result = self.interrupts.before_call(tool_call)
+            permission_ms = (time.perf_counter() - permission_started) * 1000
             execution_started = time.perf_counter()
             if result is None:
                 result = self.tool_adapter.execute(tool_call)

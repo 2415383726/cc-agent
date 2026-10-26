@@ -1,7 +1,8 @@
+from cc_agent.core.interrupts import UserInterrupts
 import unittest
 from types import SimpleNamespace
 
-from cc_agent.core.messages import AgentRunResult
+from cc_agent.core.messages import AgentRunResult, AgentState
 from cc_agent.core.runtime import DifyAgentRuntime
 from cc_agent.core import runtime as runtime_module
 from cc_agent.core.state_variable import AgentStateBundle, encode_agent_state
@@ -28,7 +29,6 @@ class RuntimeAgUiBoundaryTests(unittest.TestCase):
                 self.final_result = AgentRunResult(
                     answer="ok",
                     history=[{"role": "assistant", "content": "ok"}],
-                    memory=[],
                     tasks=[],
                     execution_metadata={"finish_reason": "final"},
                 )
@@ -70,7 +70,6 @@ class RuntimeAgUiBoundaryTests(unittest.TestCase):
                 self.final_result = AgentRunResult(
                     answer="ok",
                     history=[],
-                    memory=[],
                     tasks=[],
                     execution_metadata={"finish_reason": "final"},
                 )
@@ -110,7 +109,6 @@ class RuntimeAgUiBoundaryTests(unittest.TestCase):
                 self.final_result = AgentRunResult(
                     answer="ok",
                     history=state.history,
-                    memory=state.memory,
                     tasks=state.tasks,
                     execution_metadata={"finish_reason": "final"},
                     summary=state.summary,
@@ -149,13 +147,13 @@ class RuntimeAgUiBoundaryTests(unittest.TestCase):
             },
         }]
         writer = runtime_module._make_writer("agui", "conv-1", "run-1")
-        events = runtime_module._permission_decision_activities(writer, history)
+        events = UserInterrupts(AgentState(history=history)).decision_activities(writer)
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["activityType"], "cc_agent.permission_decision")
         self.assertEqual(events[0]["content"], {
             "toolName": "read_file", "decision": "allow_conversation", "scope": "conversation",
         })
-        self.assertEqual(runtime_module._permission_decision_activities(writer, history), [])
+        self.assertEqual(UserInterrupts(AgentState(history=history)).decision_activities(writer), [])
 
     def test_runtime_loads_state_from_input_agent_state(self):
         captured = {}
@@ -167,11 +165,10 @@ class RuntimeAgUiBoundaryTests(unittest.TestCase):
                     "summary": "saved summary",
                     "version": 1,
                 },
-                memory=[{"key": "project", "content": "cc-agent"}],
                 tasks=[{"id": "task-1", "subject": "stabilize"}],
                 permissions={"schema_version": 1, "allowed_tools": {"run_python": "conversation"}},
                 last_execution_metadata={"finish_reason": "final"},
-                active_skills=[{"name": "xlsx-guide", "summary": "spreadsheet work"}],
+                active_skills=[{"name": "answers-ui", "summary": "spreadsheet work"}],
             )
         )
 
@@ -185,7 +182,6 @@ class RuntimeAgUiBoundaryTests(unittest.TestCase):
                 self.final_result = AgentRunResult(
                     answer="ok",
                     history=state.history,
-                    memory=state.memory,
                     tasks=state.tasks,
                     permissions=state.permissions,
                     active_skills=state.active_skills,
@@ -219,10 +215,9 @@ class RuntimeAgUiBoundaryTests(unittest.TestCase):
 
         self.assertEqual(captured["state"].history[0]["content"], "from saved variable")
         self.assertEqual(captured["state"].summary, "saved summary")
-        self.assertEqual(captured["state"].memory[0]["key"], "project")
         self.assertEqual(captured["state"].tasks[0]["id"], "task-1")
         self.assertEqual(captured["state"].permissions["allowed_tools"]["run_python"], "conversation")
-        self.assertEqual(captured["state"].active_skills[0]["name"], "xlsx-guide")
+        self.assertEqual(captured["state"].active_skills[0]["name"], "answers-ui")
         self.assertEqual(run_finished["result"]["state_ref"]["revision"], 6)
         self.assertIn("agent_state", run_finished["result"])
         self.assertNotIn("history", run_finished["result"])

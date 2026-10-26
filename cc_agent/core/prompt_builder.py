@@ -17,11 +17,12 @@ class PromptBuilder:
         config: AgentRunConfig,
         state: AgentState,
         summarizer: Callable[[list[dict[str, Any]]], str] | None = None,
+        budget: ContextBudget | None = None,
     ):
         self.config = config
         self.state = state
         self.summarizer = summarizer
-        self.budget = ContextBudget(
+        self.budget = budget or ContextBudget(
             max_history_messages=config.max_history_messages,
             max_observation_chars=config.max_observation_chars,
             max_total_context_chars=config.resolved_context_limit or config.max_total_context_tokens,
@@ -79,12 +80,6 @@ class PromptBuilder:
                 f"  /{s['name']:<12}{s.get('description', '')}" for s in local_skills
             )
             parts.append(f"# Slash commands\nUser-only commands, not tool-callable:\n{commands_text}")
-        if self.state.memory:
-            parts.append(
-                "# Current memory\n"
-                "Use these records as durable context. Save new memory only for long-lived facts, preferences, or project decisions.\n"
-                + json.dumps(self.state.memory, ensure_ascii=False)
-            )
         visible_tasks = list_tasks(self.state.tasks)
         if visible_tasks:
             parts.append(
@@ -111,7 +106,7 @@ def _identity_section() -> str:
         "# Identity\n"
         "You are CC Agent, a general-purpose assistant running inside Dify. "
         "You help users complete practical work by combining direct answers, Dify-injected tools, "
-        "conversation state, skills, memory, and tasks."
+        "conversation state, skills and tasks."
     )
 
 
@@ -179,7 +174,7 @@ def _capabilities_section() -> str:
         "# Capabilities\n"
         "- Conversation state is stored in the Dify agent_state variable.\n"
         "- File access, code execution, and generated artifacts require a Dify-injected external tool that provides that capability.\n"
-        "- Use skills, memory, tasks, clarifying questions, and the tools available in the current tool list.\n"
+        "- Use skills, tasks, clarifying questions, and the tools available in the current tool list.\n"
         "- If no suitable file-reading tool is available, explain the limitation and ask for the relevant text."
     )
 

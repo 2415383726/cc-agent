@@ -13,7 +13,7 @@ from typing import Any, Protocol, Self
 
 from .mcp_config import McpRedactor, McpServerConfig
 from .messages import ToolCall, ToolResult
-from .tool_registry import ToolSpec
+from .tool_catalog import ToolSpec
 
 
 class McpSession(Protocol):

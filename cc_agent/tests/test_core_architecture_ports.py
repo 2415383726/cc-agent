@@ -16,7 +16,6 @@ class ArchitecturePortTests(unittest.TestCase):
         result = AgentRunResult(
             answer="done",
             history=[{"role": "user", "content": "hello"}],
-            memory=[],
             tasks=[{"id": "1", "subject": "ship task state", "status": "pending"}],
             execution_metadata={"finish_reason": "final"},
         )

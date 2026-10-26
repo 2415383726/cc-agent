@@ -28,7 +28,7 @@ logger.setLevel(logging.INFO)
 if plugin_logger_handler is not None and plugin_logger_handler not in logger.handlers:
     logger.addHandler(plugin_logger_handler)
 
-PLUGIN_DEBUG_VERSION = "0.0.3"
+PLUGIN_DEBUG_VERSION = "0.0.4"
 
 
 class BaseCCAgentStrategy(AgentStrategy):

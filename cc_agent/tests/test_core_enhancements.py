@@ -11,6 +11,7 @@ from cc_agent.core.context_budget import (
 )
 from cc_agent.core.compression import DifyHistorySummarizer
 from cc_agent.core.error_classifier import classify_error
+from cc_agent.core.interrupts import UserInterrupts
 from cc_agent.core.guards import ToolGuard, ToolGuardConfig
 from cc_agent.core.history import dump_history, load_history
 from cc_agent.core.internal_events import (
@@ -27,7 +28,7 @@ from cc_agent.core.model_stream import AssistantTurnCompleted, TextDelta
 from cc_agent.core.prompt_builder import PromptBuilder
 from cc_agent.core.result_budget import ResultBudget
 from cc_agent.core.tool_adapter import ToolAdapter
-from cc_agent.core.tool_registry import ToolRegistry
+from cc_agent.core.tool_catalog import ToolCatalog
 from cc_agent.core.tool_scheduler import SerialToolScheduler
 from cc_agent.core.runtime import DifyAgentRuntime
 from cc_agent.core import runtime as runtime_module
@@ -201,9 +202,9 @@ class BudgetAndPromptEnhancementTests(unittest.TestCase):
         loop = AgentLoop(
             config=AgentRunConfig(query="current request", maximum_iterations=1, max_history_messages=6),
             state=AgentState(history=list(initial_history)),
-            registry=ToolRegistry.create(),
+            registry=ToolCatalog.create(),
             model_adapter=FakeModel(),
-            tool_adapter=ToolAdapter(ToolRegistry.create(), AgentState()),
+            tool_adapter=ToolAdapter(ToolCatalog.create(), AgentState()),
             summarizer=lambda messages, existing_summary="": "persistent summary",
         )
         list(loop.run())
@@ -273,34 +274,10 @@ class BudgetAndPromptEnhancementTests(unittest.TestCase):
         self.assertIn("OLD SUMMARY: user chose Dify", result.summary)
         self.assertIn("NEW SUMMARY: loop stabilized", result.summary)
 
-    def test_prompt_builder_ignores_dify_memory_as_context_source(self):
-        class FakeModel:
-            def __init__(self):
-                self.seen_messages = []
-
-            def invoke(self, messages, tools, force_final=False):
-                self.seen_messages = messages
-                return AssistantTurn(text="ok")
-
-        config = AgentRunConfig(query="current", instruction="instr")
-        state = AgentState(dify_memory=[{"role": "user", "content": "dify memory"}])
-        model = FakeModel()
-        loop = AgentLoop(
-            config=config,
-            state=state,
-            registry=ToolRegistry.create(),
-            model_adapter=model,
-            tool_adapter=ToolAdapter(ToolRegistry.create(), state),
-        )
-        list(loop.run())
-        result = loop.final_result
-
-        self.assertFalse(any(m.get("content") == "dify memory" for m in model.seen_messages))
-        self.assertFalse(any(m.get("content") == "dify memory" for m in result.history))
 
     def test_prompt_builder_is_a_dedicated_component(self):
         config = AgentRunConfig(query="q", instruction="be useful")
-        state = AgentState(memory=[{"key": "project", "value": "claws"}])
+        state = AgentState(tasks=[{"id": "1", "subject": "claws", "status": "pending"}])
         prompt, metadata = PromptBuilder(config, state).build([{"role": "user", "content": "hi"}])
 
         self.assertEqual(prompt[0]["role"], "system")
@@ -376,7 +353,6 @@ class BudgetAndPromptEnhancementTests(unittest.TestCase):
         schemas = {schema["name"]: schema for schema in internal_tool_schemas()}
 
         self.assertIn("specialized workflow", schemas["Skill"]["description"])
-        self.assertIn("long-lived", schemas["MemorySave"]["description"])
         self.assertIn("multi-step", schemas["TaskCreate"]["description"])
         self.assertIn("AG-UI interrupt", schemas["UserPrompt"]["description"])
 
@@ -386,10 +362,6 @@ class BudgetAndPromptEnhancementTests(unittest.TestCase):
             "SkillList": ["Usage:", "available skills", "Do not invoke local slash commands"],
             "Skill": ["Usage:", "specialized workflow", "the next reasoning turn"],
             "SkillReadResource": ["Usage:", "referenced by the skill instructions", "Do not guess paths"],
-            "MemoryList": ["Usage:", "durable memory", "conversation state"],
-            "MemorySearch": ["Usage:", "before relying on memory", "keyword"],
-            "MemorySave": ["Usage:", "long-lived", "Do not save transient"],
-            "MemoryDelete": ["Usage:", "obsolete", "user asks"],
             "TaskCreate": ["Usage:", "When NOT to use", "3 or more distinct steps", "pending"],
             "TaskUpdate": [
                 "Usage:",
@@ -480,8 +452,8 @@ class BudgetAndPromptEnhancementTests(unittest.TestCase):
 
 class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
     def test_guard_rejects_denied_tool_with_synthetic_observation(self):
-        guard = ToolGuard(ToolGuardConfig(denylist=["MemorySave"]))
-        result = guard.before_call(ToolCall(id="call_1", name="MemorySave", arguments={}))
+        guard = ToolGuard(ToolGuardConfig(denylist=["TaskCreate"]))
+        result = guard.before_call(ToolCall(id="call_1", name="TaskCreate", arguments={}))
 
         self.assertIsNotNone(result)
         self.assertTrue(result.synthetic)
@@ -489,18 +461,18 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
         self.assertIn("rejected by policy", result.llm_observation)
 
     def test_guard_requires_confirmation_for_listed_tool(self):
-        guard = ToolGuard(ToolGuardConfig(require_confirmation=["current_time"]))
+        guard = UserInterrupts(AgentState(), confirmation_tools={"current_time"})
         result = guard.before_call(ToolCall(id="call_1", name="current_time", arguments={"timezone": "Asia/Shanghai"}))
 
         self.assertIsNotNone(result)
         self.assertTrue(result.synthetic)
         self.assertFalse(result.is_error)
         self.assertTrue(result.metadata["requires_user_input"])
-        self.assertTrue(result.metadata["confirmation_required"])
+        self.assertTrue(result.metadata["permission_required"])
         self.assertEqual(result.metadata["pending_tool_execution"]["name"], "current_time")
         self.assertEqual(result.metadata["question"]["purpose"], "permission")
-        self.assertEqual(result.metadata["question"]["options"][0]["value"], "approve")
-        self.assertEqual(result.metadata["question"]["options"][1]["value"], "deny")
+        self.assertEqual(result.metadata["question"]["options"][0]["value"], "allow_once")
+        self.assertEqual(result.metadata["question"]["options"][-1]["value"], "deny")
 
     def test_scheduler_preserves_order_and_applies_result_budget(self):
         class FakeAdapter:
@@ -564,7 +536,7 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
         adapter = FakeAdapter()
         scheduler = SerialToolScheduler(
             tool_adapter=adapter,
-            guard=ToolGuard(ToolGuardConfig(require_confirmation=["current_time"])),
+            interrupts=UserInterrupts(AgentState(), confirmation_tools={"current_time"}),
         )
 
         results = scheduler.execute(
@@ -675,22 +647,6 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
         self.assertIn("prepare data", prompt)
         self.assertNotIn("old report", prompt)
 
-    def test_memory_search_filters_type_and_orders_by_confidence(self):
-        state = AgentState(
-            memory=[
-                {"key": "low", "type": "project", "content": "dify claws", "confidence": 0.2},
-                {"key": "high", "type": "project", "content": "dify claws", "confidence": 0.9},
-                {"key": "user", "type": "user", "content": "dify claws", "confidence": 1.0},
-            ]
-        )
-        result = InternalToolExecutor(state).execute(
-            "MemorySearch",
-            {"query": "dify", "type": "project"},
-            "call_1",
-        )
-        payload = json.loads(result.llm_observation)
-
-        self.assertEqual([item["key"] for item in payload], ["high", "low"])
 
     def test_skill_list_exposes_registry_metadata_for_inline_skills(self):
         state = AgentState(
@@ -698,7 +654,7 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
                 {
                     "name": "brief",
                     "description": "Briefing",
-                    "allowed_tools": ["MemorySearch"],
+                    "allowed_tools": ["TaskList"],
                     "argument_hint": "input",
                     "model": "fast",
                     "context": ["references/brief.md"],
@@ -709,7 +665,7 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
         result = InternalToolExecutor(state).execute("SkillList", {}, "call_1")
         payload = json.loads(result.llm_observation)
 
-        self.assertEqual(payload["skills"][0]["allowed_tools"], ["MemorySearch"])
+        self.assertEqual(payload["skills"][0]["allowed_tools"], ["TaskList"])
         self.assertEqual(payload["skills"][0]["argument_hint"], "input")
         self.assertEqual(payload["skills"][0]["context"], ["references/brief.md"])
         self.assertEqual(payload["warnings"], [])
@@ -748,7 +704,7 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
                 )
 
         state = AgentState()
-        registry = ToolRegistry.create()
+        registry = ToolCatalog.create()
         loop = AgentLoop(
             config=AgentRunConfig(query="help", maximum_iterations=3),
             state=state,
@@ -801,7 +757,7 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
     def test_config_ignores_removed_tool_confirmation_list_parameter(self):
         config = AgentRunConfig.from_parameters({
             "query": "time",
-            "tool_confirmation_list": "current_time; weekday ;MemorySave",
+            "tool_confirmation_list": "current_time; weekday ;TaskCreate",
         })
 
         self.assertIsNone(config.tool_confirmation_list)
@@ -890,9 +846,9 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
         loop = AgentLoop(
             config=AgentRunConfig(query="A", maximum_iterations=1),
             state=state,
-            registry=ToolRegistry.create(),
+            registry=ToolCatalog.create(),
             model_adapter=FakeModel(),
-            tool_adapter=ToolAdapter(ToolRegistry.create(), state),
+            tool_adapter=ToolAdapter(ToolCatalog.create(), state),
             include_user_query=False,
         )
         list(loop.run())
@@ -914,7 +870,7 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
                 )
 
         state = AgentState()
-        registry = ToolRegistry.create(
+        registry = ToolCatalog.create(
             external_tools=[
                 {
                     "provider_id": "demo_provider",
@@ -938,10 +894,10 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
 
         self.assertEqual(result.execution_metadata["finish_reason"], "awaiting_user")
         self.assertEqual(result.execution_metadata["question"]["purpose"], "permission")
-        self.assertEqual(result.execution_metadata["question"]["options"][0]["value"], "approve")
-        self.assertEqual(result.execution_metadata["question"]["options"][1]["value"], "deny")
+        self.assertEqual(result.execution_metadata["question"]["options"][0]["value"], "allow_once")
+        self.assertEqual(result.execution_metadata["question"]["options"][-1]["value"], "deny")
         pending = next(message for message in result.history if message.get("tool_call_id") == "call_1")
-        self.assertTrue(pending["metadata"]["confirmation_required"])
+        self.assertTrue(pending["metadata"]["permission_required"])
 
     def test_tool_selector_dict_registers_and_invokes_as_external_tool(self):
         selector = {
@@ -961,7 +917,7 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
                 return [SimpleNamespace(type="text", message=SimpleNamespace(text="result"))]
 
         session = SimpleNamespace(tool=FakeToolSession())
-        registry = ToolRegistry.create(external_tools=[selector], external_prompt_tools=[])
+        registry = ToolCatalog.create(external_tools=[selector], external_prompt_tools=[])
         result = ToolAdapter(registry, AgentState(), session=session).execute(
             ToolCall(id="call_1", name="Search", arguments={"query": "dify"})
         )
@@ -995,7 +951,6 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
                 self.final_result = AgentRunResult(
                     answer="",
                     history=[],
-                    memory=[],
                     tasks=[],
                     execution_metadata={"finish_reason": "final"},
                 )
@@ -1045,7 +1000,6 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
                 self.final_result = AgentRunResult(
                     answer="",
                     history=[],
-                    memory=[],
                     tasks=[],
                     execution_metadata={"finish_reason": "final"},
                 )
@@ -1094,9 +1048,9 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
         loop = AgentLoop(
             config=config,
             state=state,
-            registry=ToolRegistry.create(),
+            registry=ToolCatalog.create(),
             model_adapter=FakeModel(),
-            tool_adapter=ToolAdapter(ToolRegistry.create(), state),
+            tool_adapter=ToolAdapter(ToolCatalog.create(), state),
         )
         wire_events = list(loop.run())
         result = loop.final_result
@@ -1120,7 +1074,7 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
         model = NeverModel()
         config = AgentRunConfig(query="x", max_total_context_tokens=100)
         state = AgentState()
-        registry = ToolRegistry.create()
+        registry = ToolCatalog.create()
         loop = AgentLoop(
             config=config,
             state=state,
@@ -1134,21 +1088,6 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
         self.assertEqual(model.calls, 0)
         self.assertEqual(loop.final_result.execution_metadata["finish_reason"], "context_overflow")
 
-    def test_reactive_compact_preserves_full_system_prompt(self):
-        state = AgentState(summary="short summary")
-        registry = ToolRegistry.create()
-        loop = AgentLoop(
-            config=AgentRunConfig(query="current"),
-            state=state,
-            registry=registry,
-            model_adapter=SimpleNamespace(),
-            tool_adapter=ToolAdapter(registry, state),
-        )
-
-        prompt = loop._reactive_compact([{"role": "user", "content": "old"}])
-
-        self.assertIn("# Identity", prompt[0]["content"])
-        self.assertIn("# Using tools", prompt[0]["content"])
 
     def test_length_finish_reason_continues_once_without_repeating_answer(self):
         class FakeModel:
@@ -1163,7 +1102,7 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
 
         model = FakeModel()
         state = AgentState()
-        registry = ToolRegistry.create()
+        registry = ToolCatalog.create()
         loop = AgentLoop(
             config=AgentRunConfig(query="write", maximum_iterations=2),
             state=state,
@@ -1216,9 +1155,9 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
         loop = AgentLoop(
             config=AgentRunConfig(query="now"),
             state=AgentState(history=[{"role": "user", "content": "old" * 100}]),
-            registry=ToolRegistry.create(),
+            registry=ToolCatalog.create(),
             model_adapter=model,
-            tool_adapter=ToolAdapter(ToolRegistry.create(), AgentState()),
+            tool_adapter=ToolAdapter(ToolCatalog.create(), AgentState()),
         )
         list(loop.run())
         result = loop.final_result
@@ -1226,6 +1165,7 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
         self.assertEqual(result.answer, "recovered")
         self.assertEqual(result.execution_metadata["finish_reason"], "final")
         self.assertEqual(model.calls, 2)
+        self.assertIn("# Identity", model.retry_messages[0]["content"])
         self.assertTrue(result.execution_metadata["context_overflow_detected"])
         self.assertEqual(result.execution_metadata["context_retry_count"], 1)
 
@@ -1248,9 +1188,9 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
         loop = AgentLoop(
             config=AgentRunConfig.from_parameters({"model": model_config, "query": "use tools"}),
             state=AgentState(),
-            registry=ToolRegistry.create(),
+            registry=ToolCatalog.create(),
             model_adapter=fake_model,
-            tool_adapter=ToolAdapter(ToolRegistry.create(), AgentState()),
+            tool_adapter=ToolAdapter(ToolCatalog.create(), AgentState()),
         )
         list(loop.run())
 
@@ -1276,9 +1216,9 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
         loop = AgentLoop(
             config=AgentRunConfig(query="x", maximum_iterations=1),
             state=AgentState(),
-            registry=ToolRegistry.create(),
+            registry=ToolCatalog.create(),
             model_adapter=model,
-            tool_adapter=ToolAdapter(ToolRegistry.create(), AgentState()),
+            tool_adapter=ToolAdapter(ToolCatalog.create(), AgentState()),
         )
         list(loop.run())
         result = loop.final_result
@@ -1305,9 +1245,9 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
         loop = AgentLoop(
             config=AgentRunConfig(query="x", maximum_iterations=1),
             state=AgentState(),
-            registry=ToolRegistry.create(),
+            registry=ToolCatalog.create(),
             model_adapter=FakeModel(),
-            tool_adapter=ToolAdapter(ToolRegistry.create(), AgentState()),
+            tool_adapter=ToolAdapter(ToolCatalog.create(), AgentState()),
         )
         list(loop.run())
         result = loop.final_result
@@ -1323,9 +1263,9 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
         loop = AgentLoop(
             config=AgentRunConfig(query="x"),
             state=AgentState(),
-            registry=ToolRegistry.create(),
+            registry=ToolCatalog.create(),
             model_adapter=FailingModel(),
-            tool_adapter=ToolAdapter(ToolRegistry.create(), AgentState()),
+            tool_adapter=ToolAdapter(ToolCatalog.create(), AgentState()),
         )
         list(loop.run())
         result = loop.final_result
@@ -1354,7 +1294,6 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
                     AgentRunResult(
                         answer="answer",
                         history=[],
-                        memory=[],
                         tasks=[],
                         execution_metadata={"finish_reason": "final"},
                     )
@@ -1403,7 +1342,6 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
                     AgentRunResult(
                         answer="",
                         history=[],
-                        memory=[],
                         tasks=[],
                         execution_metadata={"finish_reason": "final"},
                     )

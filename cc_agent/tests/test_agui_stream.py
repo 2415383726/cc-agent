@@ -60,7 +60,6 @@ class AgUiStreamWriterTests(unittest.TestCase):
         result = AgentRunResult(
             answer="Which account?",
             history=[],
-            memory=[],
             tasks=[],
             execution_metadata={
                 "finish_reason": "awaiting_user",

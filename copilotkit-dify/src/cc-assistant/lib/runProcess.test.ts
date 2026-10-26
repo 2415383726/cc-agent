@@ -130,6 +130,7 @@ describe('buildRunProcessGroups', () => {
     ], false, {
       result: {
         id: 'call_1',
+        fields: [],
         purpose: 'permission',
         question: 'Allow this operation to run?\nTool: run_python',
         options: [

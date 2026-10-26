@@ -8,8 +8,7 @@ if TYPE_CHECKING:
 
 from .internal_tools import InternalToolExecutor
 from .messages import AgentState, ToolCall, ToolResult
-from .tool_catalog import ToolCatalog
-from .tool_registry import ToolRegistry, ToolSpec
+from .tool_catalog import ToolCatalog, ToolSpec
 
 try:  # pragma: no cover - exercised inside Dify runtime
     from dify_plugin.entities.tool import ToolProviderType
@@ -20,35 +19,21 @@ except Exception:  # pragma: no cover
 class ToolAdapter:
     def __init__(
         self,
-        registry: ToolRegistry | ToolCatalog,
+        registry: ToolCatalog,
         state: AgentState,
         session: Any | None = None,
         skill_runtime: Any | None = None,
         mcp_provider: McpToolProvider | None = None,
     ):
-        self.catalog = registry if isinstance(registry, ToolCatalog) else None
-        self.registry = registry.registry if isinstance(registry, ToolCatalog) else registry
+        self.registry = registry
         self.state = state
         self.session = session
         self.mcp_provider = mcp_provider
         self.internal_executor = InternalToolExecutor(
-            state,
-            session=session,
-            skill_runtime=skill_runtime,
+            state, session=session, skill_runtime=skill_runtime
         )
 
     def execute(self, tool_call: ToolCall) -> ToolResult:
-        if self.catalog is not None:
-            try:
-                self.catalog.assert_available(tool_call.name)
-            except ValueError as exc:
-                return ToolResult(
-                    tool_call_id=tool_call.id,
-                    tool_name=tool_call.name,
-                    llm_observation=str(exc),
-                    is_error=True,
-                    synthetic=True,
-                )
         spec = self.registry.resolve(tool_call.name)
         if not spec:
             return ToolResult(

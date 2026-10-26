@@ -2,14 +2,9 @@ from __future__ import annotations
 
 import json
 import re
-from pathlib import Path
 from typing import Any
 
 from .skill_registry import load_bundled_skill_snapshot
-
-MAX_RESOURCE_FILE_CHARS = 4000
-MAX_RESOURCE_TOTAL_CHARS = 12000
-TEXT_ASSET_SUFFIXES = {".csv", ".html", ".json", ".md", ".text", ".txt", ".xml", ".yaml", ".yml"}
 
 
 def load_bundled_skills(groups: tuple[str, ...] | list[str] | None = None) -> list[dict[str, Any]]:
@@ -177,69 +172,3 @@ def _render_resource_index(resources: Any) -> str:
         return ""
     lines.append("Scripts are not executed automatically.")
     return "\n".join(lines)
-
-
-def _render_resource_contents(skill: dict[str, Any], resources: Any) -> str:
-    if not isinstance(resources, dict):
-        return ""
-    skill_path = str(skill.get("path") or "")
-    if not skill_path:
-        return ""
-    skill_dir = Path(skill_path).parent
-    lines = ["Bundled resource content:"]
-    total_chars = 0
-    found = False
-
-    for group in ("references", "assets"):
-        values = resources.get(group) or []
-        if not isinstance(values, list):
-            continue
-        for value in values:
-            rel_path = str(value or "")
-            if not rel_path:
-                continue
-            status, content = _read_resource_text(skill_dir, group, rel_path, MAX_RESOURCE_FILE_CHARS)
-            if total_chars >= MAX_RESOURCE_TOTAL_CHARS and content:
-                lines.append(f"### {rel_path}\n({status}: resource content budget exceeded)")
-                found = True
-                continue
-            if content:
-                remaining = MAX_RESOURCE_TOTAL_CHARS - total_chars
-                snippet = content[:remaining]
-                total_chars += len(snippet)
-                if len(snippet) < len(content):
-                    status = f"{status}; truncated by total budget"
-                lines.append(f"### {rel_path}\n{snippet}")
-                if status != "loaded":
-                    lines.append(f"({status})")
-                found = True
-            elif status:
-                lines.append(f"### {rel_path}\n{rel_path} (not loaded: {status})")
-                found = True
-
-    return "\n\n".join(lines) if found else ""
-
-
-def _read_resource_text(skill_dir: Path, group: str, rel_path: str, limit: int) -> tuple[str, str]:
-    if group == "assets" and Path(rel_path).suffix.lower() not in TEXT_ASSET_SUFFIXES:
-        return "unsupported asset type", ""
-    try:
-        root = skill_dir.resolve()
-        path = (skill_dir / rel_path).resolve()
-    except OSError:
-        return "invalid path", ""
-    try:
-        path.relative_to(root)
-    except ValueError:
-        return "outside skill directory", ""
-    if not path.is_file():
-        return "missing file", ""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        return "not utf-8 text", ""
-    except OSError as exc:
-        return f"read error: {exc}", ""
-    if len(text) > limit:
-        return f"loaded; truncated to {limit} chars", text[:limit]
-    return "loaded", text

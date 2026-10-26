@@ -29,7 +29,7 @@ class DifyHistorySummarizer:
                 "content": (
                     "Summarize prior assistant conversation state for continuation. "
                     "Preserve user goals, current task state, key decisions, tool result conclusions, "
-                    "memory/task changes, open tasks, and important memory. "
+                    "task changes, open tasks, and important conversation facts. "
                     "Do not invent details."
                 ),
             },

@@ -8,16 +8,16 @@ from uuid import uuid4
 from .config import AgentRunConfig
 from .compression import DifyHistorySummarizer
 from .loop import AgentLoop
-from .messages import AgentRunResult, AgentState, ToolCall
+from .messages import AgentRunResult, AgentState
 from .model_adapter import DifyModelAdapter
-from .permissions import PermissionManager, apply_permission_decision
+from .interrupts import UserInterrupts
 from .profiles import StrategyProfile
 from .protocol_renderer import ProtocolRenderer
 from .run_environment import RunEnvironment
 from .skill_runtime import SkillRuntime
-from .skills import filter_denied_skills, load_bundled_skills, render_skill
 from .state_backend import DifyStateBackend, empty_state_load
 from .tool_adapter import ToolAdapter
+
 try:  # pragma: no cover - only present under Dify plugin runtime
     from dify_plugin.config.logger_format import plugin_logger_handler
 except Exception:  # pragma: no cover
@@ -90,17 +90,25 @@ class DifyAgentRuntime:
         self.strategy = strategy
         self.strategy_profile = strategy_profile
 
-    def run(self, parameters: dict[str, Any], writer: Any = None) -> Generator[dict[str, Any], None, None]:
+    def run(
+        self, parameters: dict[str, Any], writer: Any = None
+    ) -> Generator[dict[str, Any], None, None]:
         """Yield protocol payloads. AG-UI events are raw dicts; Dify-native events use dify_* types."""
-        logger.info("cc_agent runtime run started: parameter_keys=%s", sorted(str(key) for key in parameters.keys()))
+        logger.info(
+            "cc_agent runtime run started: parameter_keys=%s",
+            sorted(str(key) for key in parameters.keys()),
+        )
         try:
             config = AgentRunConfig.from_parameters(
-                parameters,
-                strategy_profile=self.strategy_profile,
+                parameters, strategy_profile=self.strategy_profile
             )
         except Exception as exc:
             fallback_writer = _make_writer(
-                self.strategy_profile.output_protocol if self.strategy_profile is not None else "agui",
+                (
+                    self.strategy_profile.output_protocol
+                    if self.strategy_profile is not None
+                    else "agui"
+                ),
                 thread_id=_conversation_id_from_parameters(parameters) or "default",
                 run_id=_run_id_from_parameters(parameters),
             )
@@ -111,7 +119,11 @@ class DifyAgentRuntime:
             config.output_protocol,
             len(str(config.query or "")),
         )
-        thread_id = _conversation_id_from_parameters(parameters) or _get(self.strategy.session, "conversation_id") or "default"
+        thread_id = (
+            _conversation_id_from_parameters(parameters)
+            or _get(self.strategy.session, "conversation_id")
+            or "default"
+        )
         run_id = _run_id_from_parameters(parameters)
         writer = writer or _make_writer(
             config.output_protocol,
@@ -119,7 +131,10 @@ class DifyAgentRuntime:
             run_id=run_id,
             show_tool_calls=config.show_tool_calls,
         )
-        conversation_id = _conversation_id_from_parameters(parameters) or str(_get(self.strategy.session, "conversation_id") or "").strip()
+        conversation_id = (
+            _conversation_id_from_parameters(parameters)
+            or str(_get(self.strategy.session, "conversation_id") or "").strip()
+        )
         state_id = conversation_id
         env: RunEnvironment | None = None
 
@@ -145,7 +160,9 @@ class DifyAgentRuntime:
             assert env is not None
             loaded = env.load_state()
             if loaded.get("storage_error") and not config.state_reset:
-                yield from writer.write_run_error(str(loaded["storage_error"]), code="state_load_failed")
+                yield from writer.write_run_error(
+                    str(loaded["storage_error"]), code="state_load_failed"
+                )
                 return
             logger.info(
                 "cc_agent state loaded: conversation_id=%s state_id=%s loaded_from=%s history_count=%s has_pending_interrupt=%s storage_error=%s",
@@ -155,7 +172,8 @@ class DifyAgentRuntime:
                 len(getattr(loaded.get("history_state"), "messages", []) or []),
                 bool(
                     isinstance(loaded.get("last_execution_metadata"), dict)
-                    and loaded.get("last_execution_metadata", {}).get("finish_reason") == "awaiting_user"
+                    and loaded.get("last_execution_metadata", {}).get("finish_reason")
+                    == "awaiting_user"
                 ),
                 bool(loaded.get("storage_error")),
             )
@@ -175,34 +193,12 @@ class DifyAgentRuntime:
                 len(env.skill_catalog.warnings),
             )
             skill_runtime = SkillRuntime()
-            visible_skill_names = {
-                str(skill.get("name") or "").strip().casefold()
-                for skill in prompt_skills
-                if str(skill.get("name") or "").strip()
-            }
-            bundled_skill_names = {
-                str(skill.get("name") or "").strip().casefold()
-                for skill in load_bundled_skills()
-                if str(skill.get("name") or "").strip()
-            }
-            active_skills = [
-                skill
-                for skill in filter_denied_skills(
-                    loaded.get("active_skills") or [],
-                    config.skill_denylist,
-                )
-                if isinstance(skill, dict)
-                and (
-                    str(skill.get("name") or "").strip().casefold() not in bundled_skill_names
-                    or str(skill.get("name") or "").strip().casefold() in visible_skill_names
-                )
-            ]
+            active_skills = env.skill_catalog.restore_active(loaded.get("active_skills") or [])
             state = AgentState(
                 history=history_state.messages,
                 summary=history_state.summary,
                 history_version=history_state.version,
                 skills=prompt_skills,
-                memory=loaded["memory"],
                 tasks=loaded["tasks"],
                 permissions=loaded.get("permissions") or {},
                 active_skills=active_skills,
@@ -217,32 +213,50 @@ class DifyAgentRuntime:
                     _compression_activity("started", "manual", manual_compression_id),
                 )
             slash_result = _dispatch_slash_command(
-                config.query, state, config, all_skills,
-                summarizer=summarizer, state_id=state_id, compression_id=manual_compression_id,
+                config.query,
+                state,
+                config,
+                all_skills,
+                summarizer=summarizer,
+                state_id=state_id,
+                compression_id=manual_compression_id,
             )
             if slash_result is not None:
                 command_payload, skill_def = slash_result
                 if skill_def.get("kind") == "prompt":
-                    skill_args_text = str(command_payload.get("skill_args") or "") if isinstance(command_payload, dict) else ""
-                    injected = _prompt_skill_user_message(skill_def, skill_args_text)
+                    skill_args_text = (
+                        str(command_payload.get("skill_args") or "")
+                        if isinstance(command_payload, dict)
+                        else ""
+                    )
+                    injected = env.skill_catalog.activate(
+                        state, str(skill_def.get("name") or ""), skill_args_text
+                    )
                     state.history.append(
                         {
                             "role": "user",
                             "content": injected,
-                            "metadata": {"internal": True, "source": "slash_skill", "skill_name": skill_def.get("name")},
+                            "metadata": {
+                                "internal": True,
+                                "source": "slash_skill",
+                                "skill_name": skill_def.get("name"),
+                            },
                         }
                     )
-                    state.active_skills = [
-                        item for item in state.active_skills if item.get("name") != skill_def.get("name")
-                    ][-7:] + [{"name": str(skill_def.get("name") or ""), "summary": injected[:5000]}]
                     config.query = skill_args_text or config.query
                     slash_result = None
                 else:
                     pass
             if slash_result is not None:
                 command_payload, skill_def = slash_result
-                result_text = command_payload if isinstance(command_payload, str) else str(command_payload.get("text") or "")
-                command_events = command_payload.get("events") if isinstance(command_payload, dict) else []
+                result_text = (
+                    command_payload
+                    if isinstance(command_payload, str)
+                    else str(command_payload.get("text") or "")
+                )
+                command_events = (
+                    command_payload.get("events") if isinstance(command_payload, dict) else []
+                )
                 for event in command_events or []:
                     yield from _command_activity_events(writer, event)
                 if result_text:
@@ -250,7 +264,6 @@ class DifyAgentRuntime:
                 result = AgentRunResult(
                     answer=result_text,
                     history=state.history,
-                    memory=state.memory,
                     tasks=state.tasks,
                     permissions=state.permissions,
                     active_skills=state.active_skills,
@@ -275,7 +288,11 @@ class DifyAgentRuntime:
                     yield event
                 yield from writer.write_run_finished(result)
                 if result.encoded_agent_state:
-                    yield {"type": "dify_variable", "name": "agent_state", "value": result.encoded_agent_state}
+                    yield {
+                        "type": "dify_variable",
+                        "name": "agent_state",
+                        "value": result.encoded_agent_state,
+                    }
                     yield {"type": "dify_json", "payload": result.to_json_payload()}
                 elif result.state_ref is not None:
                     yield {"type": "dify_json", "payload": result.to_json_payload()}
@@ -284,10 +301,9 @@ class DifyAgentRuntime:
             external_tools = config.tools or []
             external_prompt_tools = self._init_external_prompt_tools(external_tools)
             tool_catalog = env.build_tool_catalog(
-                external_tools=external_tools,
-                external_prompt_tools=external_prompt_tools,
+                external_tools=external_tools, external_prompt_tools=external_prompt_tools
             )
-            registry = tool_catalog.registry
+            registry = tool_catalog
             model_adapter = DifyModelAdapter(
                 session=self.strategy.session,
                 model_config=config.model_for("think"),
@@ -302,31 +318,42 @@ class DifyAgentRuntime:
                 skill_runtime=skill_runtime,
                 mcp_provider=env.mcp_provider,
             )
-            permission_manager = PermissionManager(
-                state=state,
-                external_tool_names=set(tool_catalog.names_by_kind("external") + tool_catalog.names_by_kind("mcp")),
-                always_ask_tools=set(config.tool_confirmation_list or []),
+            interrupts = UserInterrupts(
+                state=state, confirmation_tools=set(config.tool_confirmation_list or [])
             )
             if not config.user_prompt_response:
-                config.user_prompt_response = _implicit_user_prompt_response(
-                    config.query,
-                    loaded["last_execution_metadata"],
+                config.user_prompt_response = interrupts.response_from_query(
+                    config.query, loaded["last_execution_metadata"]
                 )
-            include_user_query = True
+            loop = AgentLoop(
+                config=config,
+                state=state,
+                registry=registry,
+                model_adapter=model_adapter,
+                tool_adapter=tool_adapter,
+                summarizer=summarizer,
+                include_user_query=True,
+                writer=writer,
+                interrupts=interrupts,
+            )
             if config.user_prompt_response:
                 logger.info(
                     "cc_agent interrupt resume requested: conversation_id=%s state_id=%s response_keys=%s last_finish_reason=%s",
                     conversation_id,
                     state_id,
                     sorted(str(key) for key in config.user_prompt_response.keys()),
-                    loaded["last_execution_metadata"].get("finish_reason") if isinstance(loaded["last_execution_metadata"], dict) else None,
+                    (
+                        loaded["last_execution_metadata"].get("finish_reason")
+                        if isinstance(loaded["last_execution_metadata"], dict)
+                        else None
+                    ),
                 )
-                resume_error = _resume_interrupted_tool_result(
-                    state=state,
-                    config=config,
-                    last_execution_metadata=loaded["last_execution_metadata"],
-                    tool_adapter=tool_adapter,
+                resumed = interrupts.resume(
+                    config,
+                    loaded["last_execution_metadata"],
+                    execute=lambda call: loop.scheduler.execute([call], 0)[0].result,
                 )
+                resume_error = resumed.error
                 if resume_error:
                     logger.warning(
                         "cc_agent interrupt resume failed: conversation_id=%s state_id=%s error=%s",
@@ -336,27 +363,20 @@ class DifyAgentRuntime:
                     )
                     yield from writer.write_run_error(resume_error, code="interrupt_resume_failed")
                     return
-                yield from _permission_decision_activities(writer, state.history)
-                include_user_query = False
+                yield from interrupts.decision_activities(writer)
+                if resumed.result is not None:
+                    yield from loop.render_tool_result(resumed.result)
+                loop.include_user_query = False
 
-            loop = AgentLoop(
-                config=config,
-                state=state,
-                registry=registry,
-                model_adapter=model_adapter,
-                tool_adapter=tool_adapter,
-                summarizer=summarizer,
-                include_user_query=include_user_query,
-                writer=writer,
-                permission_manager=permission_manager,
-            )
             final_result: AgentRunResult | None = None
             for event in loop.run():
                 if isinstance(event, dict):
                     yield event
             final_result = final_result or getattr(loop, "final_result", None)
             if final_result is None:
-                yield from writer.write_run_error("Agent loop finished without a final result", code="missing_final_result")
+                yield from writer.write_run_error(
+                    "Agent loop finished without a final result", code="missing_final_result"
+                )
                 return
             for event in self._persist_result(
                 final_result,
@@ -382,7 +402,11 @@ class DifyAgentRuntime:
                 }
             yield {"type": "dify_variable", "name": "answer", "value": final_result.answer or ""}
             if final_result.encoded_agent_state:
-                yield {"type": "dify_variable", "name": "agent_state", "value": final_result.encoded_agent_state}
+                yield {
+                    "type": "dify_variable",
+                    "name": "agent_state",
+                    "value": final_result.encoded_agent_state,
+                }
                 yield {"type": "dify_json", "payload": final_result.to_output_payload()}
             elif final_result.state_ref is not None:
                 yield {"type": "dify_json", "payload": final_result.to_output_payload()}
@@ -393,6 +417,7 @@ class DifyAgentRuntime:
         finally:
             if env is not None:
                 env.close()
+
     def _init_external_prompt_tools(self, tools: list[Any]) -> list[Any]:
         if not tools:
             return []
@@ -499,236 +524,6 @@ def _load_state_from_history_variable(config: AgentRunConfig) -> dict[str, Any]:
 
 def _empty_loaded_state(loaded_from: str = "temporary") -> dict[str, Any]:
     return empty_state_load(loaded_from).to_runtime_dict()
-
-
-def _prompt_skill_user_message(skill_def: dict[str, Any], raw_args: str) -> str:
-    argv = _split_args(raw_args)
-    args: dict[str, Any] = {"_raw": raw_args, "_argv": argv}
-    for index, value in enumerate(argv, start=1):
-        args[str(index)] = value
-    rendered = render_skill([skill_def], str(skill_def.get("name") or ""), args)
-    return f"[Skill: {skill_def.get('name')}]\n{rendered}"
-
-
-def _split_args(raw_args: str) -> list[str]:
-    try:
-        import shlex
-
-        return shlex.split(raw_args)
-    except Exception:
-        return [part for part in str(raw_args or "").split() if part]
-
-
-def _resume_interrupted_tool_result(
-    state: AgentState,
-    config: AgentRunConfig,
-    last_execution_metadata: dict[str, Any],
-    tool_adapter: ToolAdapter,
-) -> str | None:
-    if not isinstance(last_execution_metadata, dict) or last_execution_metadata.get("finish_reason") != "awaiting_user":
-        return "No awaiting user interrupt is available to resume"
-    question = last_execution_metadata.get("question")
-    if not isinstance(question, dict):
-        return "Awaiting user interrupt is missing question metadata"
-    expected_tool_call_id = str(question.get("tool_call_id") or question.get("id") or "").strip()
-    if not expected_tool_call_id:
-        return "Awaiting user interrupt is missing tool_call_id"
-
-    response = config.user_prompt_response if isinstance(config.user_prompt_response, dict) else {}
-    answer = str(response.get("answer") or "").strip()
-    if not answer:
-        return "User prompt response answer is empty"
-    prompt_id = str(response.get("promptId") or response.get("prompt_id") or "").strip()
-    if prompt_id and prompt_id != expected_tool_call_id:
-        return "User prompt response does not match the pending interrupt"
-
-    matches = [
-        message
-        for message in state.history
-        if message.get("role") == "tool" and str(message.get("tool_call_id") or "").strip() == expected_tool_call_id
-    ]
-    if len(matches) != 1:
-        return "Could not find exactly one pending tool result for the interrupt"
-
-    tool_message = matches[0]
-    metadata = dict(tool_message.get("metadata") or {})
-    pending_tool_execution = metadata.get("pending_tool_execution")
-    safe_response = _safe_user_prompt_response(response)
-    if isinstance(pending_tool_execution, dict):
-        metadata["original_content_before_resume"] = str(tool_message.get("content") or "")
-        metadata["resumed_user_prompt_response"] = safe_response
-        metadata["requires_user_input"] = False
-        permission_required = bool(metadata.get("permission_required"))
-        if permission_required:
-            decision = apply_permission_decision(state, response, metadata)
-            metadata["permission_decision"] = decision
-            approved = decision in {"allow_once", "allow_conversation"}
-        else:
-            approved = _is_confirmation_approved(response)
-        metadata["confirmation_approved"] = approved
-        if approved:
-            executed = tool_adapter.execute(
-                ToolCall(
-                    id=expected_tool_call_id,
-                    name=str(pending_tool_execution.get("name") or tool_message.get("name") or ""),
-                    arguments=dict(pending_tool_execution.get("arguments") or {}),
-                    raw_arguments=str(pending_tool_execution.get("raw_arguments") or ""),
-                )
-            )
-            tool_message.update(executed.to_history())
-            tool_metadata = dict(tool_message.get("metadata") or {})
-            tool_metadata.update(metadata)
-            tool_metadata.update(executed.metadata or {})
-            tool_metadata["confirmation_approved"] = True
-            tool_metadata["requires_user_input"] = False
-            tool_message["metadata"] = tool_metadata
-        else:
-            metadata["confirmation_denied"] = True
-            tool_message["content"] = f"Tool execution cancelled by user: {tool_message.get('name') or pending_tool_execution.get('name') or 'unknown_tool'}"
-            tool_message["metadata"] = metadata
-            tool_message["is_error"] = True
-        config.user_prompt_response = None
-        return None
-
-    metadata["original_content_before_resume"] = str(tool_message.get("content") or "")
-    metadata["resumed_user_prompt_response"] = safe_response
-    metadata["requires_user_input"] = False
-    tool_message["metadata"] = metadata
-    tool_message["content"] = f"User answered: {answer}"
-    config.user_prompt_response = None
-    return None
-
-
-def _implicit_user_prompt_response(query: Any, last_execution_metadata: dict[str, Any]) -> dict[str, Any] | None:
-    if not isinstance(last_execution_metadata, dict) or last_execution_metadata.get("finish_reason") != "awaiting_user":
-        return None
-    question = last_execution_metadata.get("question")
-    if not isinstance(question, dict):
-        return None
-    tool_call_id = str(question.get("tool_call_id") or question.get("id") or "").strip()
-    answer = str(query or "").strip()
-    if not tool_call_id or not answer:
-        return None
-
-    purpose = str(question.get("purpose") or "").strip()
-    options = question.get("options") if isinstance(question.get("options"), list) else []
-    selected_value = _matching_option_value(answer, options)
-    selected_label = _matching_option_label(selected_value, options)
-    if not selected_value and purpose == "permission":
-        selected_value = _permission_alias_value(answer)
-        selected_label = selected_value
-
-    response: dict[str, Any] = {
-        "promptId": tool_call_id,
-        "answer": answer,
-    }
-    if purpose:
-        response["purpose"] = purpose
-    if question.get("question") or question.get("text"):
-        response["question"] = question.get("question") or question.get("text")
-    if selected_value:
-        response["selectedValues"] = [selected_value]
-        response["selectedLabels"] = [selected_label or selected_value]
-    else:
-        response["customInput"] = answer
-    return response
-
-
-def _matching_option_value(answer: str, options: list[Any]) -> str:
-    normalized_answer = _normalize_choice(answer)
-    for option in options:
-        if not isinstance(option, dict):
-            continue
-        value = str(option.get("value") or "").strip()
-        label = str(option.get("label") or option.get("text") or "").strip()
-        description = str(option.get("description") or "").strip()
-        candidates = [value, label, description]
-        if any(_normalize_choice(candidate) == normalized_answer for candidate in candidates if candidate):
-            return value or label
-    return ""
-
-
-def _matching_option_label(value: str, options: list[Any]) -> str:
-    if not value:
-        return ""
-    for option in options:
-        if not isinstance(option, dict):
-            continue
-        if str(option.get("value") or "").strip() == value:
-            return str(option.get("label") or value)
-    return value
-
-
-def _permission_alias_value(answer: str) -> str:
-    normalized = _normalize_choice(answer)
-    aliases = {
-        "allow_conversation": {
-            "allow_conversation",
-            "always_allow",
-            "always allow",
-            "allow always",
-            "allow in conversation",
-            "always allow in this conversation",
-            "当前会话始终允许",
-        },
-        "allow_once": {
-            "allow_once",
-            "approve",
-            "allow",
-            "continue",
-            "confirm",
-            "yes",
-            "y",
-            "true",
-            "允许一次",
-            "继续执行",
-            "允许",
-        },
-        "deny": {
-            "deny",
-            "reject",
-            "cancel",
-            "stop",
-            "no",
-            "n",
-            "false",
-            "拒绝",
-            "取消",
-            "停止",
-        },
-    }
-    for value, candidates in aliases.items():
-        if normalized in {_normalize_choice(candidate) for candidate in candidates}:
-            return value
-    return ""
-
-
-def _normalize_choice(value: Any) -> str:
-    return str(value or "").strip().lower()
-
-
-def _safe_user_prompt_response(response: dict[str, Any]) -> dict[str, Any]:
-    allowed = {"promptId", "prompt_id", "purpose", "question", "selectedLabels", "selectedValues", "customInput", "answer", "values"}
-    return {key: value for key, value in response.items() if key in allowed and value is not None}
-
-
-def _is_confirmation_approved(response: dict[str, Any]) -> bool:
-    values = []
-    for key in ("selectedValues", "selected_values", "selectedLabels", "selected_labels"):
-        raw = response.get(key)
-        if isinstance(raw, list):
-            values.extend(str(item).strip().lower() for item in raw if str(item).strip())
-    for key in ("answer", "customInput"):
-        raw = response.get(key)
-        if raw:
-            values.append(str(raw).strip().lower())
-    approved_values = {"approve", "allow", "allow_once", "allow_conversation", "continue", "confirm", "yes", "y", "true", "继续执行", "允许"}
-    denied_values = {"deny", "reject", "cancel", "stop", "no", "n", "false", "取消", "拒绝", "停止"}
-    if any(value in approved_values for value in values):
-        return True
-    if any(value in denied_values for value in values):
-        return False
-    return False
 
 
 def _prompt_tool_from_selector(selector: Any) -> Any | None:
@@ -876,8 +671,6 @@ def _join_errors(*errors: str | None) -> str | None:
     return "; ".join(dict.fromkeys(messages))
 
 
-
-
 def _count_items(value: Any) -> int:
     try:
         return len(value or [])
@@ -914,12 +707,6 @@ def _run_id_from_parameters(parameters: dict[str, Any]) -> str:
     return str(parameters.get("run_id") or inputs.get("run_id") or f"run_{uuid4().hex}")
 
 
-
-
-
-
-
-
 def _make_writer(output_protocol: str, thread_id: str, run_id: str, show_tool_calls: bool = True) -> Any:
     return ProtocolRenderer(
         output_protocol,
@@ -942,35 +729,6 @@ def _command_activity_events(writer: Any, event: Any) -> list[dict[str, Any]]:
     if operations is not None:
         return writer.write_activity("a2ui-surface", {"a2ui_operations": operations})
     return []
-
-
-def _permission_decision_activities(writer: Any, history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    events: list[dict[str, Any]] = []
-    for message in history:
-        if message.get("role") != "tool":
-            continue
-        metadata = message.get("metadata")
-        if not isinstance(metadata, dict) or metadata.get("permission_decision_activity_emitted"):
-            continue
-        decision = metadata.get("permission_decision")
-        if decision not in {"allow_once", "allow_conversation", "deny"}:
-            continue
-        request = metadata.get("permission_request") if isinstance(metadata.get("permission_request"), dict) else {}
-        events.extend(
-            writer.write_activity(
-                "cc_agent.permission_decision",
-                _drop_none(
-                    {
-                        "toolName": request.get("tool_name") or message.get("name"),
-                        "decision": decision,
-                        "scope": "conversation" if decision == "allow_conversation" else "once",
-                    }
-                ),
-            )
-        )
-        metadata["permission_decision_activity_emitted"] = True
-        message["metadata"] = metadata
-    return events
 
 
 def _drop_none(value: dict[str, Any]) -> dict[str, Any]:

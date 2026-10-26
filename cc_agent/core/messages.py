@@ -68,9 +68,7 @@ class AgentState:
     history: list[dict[str, Any]] = field(default_factory=list)
     summary: str = ""
     history_version: int = 1
-    dify_memory: list[dict[str, Any]] = field(default_factory=list)
     skills: list[dict[str, Any]] = field(default_factory=list)
-    memory: list[dict[str, Any]] = field(default_factory=list)
     tasks: list[dict[str, Any]] = field(default_factory=list)
     permissions: dict[str, Any] = field(default_factory=dict)
     active_skills: list[dict[str, Any]] = field(default_factory=list)
@@ -80,7 +78,6 @@ class AgentState:
 class AgentRunResult:
     answer: str
     history: list[dict[str, Any]]
-    memory: list[dict[str, Any]]
     tasks: list[dict[str, Any]]
     execution_metadata: dict[str, Any]
     permissions: dict[str, Any] = field(default_factory=dict)
@@ -133,7 +130,6 @@ class AgentRunResult:
                         "summary": self.summary or "",
                         "version": self.history_schema_version,
                     },
-                    "memory": self.memory,
                     "tasks": self.tasks,
                     "permissions": self.permissions,
                 }

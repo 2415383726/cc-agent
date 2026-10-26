@@ -8,6 +8,7 @@ from typing import Any
 
 from .context_budget import snip_old_tool_results, summarize_messages
 from .history import sanitize_history
+from .interrupts import pending_tool_call_id
 
 
 AGENT_STATE_PREFIX = "ccagent-state:v1:gzip-base64:"
@@ -21,7 +22,6 @@ DEFAULT_TARGET_ENCODED_BYTES = 160_000
 class AgentStateBundle:
     revision: int = 0
     history: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_HISTORY_PAYLOAD))
-    memory: list[dict[str, Any]] = field(default_factory=list)
     tasks: list[dict[str, Any]] = field(default_factory=list)
     permissions: dict[str, Any] = field(default_factory=dict)
     active_skills: list[dict[str, Any]] = field(default_factory=list)
@@ -41,10 +41,6 @@ class AgentStateLoadResult:
     @property
     def history_payload(self) -> dict[str, Any]:
         return self.bundle.history
-
-    @property
-    def memory(self) -> list[dict[str, Any]]:
-        return self.bundle.memory
 
     @property
     def tasks(self) -> list[dict[str, Any]]:
@@ -125,7 +121,6 @@ def decode_agent_state(value: Any) -> AgentStateLoadResult:
             bundle=AgentStateBundle(
                 revision=_positive_int(payload.get("revision"), 0),
                 history=history_payload,
-                memory=_dict_list(payload.get("memory")),
                 tasks=_dict_list(payload.get("tasks")),
                 permissions=payload.get("permissions") if isinstance(payload.get("permissions"), dict) else {},
                 active_skills=_dict_list(payload.get("active_skills")),
@@ -145,7 +140,6 @@ def encode_agent_state(
     previous_revision: int | None = None,
     history: dict[str, Any] | None = None,
     history_payload: dict[str, Any] | None = None,
-    memory: list[dict[str, Any]] | None = None,
     tasks: list[dict[str, Any]] | None = None,
     permissions: dict[str, Any] | None = None,
     last_execution_metadata: dict[str, Any] | None = None,
@@ -155,7 +149,6 @@ def encode_agent_state(
     if bundle is not None:
         previous_revision = bundle.revision
         history = bundle.history
-        memory = bundle.memory
         tasks = bundle.tasks
         permissions = bundle.permissions
         active_skills = bundle.active_skills
@@ -173,7 +166,6 @@ def encode_agent_state(
         "summary": normalized_history.get("summary", ""),
         "history_version": normalized_history.get("version", 1),
         "recent_history": normalized_history.get("messages", []),
-        "memory": _dict_list(memory or []),
         "tasks": _dict_list(tasks or []),
         "permissions": permissions if isinstance(permissions, dict) else {},
         "active_skills": _compact_active_skills(active_skills),
@@ -214,7 +206,6 @@ def state_summary(bundle: AgentStateBundle) -> dict[str, Any]:
         "revision": _positive_int(bundle.revision, 0),
         "history_message_count": len(history.get("messages") or []),
         "summary_present": bool(str(history.get("summary") or "").strip()),
-        "memory_count": len(_dict_list(bundle.memory)),
         "task_count": len(_dict_list(bundle.tasks)),
         "permission_tool_count": len(allowed_tools),
         "active_skill_names": _active_skill_names(bundle.active_skills),
@@ -227,7 +218,6 @@ def bundle_from_parts(
     *,
     revision: int = 0,
     history: dict[str, Any] | None = None,
-    memory: list[dict[str, Any]] | None = None,
     tasks: list[dict[str, Any]] | None = None,
     permissions: dict[str, Any] | None = None,
     active_skills: list[dict[str, Any]] | None = None,
@@ -236,7 +226,6 @@ def bundle_from_parts(
     return AgentStateBundle(
         revision=_positive_int(revision, 0),
         history=_normalize_history_payload(history),
-        memory=_dict_list(memory or []),
         tasks=_dict_list(tasks or []),
         permissions=permissions if isinstance(permissions, dict) else {},
         active_skills=_compact_active_skills(active_skills),
@@ -252,7 +241,6 @@ def encode_history_variable(
     *,
     previous_revision: int,
     history_payload: dict[str, Any],
-    memory: list[dict[str, Any]],
     tasks: list[dict[str, Any]],
     permissions: dict[str, Any] | None,
     last_execution_metadata: dict[str, Any],
@@ -262,7 +250,6 @@ def encode_history_variable(
     return encode_agent_state(
         previous_revision=previous_revision,
         history=history_payload,
-        memory=memory,
         tasks=tasks,
         permissions=permissions,
         last_execution_metadata=last_execution_metadata,
@@ -308,7 +295,6 @@ def _compact_to_fit(payload: dict[str, Any], max_encoded_bytes: int) -> tuple[di
         warning = "state_compacted_to_fit_variable_limit"
 
     if not _fits(payload, max_encoded_bytes):
-        payload["memory"] = []
         payload["tasks"] = []
         payload["active_skills"] = _compact_active_skills(payload.get("active_skills"), max_items=3, max_summary_chars=1000)
         warning = "state_compacted_to_minimal_variable_limit"
@@ -348,10 +334,7 @@ def _normalize_history_payload(value: Any) -> dict[str, Any]:
 
 
 def _pending_start_index(history: list[dict[str, Any]], metadata: Any) -> int | None:
-    if not isinstance(metadata, dict) or metadata.get("finish_reason") != "awaiting_user":
-        return None
-    question = metadata.get("question") if isinstance(metadata.get("question"), dict) else {}
-    tool_call_id = str(question.get("tool_call_id") or question.get("id") or "").strip()
+    tool_call_id = pending_tool_call_id(metadata)
     if not tool_call_id:
         return None
     for index, message in enumerate(history):

@@ -26,7 +26,8 @@ export async function submitLauncherMessage({
   const content = buildSubmittedText(text, selectedSkill)
   if (!content || disabledReason || !agent) return false
 
-  const activeAgent = await prepareConversation?.() || agent
+  const activeAgent = prepareConversation ? await prepareConversation() : agent
+  if (!activeAgent) return false
   openDrawer()
   activeAgent.addMessage({
     id: randomUUID(),

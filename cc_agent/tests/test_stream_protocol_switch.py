@@ -4,12 +4,12 @@ from types import SimpleNamespace
 from cc_agent.core.config import AgentRunConfig
 from cc_agent.core.dify_stream_writer import DifyNativeWriter
 from cc_agent.core.loop import AgentLoop
-from cc_agent.core.messages import AgentRunResult, AgentState, AssistantTurn, ToolCall, ToolResult
+from cc_agent.core.messages import AgentRunResult, AgentState, AssistantTurn, ToolCall
 from cc_agent.core.runtime import DifyAgentRuntime
 from cc_agent.core import runtime as runtime_module
 from cc_agent.core.state_variable import AgentStateBundle, encode_agent_state
 from cc_agent.core.tool_adapter import ToolAdapter
-from cc_agent.core.tool_registry import ToolRegistry
+from cc_agent.core.tool_catalog import ToolCatalog
 
 
 class FakeStorage:
@@ -35,7 +35,6 @@ class DifyNativeWriterTests(unittest.TestCase):
         result = AgentRunResult(
             answer="hello",
             history=[],
-            memory=[],
             tasks=[],
             execution_metadata={"finish_reason": "final"},
         )
@@ -142,7 +141,6 @@ class DifyNativeWriterTests(unittest.TestCase):
         result = AgentRunResult(
             answer="",
             history=[{"role": "user", "content": "hello"}],
-            memory=[],
             tasks=[],
             execution_metadata={"finish_reason": "model_error", "error": "read llm model failed"},
         )
@@ -175,7 +173,6 @@ class RuntimeProtocolSwitchTests(unittest.TestCase):
                 self.final_result = AgentRunResult(
                     answer="ok",
                     history=[{"role": "assistant", "content": "ok"}],
-                    memory=[],
                     tasks=[],
                     execution_metadata={"finish_reason": "final"},
                 )
@@ -220,7 +217,6 @@ class RuntimeProtocolSwitchTests(unittest.TestCase):
                         {"role": "tool", "tool_call_id": "call-1", "name": "Search", "content": "tool result <script>alert(2)</script>"},
                         {"role": "assistant", "content": "native"},
                     ],
-                    memory=[],
                     tasks=[],
                     execution_metadata={"finish_reason": "final"},
                 )
@@ -340,13 +336,13 @@ class AgentLoopWriterBoundaryTests(unittest.TestCase):
                 if self.calls == 1:
                     return AssistantTurn(
                         text="",
-                        tool_calls=[ToolCall(id="call-1", name="MemorySave", arguments={"key": "k", "value": "v"})],
+                        tool_calls=[ToolCall(id="call-1", name="TaskCreate", arguments={"key": "k", "value": "v"})],
                     )
                 return AssistantTurn(text="done")
 
         writer = RecordingWriter()
         state = AgentState()
-        registry = ToolRegistry.create()
+        registry = ToolCatalog.create()
         loop = AgentLoop(
             config=AgentRunConfig(query="remember", maximum_iterations=2),
             state=state,
@@ -360,7 +356,7 @@ class AgentLoopWriterBoundaryTests(unittest.TestCase):
 
         self.assertTrue(events)
         self.assertTrue(all(isinstance(event, dict) for event in events))
-        self.assertIn(("tool_call", "call-1", "MemorySave", {"key": "k", "value": "v"}), writer.calls)
+        self.assertIn(("tool_call", "call-1", "TaskCreate", {"key": "k", "value": "v"}), writer.calls)
         self.assertTrue(any(call[0] == "tool_result" and call[1] == "call-1" for call in writer.calls))
         self.assertEqual(loop.final_result.answer, "done")
 
@@ -380,9 +376,9 @@ class AgentLoopWriterBoundaryTests(unittest.TestCase):
         loop = AgentLoop(
             config=AgentRunConfig(query="hello", max_history_messages=4),
             state=AgentState(history=history),
-            registry=ToolRegistry.create(),
+            registry=ToolCatalog.create(),
             model_adapter=FakeModel(),
-            tool_adapter=ToolAdapter(ToolRegistry.create(), AgentState()),
+            tool_adapter=ToolAdapter(ToolCatalog.create(), AgentState()),
             summarizer=lambda messages, existing_summary="": "auto compact summary",
             writer=RecordingWriter(),
         )

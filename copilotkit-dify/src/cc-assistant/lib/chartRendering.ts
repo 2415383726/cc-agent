@@ -216,7 +216,7 @@ function formatAxisTooltip(params: any[], spec: ChartSpec): string {
 }
 
 function formatScatterTooltip(param: any, spec: ChartSpec): string {
-  const item = spec.series?.[param.seriesIndex] || {}
+  const item: Partial<ChartSeriesSpec> = spec.series?.[param.seriesIndex] || {}
   const values = Array.isArray(param.value) ? param.value : []
   const label = values[2] || item.label || item.dataKey || '数据点'
   return `<strong>${escapeHtml(String(label))}</strong><div style="display:grid;gap:6px;margin-top:8px"><span>${escapeHtml(spec.xAxisLabel || spec.xKey || 'X')}<strong style="margin-left:18px">${escapeHtml(String(values[0] ?? ''))}</strong></span><span>${dot(param.color)}${escapeHtml(item.label || item.dataKey || '数值')}<strong style="margin-left:18px">${escapeHtml(formatChartValue(values[1], item))}</strong></span></div>`

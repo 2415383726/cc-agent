@@ -1262,4 +1262,23 @@ describe('DifyAgUiAgent', () => {
       }),
     }))
   })
+  it('resumes a permission raised through the real Dify fallback stream', async () => {
+    const final = { event: 'agent_finished', answer: 'Allow?', execution_metadata: {
+      finish_reason: 'awaiting_user', question: { id: 'fallback-call', purpose: 'permission',
+        question: 'Allow?', options: [{ label: '允许一次', value: 'allow_once' }], fields: [],
+        allowCustomInput: false, multiSelect: false } } }
+    fetchMock.mockResolvedValueOnce({ ok: true, body: streamFromEvents([
+      { event: 'workflow_finished', data: { outputs: { result: final } } },
+    ]) }).mockResolvedValueOnce({ ok: true, body: streamFromEvents([
+      { event: 'workflow_finished', data: { outputs: { result: { event: 'agent_finished', answer: 'done' } } } },
+    ]) })
+    const agent = new DifyAgUiAgent({ baseUrl: 'http://localhost/v1', apiKey: 'app-test', user: 'tester' })
+    agent.addMessage({ id: 'u1', role: 'user', content: 'do it' } as any)
+    await agent.runAgent()
+    agent.addMessage({ id: 'u2', role: 'user', content: '允许一次' } as any)
+    await agent.runAgent()
+    const body = JSON.parse(String(fetchMock.mock.calls[1][1].body))
+    expect(body.inputs.user_prompt_response).toMatchObject({ promptId: 'fallback-call', selectedValues: ['allow_once'] })
+  })
+
 })

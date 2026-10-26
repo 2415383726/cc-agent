@@ -21,7 +21,6 @@ class SlashCommandDispatchTests(unittest.TestCase):
             "/status",
             AgentState(
                 history=[{"role": "user", "content": "hi"}],
-                memory=[{"key": "project", "content": "cc-agent"}],
                 tasks=[{"id": "1", "subject": "ship"}],
             ),
             AgentRunConfig(),
@@ -102,33 +101,8 @@ class SlashCommandDispatchTests(unittest.TestCase):
         self.assertEqual(skill_def["name"], "help")
         self.assertIn("/help", result_text)
         self.assertIn("frontend-design", result_text)
-        self.assertIn("/a2ui-demo", result_text)
-        self.assertIn("/weekly-report-card", result_text)
 
-    def test_a2ui_demo_command_returns_structured_payload(self):
-        result = _dispatch_slash_command("/a2ui-demo", AgentState(), AgentRunConfig(), self.all_skills)
 
-        self.assertIsNotNone(result)
-        result_payload, skill_def = result
-        self.assertEqual(skill_def["name"], "a2ui-demo")
-        self.assertIsInstance(result_payload, dict)
-        self.assertIn("text", result_payload)
-        self.assertIn("events", result_payload)
-
-    def test_weekly_report_card_command_returns_structured_payload(self):
-        result = _dispatch_slash_command(
-            "/weekly-report-card completed A2UI validation; next week use a real report.",
-            AgentState(),
-            AgentRunConfig(),
-            self.all_skills,
-        )
-
-        self.assertIsNotNone(result)
-        result_payload, skill_def = result
-        self.assertEqual(skill_def["name"], "weekly-report-card")
-        self.assertIsInstance(result_payload, dict)
-        self.assertIn("text", result_payload)
-        self.assertIn("events", result_payload)
 
     def test_prompt_builder_shows_prompt_skills_but_not_local_handlers(self):
         state = AgentState(
