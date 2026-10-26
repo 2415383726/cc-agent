@@ -96,7 +96,7 @@ class McpRedactor:
                 values.add(unquote(parsed.password))
             for key, value in server.headers.items():
                 if re.search(
-                    r"(?:^|[-_])(user|tenant|org|organization)[-_]?id$", key, re.IGNORECASE
+                    r"(?:^|[-_])(user|employee|tenant|org|organization)[-_]?id$", key, re.IGNORECASE
                 ):
                     continue
                 if value:

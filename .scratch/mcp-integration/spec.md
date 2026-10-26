@@ -14,6 +14,8 @@ Dify 在调用策略前完成变量替换，例如 header 的 `X-User-Id` 引用
 
 使用官方 MCP SDK 的远程客户端。配置不提供本地 stdio、进程执行或内部文件工具；resources/prompts 不自动包装为工具。本次用户授权扩展远程外部工具来源，保留 Dify 会话状态和原有工具能力。
 
+用户补充：接入的是 MCP Apps 服务，仅需要普通工具。发现阶段过滤 `_meta.ui.resourceUri` 关联的 App 工具及 `_meta.ui.visibility` 不含 `model` 的工具；兼容旧 UI resource/template 元数据。visibility 缺省允许模型可见，显式格式错误不注册。普通工具即使同时对 app 可见也应保留；不能按工具名称前缀猜测类型。已对照本机只读参考 `ct-mcp-server/src/domains/mcp-app.ts` 与 `src/contracts/tool-meta.json`：默认 21 个工具中保留 12 个普通业务工具，过滤 5 个 App 入口和 4 个仅 App helper。过滤工具既不在模型目录中，也不能通过 ToolAdapter 派发。
+
 ## 测试与验收
 
 用户明确确认三个测试边界：配置解析；ToolCatalog/ToolAdapter 的发现和调用；两种输出策略的完整运行与连接释放。使用 unittest、fake Dify 对象和 MCP/HTTP 边界替身；真实本地协议服务验证 SDK 的两种传输及 header，不依赖生产服务。
@@ -24,6 +26,14 @@ Dify 在调用策略前完成变量替换，例如 header 的 `X-User-Id` 引用
 
 ## 验证记录
 
-实现版本 0.0.3。完整后端 unittest 205 项通过；新增模块和接入层的 mypy 检查通过；新增文件 Ruff 与 Black 检查通过。实际本地协议服务覆盖两种传输、多服务、三个用户并发 header 隔离、超时、文件产物及中断/提前退出清理，测试使用真实 Dify SDK 导入后的 gevent 环境。
+实现版本 0.0.3。完整后端 unittest 209 项通过；新增模块和接入层的 mypy 检查通过；新增文件 Ruff 与 Black 检查通过。实际本地协议服务覆盖两种传输、多服务、三个用户并发 header 隔离、超时、文件产物及中断/提前退出清理，测试使用真实 Dify SDK 导入后的 gevent 环境。新增 CT 21→12 元数据快照、真实 SDK 过滤与拒绝调用、双策略提示过滤，以及首次连接的独立进程日志脱敏回归。业务身份头 `X-Employee-Id` 与已有 `X-User-Id` 同样不作为认证凭证替换，保留业务结果中的工号；API Key/token 继续脱敏。
 
-离线依赖已分别验证 Linux amd64/arm64，并生成双架构 difypkg。尚未连接用户生产 MCP 或在生产 Dify 安装；Standards/Spec 审查将在实现提交后进行。
+离线依赖已分别验证 Linux amd64/arm64，并生成双架构 difypkg。尚未连接用户生产 MCP 或在生产 Dify 安装。
+
+## 审查记录
+
+Spec 独立审查发现 1 项 P2：递归脱敏会破坏碰巧包含 header 值的二进制 base64。已改为先解码产物、再脱敏文字和元数据；新增 image/resource blob 回归测试在修复前失败、修复后通过。审查者已复核解决，无未解决的 Spec 问题。
+
+Standards 独立审查发现 1 项 P2：首次连接才创建的 httpcore 日志器没有安装脱敏过滤器。已在建立客户端前为锁定 HTTP 栈的所有实际日志器安装过滤器；独立子进程验证首次连接在 DEBUG 响应头中回显凭证时也不会泄露。审查者已复核解决，无未解决的 Standards 问题。
+
+用户补充的 MCP Apps 过滤另经 Standards/Spec 两轴独立复核，均无新增问题。Spec 审查者独立运行 CT 快照、真实 SDK 过滤及双策略提示测试通过。最终总计：Standards 1 项 P2 已修复；Spec 1 项 P2 已修复。

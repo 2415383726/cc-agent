@@ -51,6 +51,12 @@ class SdkMcpSession:
                 "mcp.client.streamable_http",
                 "mcp.shared.session",
                 "mcp.client.session",
+                # httpx imports these lazily when the first transport is created.
+                "httpcore.connection",
+                "httpcore.http11",
+                "httpcore.http2",
+                "httpcore.proxy",
+                "httpcore.socks",
             }
             names.update(
                 name

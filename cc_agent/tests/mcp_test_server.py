@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 @contextmanager
-def mcp_server():
+def mcp_server(*, tools=None, echo_authorization=False):
     channels = {}
     stopped = threading.Event()
     requests = []
@@ -25,6 +25,8 @@ def mcp_server():
             self.send_response(code)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
+            if echo_authorization and self.headers.get("Authorization"):
+                self.send_header("X-Auth-Echo", self.headers["Authorization"])
             if session_id:
                 self.send_header("Mcp-Session-Id", session_id)
             self.end_headers()
@@ -72,17 +74,21 @@ def mcp_server():
                 }
             elif method == "tools/list":
                 result = {
-                    "tools": [
-                        {
-                            "name": "echo",
-                            "description": "Echo test input",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {"text": {"type": "string"}},
-                                "required": ["text"],
-                            },
-                        }
-                    ]
+                    "tools": (
+                        tools
+                        if tools is not None
+                        else [
+                            {
+                                "name": "echo",
+                                "description": "Echo test input",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {"text": {"type": "string"}},
+                                    "required": ["text"],
+                                },
+                            }
+                        ]
+                    )
                 }
             elif method == "tools/call":
                 if data["params"]["arguments"]["text"] == "timeout":

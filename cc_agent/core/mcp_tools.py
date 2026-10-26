@@ -76,6 +76,8 @@ class McpToolProvider:
                 if not isinstance(original, str) or not original or original in names:
                     raise ValueError("MCP returned an invalid or duplicate tool name.")
                 names.add(original)
+                if not _is_plain_model_tool(tool):
+                    continue
                 exposed = _tool_name(server.name, self._redactor.text(original))
                 self._specs.append(
                     ToolSpec(
@@ -103,11 +105,15 @@ class McpToolProvider:
 
     def execute(self, spec: ToolSpec, tool_call: ToolCall) -> ToolResult:
         try:
-            result = self._redactor.payload(
-                self._sessions[str(spec.entity)].call_tool(spec.original_name, tool_call.arguments)
+            result = self._sessions[str(spec.entity)].call_tool(
+                spec.original_name, tool_call.arguments
             )
+            # Decode media before redacting text: secrets may coincide with base64 substrings.
             parts, display = _content_parts(result.get("content", []))
-            output = result.get("structuredContent")
+            parts = [self._redactor.text(part) for part in parts]
+            for message in display:
+                message["meta"] = self._redactor.payload(message["meta"])
+            output = self._redactor.payload(result.get("structuredContent"))
             if output is not None:
                 encoded = json.dumps(output, ensure_ascii=False)
                 if encoded not in parts:
@@ -128,6 +134,21 @@ class McpToolProvider:
                 is_error=True,
                 synthetic=True,
             )
+
+
+def _is_plain_model_tool(tool: dict[str, Any]) -> bool:
+    meta = tool.get("_meta", {})
+    if not isinstance(meta, dict):
+        return False
+    ui = meta.get("ui", {})
+    if not isinstance(ui, dict):
+        return False
+    if "resourceUri" in ui or "ui/resourceUri" in meta or "openai/outputTemplate" in meta:
+        return False
+    if "visibility" not in ui:
+        return True
+    visibility = ui["visibility"]
+    return isinstance(visibility, list) and "model" in visibility
 
 
 def _tool_name(server: str, original: str) -> str:

@@ -71,6 +71,146 @@ class McpConfigurationTests(unittest.TestCase):
 
 
 class McpToolIntegrationTests(unittest.TestCase):
+    def test_ct_mcp_contract_keeps_twelve_plain_business_tools(self):
+        from pathlib import Path
+
+        from cc_agent.core.mcp_tools import McpToolProvider
+
+        snapshot = json.loads(
+            Path(__file__).with_name("fixtures").joinpath("ct_mcp_tool_metadata.json").read_text()
+        )
+
+        @contextmanager
+        def factory(_server):
+            class Session:
+                def list_tools(self, cursor=None):
+                    # The first page contains only excluded tools, discovery must continue.
+                    tools = snapshot["tools"]
+                    if cursor is None:
+                        return {"tools": tools[12:], "nextCursor": "business"}
+                    return {"tools": tools[:12]}
+
+            yield Session()
+
+        config = AgentRunConfig.from_parameters(
+            {"mcp_servers_config": {"ct": {"url": "http://ct/mcp"}}}
+        )
+        expected = {
+            "search_people",
+            "get_people_records",
+            "find_organizations",
+            "get_job_options",
+            "list_job_structures",
+            "find_tags",
+            "get_staffing_overview",
+            "list_staffing_positions",
+            "query_relationships",
+            "export_people_excel",
+            "export_appointment_forms",
+            "get_export_job",
+        }
+        with McpToolProvider(config.mcp_servers, session_factory=factory) as provider:
+            catalog = ToolCatalog.create(mcp_tools=provider.tool_specs())
+            self.assertEqual(
+                set(catalog.names_by_kind("mcp")), {"mcp__ct__" + name for name in expected}
+            )
+
+    def test_first_connection_debug_logs_redact_echoed_response_credentials(self):
+        import subprocess
+        import sys
+        import textwrap
+
+        script = textwrap.dedent("""
+            import io
+            import logging
+            from cc_agent.core.config import AgentRunConfig
+            from cc_agent.core.mcp_tools import McpToolProvider
+            from cc_agent.tests.mcp_test_server import mcp_server
+
+            logs = io.StringIO()
+            handler = logging.StreamHandler(logs)
+            logging.getLogger('httpcore').addHandler(handler)
+            logging.getLogger('httpcore').setLevel(logging.DEBUG)
+            assert 'httpcore.http11' not in logging.Logger.manager.loggerDict
+            with mcp_server(echo_authorization=True) as (url, requests):
+                config = AgentRunConfig.from_parameters({'mcp_servers_config': {
+                    'one': {'url': url + '/mcp', 'transport': 'streamable_http',
+                            'headers': {'Authorization': 'Bearer FIRST_CONNECT_SECRET'}}}})
+                with McpToolProvider(config.mcp_servers) as provider:
+                    assert len(provider.tool_specs()) == 1
+            assert 'receive_response_headers.complete' in logs.getvalue()
+            assert 'FIRST_CONNECT_SECRET' not in logs.getvalue(), 'Credential leaked in HTTP logs'
+            """)
+        completed = subprocess.run(
+            [sys.executable, "-B", "-c", script],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    def test_mcp_apps_and_tools_hidden_from_model_never_enter_catalog_or_dispatch(self):
+        from cc_agent.core.mcp_tools import McpToolProvider
+        from cc_agent.tests.mcp_test_server import mcp_server
+
+        tools = [
+            {"name": "search_people", "_meta": {"ui": {"visibility": ["model", "app"]}}},
+            {"name": "no_metadata"},
+            {"name": "open_named_plain_tool"},
+            {"name": "default_visibility", "_meta": {"ui": {}}},
+            {"name": "model_only", "_meta": {"ui": {"visibility": ["model"]}}},
+            {
+                "name": "open_people_search",
+                "_meta": {
+                    "ui": {
+                        "resourceUri": "ui://ct/people_search.html",
+                        "visibility": ["model", "app"],
+                    }
+                },
+            },
+            {"name": "app_get_view", "_meta": {"ui": {"visibility": ["app"]}}},
+            {"name": "hidden", "_meta": {"ui": {"visibility": []}}},
+            {"name": "invalid_visibility", "_meta": {"ui": {"visibility": "model"}}},
+            {"name": "legacy_app", "_meta": {"ui/resourceUri": "ui://ct/old.html"}},
+            {"name": "legacy_template", "_meta": {"openai/outputTemplate": "ui://ct/old.html"}},
+        ]
+        for tool in tools:
+            tool["inputSchema"] = {"type": "object"}
+        allowed = {tool["name"] for tool in tools[:5]}
+        with mcp_server(tools=tools) as (url, requests):
+            config = AgentRunConfig.from_parameters(
+                {
+                    "mcp_servers_config": {
+                        "ct": {
+                            "url": url + "/mcp",
+                            "transport": "streamable_http",
+                            "headers": {"X-Employee-Id": "employee001"},
+                        }
+                    }
+                }
+            )
+            with McpToolProvider(config.mcp_servers) as provider:
+                catalog = ToolCatalog.create(mcp_tools=provider.tool_specs())
+                self.assertEqual(
+                    set(catalog.names_by_kind("mcp")), {"mcp__ct__" + name for name in allowed}
+                )
+                adapter = ToolAdapter(catalog, AgentState(), mcp_provider=provider)
+                for tool in tools[5:]:
+                    name = "mcp__ct__" + tool["name"]
+                    self.assertNotIn(name, json.dumps(catalog.prompt_tools()))
+                    self.assertTrue(adapter.execute(ToolCall("hidden", name, {})).is_error)
+                result = adapter.execute(
+                    ToolCall("plain", "mcp__ct__search_people", {"text": "employee001"})
+                )
+                self.assertEqual(result.llm_observation, "employee001")
+            calls = [
+                data["params"]["name"]
+                for data, _headers in requests
+                if data["method"] == "tools/call"
+            ]
+            self.assertEqual(calls, ["search_people"])
+
     def test_request_timeout_produces_a_paired_safe_tool_error(self):
         from cc_agent.core.mcp_tools import McpToolProvider
         from cc_agent.tests.mcp_test_server import mcp_server
@@ -275,6 +415,53 @@ class McpToolIntegrationTests(unittest.TestCase):
             self.assertEqual(result.display_messages[0]["blob"], b"test image bytes")
             self.assertEqual(result.display_messages[0]["meta"]["mime_type"], "image/png")
             self.assertNotIn(payload, json.dumps(result.to_history()))
+
+    def test_redaction_preserves_binary_content_that_contains_a_header_value(self):
+        from cc_agent.core.mcp_tools import McpToolProvider
+
+        image = b"\x89PNG\r\n\x1a\n"
+        payload = base64.b64encode(image).decode()
+
+        @contextmanager
+        def factory(_server):
+            class Session:
+                def list_tools(self, cursor=None):
+                    return {"tools": [{"name": "image", "inputSchema": {"type": "object"}}]}
+
+                def call_tool(self, name, arguments):
+                    return {
+                        "content": [
+                            {"type": "text", "text": "Echoed iVBOR"},
+                            {"type": "image", "mimeType": "image/png", "data": payload},
+                            {
+                                "type": "resource",
+                                "resource": {"uri": "test://image", "blob": payload},
+                            },
+                        ],
+                        "structuredContent": {"echo": "iVBOR"},
+                    }
+
+            yield Session()
+
+        config = AgentRunConfig.from_parameters(
+            {
+                "mcp_servers_config": {
+                    "one": {"url": "http://one/sse", "headers": {"X-API-Key": "iVBOR"}}
+                }
+            }
+        )
+        with McpToolProvider(config.mcp_servers, session_factory=factory) as provider:
+            catalog = ToolCatalog.create(mcp_tools=provider.tool_specs())
+            result = ToolAdapter(catalog, AgentState(), mcp_provider=provider).execute(
+                ToolCall("image-1", "mcp__one__image", {})
+            )
+            self.assertFalse(result.is_error)
+            self.assertEqual(
+                [message["blob"] for message in result.display_messages], [image, image]
+            )
+            self.assertEqual(result.metadata["output"], {"echo": "[redacted]"})
+            self.assertIn("Echoed [redacted]", result.llm_observation)
+            self.assertNotIn("iVBOR", json.dumps(result.to_history()))
 
     def test_sse_and_later_runs_use_their_own_user_headers(self):
         from cc_agent.core.mcp_tools import McpToolProvider
@@ -537,8 +724,21 @@ class McpRuntimeTests(unittest.TestCase):
         from cc_agent.core.state_variable import decode_agent_state
         from cc_agent.tests.mcp_test_server import mcp_server
 
+        tools = [
+            {"name": "echo", "inputSchema": {"type": "object"}},
+            {
+                "name": "app_hidden",
+                "inputSchema": {"type": "object"},
+                "_meta": {"ui": {"visibility": ["app"]}},
+            },
+            {
+                "name": "open_ui",
+                "inputSchema": {"type": "object"},
+                "_meta": {"ui": {"resourceUri": "ui://test/app.html"}},
+            },
+        ]
         for profile in (AGUI_STRATEGY_PROFILE, DIFY_STRATEGY_PROFILE):
-            with self.subTest(profile=profile.name), mcp_server() as (url, requests):
+            with self.subTest(profile=profile.name), mcp_server(tools=tools) as (url, requests):
                 prompts = []
 
                 def invoke_llm(prompts=prompts, **kwargs):
@@ -597,6 +797,8 @@ class McpRuntimeTests(unittest.TestCase):
                     )
                 )
                 self.assertEqual([data["method"] for data, _ in requests].count("tools/call"), 1)
+                self.assertNotIn("mcp__business__app_hidden", str(prompts))
+                self.assertNotIn("mcp__business__open_ui", str(prompts))
 
 
 if __name__ == "__main__":

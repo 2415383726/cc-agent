@@ -118,6 +118,10 @@ Dify 在调用插件之前完成变量替换，插件不再解释模板。通过
 
 每轮重新建立 MCP 连接并发现 tools，包含分页；工具暴露为 `mcp__服务名__工具名`，特殊字符和过长名称使用稳定摘要，实际请求保持远端原始工具名。它们与 Dify 注入的工具共存，复用结果预算和失败配对。保留工具错误标记、结构化结果与文件产物；不自动包装 MCP resources/prompts，也不支持 stdio。结束、失败、中断或提前关闭运行时释放连接，下一轮重新使用当次注入的 header。
 
+接入 MCP Apps 服务时，只注册普通且对模型可见的工具。带 `_meta.ui.resourceUri` 的 App 入口，以及 `_meta.ui.visibility` 明确不含 `model` 的工具均过滤；兼容旧字段 `_meta["ui/resourceUri"]` 和 `_meta["openai/outputTemplate"]`。未声明 visibility 时默认模型可见；声明格式无效时不注册。普通数据工具的 `["model", "app"]` 可见性仍保留，不按工具名称前缀判断。过滤后的工具不进入提示，也不能通过本地工具目录调用。
+
+当前 CT MCP 默认 21 个契约工具经过过滤后保留 12 个普通业务工具，移除 5 个 App 入口和 4 个 App helper。连接使用 `streamable_http` 与 `/mcp` 地址；身份头是 `X-Employee-Id`，值需为真实工号，并按 CT 服务的鉴权方式配置 API Key 或 token。只有 Dify 的 `user` 本身就是工号时，才直接将 `sys.user_id` 用作该值。
+
 插件不把 MCP 配置写入提示、会话状态或自身输出日志，并脱敏服务回显的配置凭证。Dify 平台对输入变量和节点参数的日志记录仍由 Dify 自身管理。边界取舍见 [ADR-0002](docs/adr/0002-runtime-mcp-tools.md)。
 
 ## 升级说明

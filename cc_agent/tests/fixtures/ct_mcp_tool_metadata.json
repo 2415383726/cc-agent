@@ -1,0 +1,300 @@
+{
+  "source": "ct-mcp-server/src/contracts/tool-meta.json and src/domains/mcp-app.ts (2026-10-27)",
+  "tools": [
+    {
+      "name": "search_people",
+      "inputSchema": {
+        "type": "object"
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "model",
+            "app"
+          ]
+        }
+      }
+    },
+    {
+      "name": "get_people_records",
+      "inputSchema": {
+        "type": "object"
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "model",
+            "app"
+          ]
+        }
+      }
+    },
+    {
+      "name": "find_organizations",
+      "inputSchema": {
+        "type": "object"
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "model",
+            "app"
+          ]
+        }
+      }
+    },
+    {
+      "name": "get_job_options",
+      "inputSchema": {
+        "type": "object"
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "model",
+            "app"
+          ]
+        }
+      }
+    },
+    {
+      "name": "list_job_structures",
+      "inputSchema": {
+        "type": "object"
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "model",
+            "app"
+          ]
+        }
+      }
+    },
+    {
+      "name": "find_tags",
+      "inputSchema": {
+        "type": "object"
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "model",
+            "app"
+          ]
+        }
+      }
+    },
+    {
+      "name": "get_staffing_overview",
+      "inputSchema": {
+        "type": "object"
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "model",
+            "app"
+          ]
+        }
+      }
+    },
+    {
+      "name": "list_staffing_positions",
+      "inputSchema": {
+        "type": "object"
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "model",
+            "app"
+          ]
+        }
+      }
+    },
+    {
+      "name": "query_relationships",
+      "inputSchema": {
+        "type": "object"
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "model",
+            "app"
+          ]
+        }
+      }
+    },
+    {
+      "name": "export_people_excel",
+      "inputSchema": {
+        "type": "object"
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "model",
+            "app"
+          ]
+        }
+      }
+    },
+    {
+      "name": "export_appointment_forms",
+      "inputSchema": {
+        "type": "object"
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "model",
+            "app"
+          ]
+        }
+      }
+    },
+    {
+      "name": "get_export_job",
+      "inputSchema": {
+        "type": "object"
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "model",
+            "app"
+          ]
+        }
+      }
+    },
+    {
+      "name": "open_people_search",
+      "inputSchema": {
+        "type": "object"
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "model",
+            "app"
+          ],
+          "resourceUri": "ui://ct/people_search.html"
+        }
+      }
+    },
+    {
+      "name": "open_people_comparison",
+      "inputSchema": {
+        "type": "object"
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "model",
+            "app"
+          ],
+          "resourceUri": "ui://ct/people_comparison.html"
+        }
+      }
+    },
+    {
+      "name": "open_appointment_form",
+      "inputSchema": {
+        "type": "object"
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "model",
+            "app"
+          ],
+          "resourceUri": "ui://ct/appointment_form.html"
+        }
+      }
+    },
+    {
+      "name": "open_relationship_graph",
+      "inputSchema": {
+        "type": "object"
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "model",
+            "app"
+          ],
+          "resourceUri": "ui://ct/relationship_graph.html"
+        }
+      }
+    },
+    {
+      "name": "open_staffing_board",
+      "inputSchema": {
+        "type": "object"
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "model",
+            "app"
+          ],
+          "resourceUri": "ui://ct/staffing_board.html"
+        }
+      }
+    },
+    {
+      "name": "app_get_view",
+      "inputSchema": {
+        "type": "object"
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "app"
+          ]
+        }
+      }
+    },
+    {
+      "name": "app_update_view",
+      "inputSchema": {
+        "type": "object"
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "app"
+          ]
+        }
+      }
+    },
+    {
+      "name": "app_get_selection",
+      "inputSchema": {
+        "type": "object"
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "app"
+          ]
+        }
+      }
+    },
+    {
+      "name": "app_update_selection",
+      "inputSchema": {
+        "type": "object"
+      },
+      "_meta": {
+        "ui": {
+          "visibility": [
+            "app"
+          ]
+        }
+      }
+    }
+  ]
+}
