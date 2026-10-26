@@ -1,0 +1,7 @@
+interface:
+  display_name: "Answers UI"
+  short_description: "为业务回答选择结构化结果界面并生成交互式用户信息采集表单"
+  default_prompt: "Use $answers-ui to choose and produce the clearest structured answer or user-input interaction for this business task."
+
+policy:
+  allow_implicit_invocation: true

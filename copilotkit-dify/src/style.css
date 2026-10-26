@@ -1,0 +1,147 @@
+@import './cc-assistant/styles/assistant-vars.css';
+@import './cc-assistant/styles/assistant.css';
+
+:root {
+  color: #111827;
+  background: #ffffff;
+  font-family:
+    "Helvetica Neue",
+    Helvetica,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #ffffff;
+}
+
+button,
+textarea,
+input {
+  font: inherit;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+.drawer-app {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.config-toggle,
+.config-panel-header button {
+  border: 1px solid var(--cc-agent-line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111827;
+  cursor: pointer;
+}
+
+.config-toggle {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 40;
+  padding: 7px 10px;
+  border-color: var(--cc-agent-line);
+  color: #526071;
+  font-size: 13px;
+  box-shadow: none;
+}
+
+.config-toggle.open {
+  background: var(--cc-agent-primary-soft);
+  border-color: var(--cc-agent-primary-border);
+  color: var(--cc-agent-primary-strong);
+}
+
+.config-panel {
+  position: fixed;
+  top: 62px;
+  left: 18px;
+  z-index: 45;
+  width: min(360px, calc(100vw - 36px));
+  max-height: calc(100vh - 84px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--cc-agent-line);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.1);
+}
+
+.config-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.config-panel-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.config-panel-header p {
+  margin: 4px 0 0;
+  color: #667085;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.config-panel-header button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+}
+
+.config-panel-header button svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.8;
+}
+
+.config-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #374151;
+  font-size: 13px;
+}
+
+.config-panel input,
+.config-panel textarea {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #ffffff;
+  color: #111827;
+}
+
+.panel-error {
+  margin: 0;
+  color: #b91c1c;
+  font-size: 13px;
+}

@@ -1,0 +1,18 @@
+插件收集
+CopilotKit
+cc_agent/dist
+cc_agent/.env
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.log
+cc_agent/__pycache__
+cc_agent.difypkg
+.claude/settings.local.json
+
+# Local virtual environments
+.venv/
+**/.venv/
+
+# Per-checkout Claude settings
+**/.claude/settings.local.json

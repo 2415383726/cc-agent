@@ -1,0 +1,13 @@
+.env
+.venv/
+dist/
+wheels/
+tests/
+scripts/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+uv.lock
+*.difypkg
+tmp_dify_official_plugins/
+

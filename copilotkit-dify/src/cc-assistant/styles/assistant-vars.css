@@ -1,0 +1,23 @@
+:root {
+  --cc-agent-primary: #2b6cb0;
+  --cc-agent-primary-strong: #245c96;
+  --cc-agent-primary-soft: #eef5fc;
+  --cc-agent-primary-border: #b8d2ea;
+  --cc-agent-line: #dce3ea;
+  --cc-agent-muted-line: #e9eef3;
+  --cc-agent-surface: #ffffff;
+  --cc-agent-surface-alt: #f6f8fb;
+  --cc-agent-soft: #eef5fc;
+  --cc-agent-ink: #17202a;
+  --cc-agent-focus: #2b6cb0;
+  --cc-agent-focus-soft: rgba(43, 108, 176, 0.22);
+  --cc-agent-text: #17202a;
+  --cc-agent-muted: #667085;
+  --cc-agent-drawer-width: 72vw;
+  --cc-agent-drawer-max-width: 1180px;
+  --cc-agent-sidebar-width: 260px;
+  --cc-agent-content-max-width: 800px;
+  --cc-agent-card-radius: 10px;
+  --cc-agent-font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+  --cc-agent-data-font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}

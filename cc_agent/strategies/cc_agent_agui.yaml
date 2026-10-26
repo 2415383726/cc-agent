@@ -1,0 +1,111 @@
+identity:
+  name: cc_agent_agui
+  author: cc_agent
+  label:
+    en_US: CC Agent (AG-UI)
+    zh_Hans: CC Agent（AG-UI）
+    pt_BR: CC Agent (AG-UI)
+description:
+  en_US: CC Agent with AG-UI streaming and structured answer skills.
+  zh_Hans: 提供 AG-UI 流式协议与结构化回答技能的 CC Agent。
+  pt_BR: CC Agent with AG-UI streaming and structured answer skills.
+features:
+  - history-messages
+parameters:
+  - name: model
+    type: model-selector
+    scope: tool-call&llm
+    required: true
+    label: {en_US: Model, zh_Hans: 模型, pt_BR: Model}
+  - name: max_total_context_tokens
+    type: number
+    required: false
+    default: 131072
+    min: 4096
+    label:
+      en_US: Context window (tokens)
+      zh_Hans: 上下文窗口（Tokens）
+      pt_BR: Context window (tokens)
+    help:
+      en_US: Maximum context window used by CC Agent. The default is 128K tokens.
+      zh_Hans: CC Agent 使用的最大上下文窗口，默认 128K tokens。
+      pt_BR: Maximum context window used by CC Agent. The default is 128K tokens.
+  - name: tools
+    type: array[tools]
+    required: false
+    label: {en_US: External tools, zh_Hans: 外部工具, pt_BR: External tools}
+  - name: capability_mode
+    type: string
+    required: false
+    default: dify_only
+    label: {en_US: Capability mode, zh_Hans: 运行模式, pt_BR: Capability mode}
+    help:
+      en_US: Use dify_only or minio.
+      zh_Hans: 填写 dify_only 或 minio。
+      pt_BR: Use dify_only or minio.
+  - name: storage
+    type: string
+    required: false
+    label: {en_US: Storage JSON, zh_Hans: MinIO 存储配置 JSON, pt_BR: Storage JSON}
+    help:
+      en_US: MinIO storage JSON for minio mode. Include provider, endpoint, bucket, access_key, secret_key, and scope.app_id/user_id/conversation_id.
+      zh_Hans: MinIO 模式的存储配置，需包含 provider、endpoint、bucket、access_key、secret_key 和 scope.app_id/user_id/conversation_id。
+      pt_BR: MinIO storage JSON for minio mode.
+    template:
+      enabled: true
+  - name: files
+    type: string
+    required: false
+    label: {en_US: Files JSON, zh_Hans: 上传文件 JSON, pt_BR: Files JSON}
+    template:
+      enabled: true
+  - name: instruction
+    type: string
+    required: false
+    label: {en_US: Instruction, zh_Hans: 助手指令, pt_BR: Instruction}
+    auto_generate:
+      type: prompt_instruction
+    template:
+      enabled: true
+  - name: app_skills_yaml
+    type: string
+    required: false
+    label: {en_US: App skills YAML, zh_Hans: 应用级技能 YAML, pt_BR: App skills YAML}
+    template:
+      enabled: true
+  - name: query
+    type: string
+    required: true
+    label: {en_US: Query, zh_Hans: 用户输入, pt_BR: Query}
+  - name: agent_state
+    type: string
+    required: false
+    label: {en_US: Agent state, zh_Hans: Agent 状态, pt_BR: Agent state}
+    template:
+      enabled: true
+  - name: runtime_config
+    type: string
+    required: false
+    label: {en_US: Runtime config JSON, zh_Hans: 运行配置 JSON, pt_BR: Runtime config JSON}
+    help:
+      en_US: Optional advanced runtime config JSON. Usually leave it empty.
+      zh_Hans: 可选的高级运行配置 JSON，通常无需填写。
+      pt_BR: Optional advanced runtime config JSON. Usually leave it empty.
+    template:
+      enabled: true
+  - name: show_tool_calls
+    type: boolean
+    required: false
+    default: true
+    label: {en_US: Show tool calls, zh_Hans: 显示工具调用, pt_BR: Show tool calls}
+  - name: deepseek_thinking_compat
+    type: boolean
+    required: false
+    default: false
+    label:
+      en_US: DeepSeek thinking compatibility
+      zh_Hans: DeepSeek 思考兼容
+      pt_BR: DeepSeek thinking compatibility
+extra:
+  python:
+    source: strategies/cc_agent_agui.py

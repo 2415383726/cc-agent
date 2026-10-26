@@ -1,0 +1,18 @@
+identity:
+  author: cc_agent
+  name: cc_agent
+  label:
+    en_US: CC Agent
+    zh_Hans: CC Agent
+    pt_BR: CC Agent
+  description:
+    en_US: Dify-native CC Agent strategy
+    zh_Hans: Dify-native CC Agent strategy
+    pt_BR: Dify-native CC Agent strategy
+  icon: icon.svg
+strategies:
+  - strategies/cc_agent_agui.yaml
+  - strategies/cc_agent_dify.yaml
+extra:
+  python:
+    source: provider/agent.py

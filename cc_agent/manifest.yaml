@@ -1,0 +1,35 @@
+version: 0.0.2
+type: plugin
+author: "cc_agent"
+name: "cc_agent"
+label:
+  en_US: "CC Agent"
+  zh_Hans: "CC Agent"
+created_at: "2026-05-15T00:00:00.000000000Z"
+icon: icon.svg
+description:
+  en_US: Dify-native CC Agent capability extension with Dify-only and MinIO-backed modes.
+  zh_Hans: Dify-native CC Agent capability extension with Dify-only and MinIO-backed modes.
+tags:
+  - "agent"
+resource:
+  memory: 1048576
+  permission:
+    tool:
+      enabled: true
+    model:
+      enabled: true
+      llm: true
+plugins:
+  agent_strategies:
+    - "provider/agent.yaml"
+meta:
+  version: 0.0.2
+  minimum_dify_version: "1.5.0"
+  arch:
+    - "amd64"
+    - "arm64"
+  runner:
+    language: "python"
+    version: "3.12"
+    entrypoint: "main"

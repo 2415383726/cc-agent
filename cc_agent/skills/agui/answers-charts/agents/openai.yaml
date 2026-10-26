@@ -1,0 +1,6 @@
+interface:
+  display_name: "Answers Charts"
+  short_description: "将回答中的结构化数据转换为统一、清晰且可交互的分析图表"
+  default_prompt: "Use $answers-charts to turn the supplied data into the clearest supported analytical chart."
+policy:
+  allow_implicit_invocation: true
