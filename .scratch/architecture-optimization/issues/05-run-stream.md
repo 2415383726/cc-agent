@@ -7,4 +7,4 @@ Blocked by: 无
 
 已实施。native 透传、真实 fallback、Dify fallback 中断恢复、附件和终止行为已覆盖；影子 reducer 和反向转换删除。
 
-验证：后端全量 213 项、前端全量 181 项通过；TypeScript 与 7 个核心模块的增量 mypy 通过。构建和审查记录见 ../validation.md。
+验证：后端全量 213 项、前端全量 186 项通过；TypeScript 与 8 个核心模块的增量 mypy 通过。构建和审查记录见 ../validation.md。
