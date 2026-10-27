@@ -4,6 +4,7 @@ import logging
 import time
 from typing import Any
 
+from .compression import compression_activity
 from .config import AgentRunConfig
 from .history import sanitize_history
 from .internal_events import InternalEvent, LoopIteration, ModelEnded, ModelError, ModelStarted
@@ -123,7 +124,7 @@ class AgentLoop:
                 yield from self._write(
                     "write_activity",
                     "cc_agent.compression",
-                    _compression_activity("started", "auto", compression_id),
+                    compression_activity("started", "auto", compression_id),
                 )
             compaction_metadata = self.requests.compact(transcript, force=False)
             compressed = compressed or bool(compaction_metadata.get("compressed"))
@@ -134,7 +135,7 @@ class AgentLoop:
                 yield from self._write(
                     "write_activity",
                     "cc_agent.compression",
-                    _compression_activity("completed", "auto", compression_id, compaction_metadata),
+                    compression_activity("completed", "auto", compression_id, compaction_metadata),
                 )
 
             try:
@@ -164,12 +165,12 @@ class AgentLoop:
                 yield from self._write(
                     "write_activity",
                     "cc_agent.compression",
-                    _compression_activity("started", "auto", budget_compression_id),
+                    compression_activity("started", "auto", budget_compression_id),
                 )
                 yield from self._write(
                     "write_activity",
                     "cc_agent.compression",
-                    _compression_activity(
+                    compression_activity(
                         "completed", "auto", budget_compression_id, budget_metadata
                     ),
                 )
@@ -541,7 +542,7 @@ class AgentLoop:
             metadata=tool_metadata,
         )
         yield from self._tool_activity_events(result)
-        # Dify already forwards its own tool artifacts; only direct MCP blobs need forwarding.
+        # Only forward direct MCP blobs here; preserve the existing Dify artifact path.
         for display_message in result.display_messages:
             if isinstance(display_message, dict) and display_message.get("type") == "dify_blob":
                 yield display_message
@@ -666,21 +667,3 @@ def _safe_tool_metadata(metadata: dict[str, Any] | None) -> dict[str, Any]:
             if isinstance(artifact, dict)
         ]
     return safe
-
-
-def _compression_activity(
-    status: str,
-    trigger: str,
-    compression_id: str,
-    metadata: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    payload = dict(metadata or {})
-    payload.update(
-        {
-            "status": status,
-            "trigger": trigger,
-            "compressionId": compression_id,
-            "messageId": compression_id,
-        }
-    )
-    return payload

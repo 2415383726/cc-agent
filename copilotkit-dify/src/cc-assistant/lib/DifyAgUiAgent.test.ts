@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DifyAgUiAgent } from './DifyAgUiAgent'
 import * as transport from './difyTransport'
+import { createConversationCoordinator, loadPendingHistory } from './conversationCoordinator'
 
 function streamFromEvents(events: any[]) {
   const encoder = new TextEncoder()
@@ -82,6 +83,75 @@ describe('DifyAgUiAgent', () => {
       answer: 'Continue',
     })
     expect(body.inputs.state_id).toBeUndefined()
+  })
+
+  it('does not let an older A history response overwrite a newer A selection', async () => {
+    const sessions = createConversationCoordinator(() => 'tester')
+    sessions.select('a')
+    const first = sessions.currentTicket()!
+    const agent = new DifyAgUiAgent({ baseUrl: 'http://localhost/v1', apiKey: 'app-test', user: 'tester' }, 'default', undefined, {
+      onConversationIdChange: sessions.conversationChanged,
+    })
+    agent.threadId = first.threadId
+    let resolveOld!: (value: transport.DifyListMessagesResult) => void
+    const oldResponse = new Promise<transport.DifyListMessagesResult>(resolve => { resolveOld = resolve })
+    vi.spyOn(transport, 'listMessages').mockReturnValueOnce(oldResponse).mockResolvedValueOnce({
+      messages: [{ id: 'new', role: 'assistant', content: 'new response' }], hasMore: false, firstId: 'new',
+    })
+    const oldLoad = loadPendingHistory(first, sessions.currentTicket, async () => agent)
+    await Promise.resolve()
+    sessions.select('b')
+    sessions.select('a')
+    const latest = sessions.currentTicket()!
+    const current = await loadPendingHistory(latest, sessions.currentTicket, async () => agent)
+    sessions.historyLoaded({ ...latest, result: current?.result })
+    resolveOld({ messages: [{ id: 'old', role: 'assistant', content: 'old response' }], hasMore: false, firstId: 'old' })
+
+    expect(await oldLoad).toBeNull()
+    expect(agent.messages.map(message => message.content)).toEqual(['new response'])
+  })
+
+  it('does not mark a background history response as loaded after leaving its ticket', async () => {
+    const sessions = createConversationCoordinator(() => 'tester')
+    sessions.select('a')
+    const ticket = sessions.currentTicket()!
+    const agent = new DifyAgUiAgent({ baseUrl: 'http://localhost/v1', apiKey: 'app-test', user: 'tester' }, 'default', undefined, {
+      onConversationIdChange: sessions.conversationChanged,
+    })
+    agent.threadId = ticket.threadId
+    let resolve!: (value: transport.DifyListMessagesResult) => void
+    vi.spyOn(transport, 'listMessages').mockReturnValueOnce(new Promise(value => { resolve = value }))
+    const loading = loadPendingHistory(ticket, sessions.currentTicket, async () => agent)
+    await Promise.resolve()
+    sessions.select('b')
+    resolve({ messages: [{ id: 'old', role: 'assistant', content: 'old response' }], hasMore: false, firstId: 'old' })
+
+    expect(await loading).toBeNull()
+    expect(agent.messages).toEqual([])
+    sessions.select('a')
+    expect(sessions.historyLoading.value).toBe(true)
+  })
+
+  it('keeps a late native start intact after closing a live fallback segment', async () => {
+    const start = { type: 'RUN_STARTED', runId: 'native-run', threadId: 'native-thread', extension: { trace: 'keep' } }
+    vi.spyOn(transport, 'streamChat').mockResolvedValue({
+      response: { conversationId: '', taskId: '' },
+      events: (async function* () {
+        yield { event: 'message', answer: 'fallback prefix' }
+        yield start
+        yield { type: 'RUN_FINISHED', runId: 'native-run', threadId: 'native-thread', result: { answer: 'done' } }
+      })(),
+    })
+    const events: any[] = []
+    const agent = new DifyAgUiAgent({ baseUrl: 'http://localhost/v1', apiKey: 'app-test', user: 'tester' })
+    agent.subscribe({ onEvent: ({ event }) => { events.push(event) } })
+    agent.addMessage({ id: 'q', role: 'user', content: 'question' })
+
+    await agent.runAgent()
+
+    expect(events.filter(event => event.type === 'RUN_STARTED')[1]).toEqual(start)
+    const nativeIndex = events.findIndex(event => event.type === 'RUN_STARTED' && event.runId === start.runId)
+    expect(events[nativeIndex - 1].type).toBe('RUN_FINISHED')
   })
 
   it('replaces inputs when config is updated from assistant props', async () => {

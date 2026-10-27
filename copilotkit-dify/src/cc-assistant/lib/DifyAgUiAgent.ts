@@ -237,6 +237,7 @@ export class DifyAgUiAgent extends AbstractAgent {
   private currentTaskId = ''
   private abortController: AbortController | null = null
   private pendingInterrupt: InterruptQuestion | null = null
+  private historyLoadSequence = 0
 
   constructor(config: DifyAgentConfig, agentId = 'default', configRef?: DifyAgentConfigRef, options: DifyAgentOptions = {}) {
     super({ agentId })
@@ -270,9 +271,11 @@ export class DifyAgUiAgent extends AbstractAgent {
     })
   }
 
-  async loadHistory(conversationId: string) {
+  async loadHistory(conversationId: string, canApply: () => boolean = () => true) {
     const id = String(conversationId || '').trim()
     if (!id) return { loaded: false, messageCount: 0 }
+    const requestId = ++this.historyLoadSequence
+    const config = this.config
 
     copilotDifyDebug('agent.history.load.start', {
       conversationId: id,
@@ -280,12 +283,17 @@ export class DifyAgUiAgent extends AbstractAgent {
       currentMessages: this.messages.length,
     })
     const history = await listMessages({
-      baseUrl: this.config.baseUrl,
-      apiKey: this.config.apiKey,
-      user: this.config.user,
+      baseUrl: config.baseUrl,
+      apiKey: config.apiKey,
+      user: config.user,
       conversationId: id,
       limit: 20,
     })
+    if (
+      requestId !== this.historyLoadSequence || !canApply() ||
+      config.user !== this.config.user || config.apiKey !== this.config.apiKey ||
+      config.baseUrl !== this.config.baseUrl
+    ) return { loaded: false, messageCount: 0 }
     this.currentTaskId = ''
     this.pendingInterrupt = null
     const loadedMessages = normalizeLoadedHistoryMessages(deepClone(history.messages))
@@ -334,6 +342,7 @@ export class DifyAgUiAgent extends AbstractAgent {
   }
 
   clearConversation() {
+    this.historyLoadSequence += 1
     if (!this.conversationId && this.messages.length === 0) return
     this.conversationId = ''
     this.currentTaskId = ''
@@ -347,8 +356,8 @@ export class DifyAgUiAgent extends AbstractAgent {
     this.clearConversation()
   }
 
-  async selectConversation(conversationId: string) {
-    return this.loadHistory(conversationId)
+  async selectConversation(conversationId: string, canApply: () => boolean = () => true) {
+    return this.loadHistory(conversationId, canApply)
   }
 
   override clone(): DifyAgUiAgent {
@@ -372,6 +381,7 @@ export class DifyAgUiAgent extends AbstractAgent {
       }
 
       this.abortController = new AbortController()
+      this.historyLoadSequence += 1
 
       const run = async () => {
         try {

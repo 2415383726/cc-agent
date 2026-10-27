@@ -160,7 +160,7 @@ export async function waitForVisibleAgent<T extends { threadId?: string }>(
 export async function loadPendingHistory(
   ticket: HistoryTicket,
   currentTicket: () => HistoryTicket | null,
-  visibleAgent: () => Promise<{ threadId?: string; selectConversation?: (id: string) => Promise<unknown> } | undefined>,
+  visibleAgent: () => Promise<{ threadId?: string; selectConversation?: (id: string, canApply?: () => boolean) => Promise<unknown> } | undefined>,
 ): Promise<{ result: unknown } | null> {
   if (!sameTicket(currentTicket(), ticket)) return null
   try {
@@ -168,7 +168,7 @@ export async function loadPendingHistory(
     if (!sameTicket(currentTicket(), ticket)) return null
     if (!agent?.selectConversation) throw new Error('当前 Agent 不支持加载历史会话')
     if (agent.threadId !== ticket.threadId) return null
-    const result = await agent.selectConversation(ticket.conversationId)
+    const result = await agent.selectConversation(ticket.conversationId, () => sameTicket(currentTicket(), ticket))
     return sameTicket(currentTicket(), ticket) ? { result } : null
   } catch (error) {
     if (!sameTicket(currentTicket(), ticket)) return null

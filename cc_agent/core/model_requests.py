@@ -4,6 +4,7 @@ import time
 from collections.abc import Callable, Iterator
 from typing import Any
 
+from .compression import compression_activity
 from .config import AgentRunConfig
 from .context_budget import ContextBudget, estimate_context_tokens, limit_text_to_tokens
 from .error_classifier import ContextOverflowError, classify_error, extract_context_numbers
@@ -85,7 +86,7 @@ class ModelRequests:
         yield from self._write(
             "write_activity",
             "cc_agent.compression",
-            _compression_activity("started", "context_overflow", compression_id),
+            compression_activity("started", "context_overflow", compression_id),
         )
         metadata = self.compact(transcript, force=True)
         prompt_messages, prepared = self.prepare(transcript, force_final)
@@ -100,7 +101,7 @@ class ModelRequests:
             "write_activity",
             "cc_agent.compression",
             {
-                **_compression_activity("completed", "context_overflow", compression_id, metadata),
+                **compression_activity("completed", "context_overflow", compression_id, metadata),
                 **self.recovery_metadata,
             },
         )
@@ -231,18 +232,3 @@ class ModelRequests:
         if not tools:
             return []
         return tools
-
-
-def _compression_activity(
-    status: str, trigger: str, compression_id: str, metadata: dict[str, Any] | None = None
-) -> dict[str, Any]:
-    payload = dict(metadata or {})
-    payload.update(
-        {
-            "status": status,
-            "trigger": trigger,
-            "compressionId": compression_id,
-            "messageId": compression_id,
-        }
-    )
-    return payload

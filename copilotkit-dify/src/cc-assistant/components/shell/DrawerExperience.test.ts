@@ -95,7 +95,7 @@ describe('DrawerExperience', () => {
     await renderToString(app)
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(copilotMocks.selectConversation).toHaveBeenCalledWith('conv_1')
+    expect(copilotMocks.selectConversation).toHaveBeenCalledWith('conv_1', expect.any(Function))
     expect(historyLoaded).toHaveBeenCalledWith(expect.objectContaining({
       conversationId: 'conv_1',
       threadId: 'thread-1',

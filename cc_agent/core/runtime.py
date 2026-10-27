@@ -6,7 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from .config import AgentRunConfig
-from .compression import DifyHistorySummarizer
+from .compression import DifyHistorySummarizer, compression_activity
 from .loop import AgentLoop
 from .messages import AgentRunResult, AgentState
 from .model_adapter import DifyModelAdapter
@@ -210,7 +210,7 @@ class DifyAgentRuntime:
                 manual_compression_id = f"compression:manual:{run_id}"
                 yield from writer.write_activity(
                     "cc_agent.compression",
-                    _compression_activity("started", "manual", manual_compression_id),
+                    compression_activity("started", "manual", manual_compression_id),
                 )
             slash_result = _dispatch_slash_command(
                 config.query,
@@ -733,21 +733,3 @@ def _command_activity_events(writer: Any, event: Any) -> list[dict[str, Any]]:
 
 def _drop_none(value: dict[str, Any]) -> dict[str, Any]:
     return {key: item for key, item in value.items() if item is not None}
-
-
-def _compression_activity(
-    status: str,
-    trigger: str,
-    compression_id: str,
-    metadata: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    payload = dict(metadata or {})
-    payload.update(
-        {
-            "status": status,
-            "trigger": trigger,
-            "compressionId": compression_id,
-            "messageId": compression_id,
-        }
-    )
-    return payload

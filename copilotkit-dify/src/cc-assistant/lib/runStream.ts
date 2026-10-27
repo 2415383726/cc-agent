@@ -210,6 +210,7 @@ export function createRunStream(observer: EventObserver, context: RunStreamConte
   let started = false
   let nativeSeen = false
   let uploaded = false
+  const pending: BaseEvent[] = []
   const blobs = createDifyBlobAccumulator()
   const emitUploaded = () => {
     if (uploaded || !context.uploadedFiles) return
@@ -217,6 +218,10 @@ export function createRunStream(observer: EventObserver, context: RunStreamConte
     observer.next(context.uploadedFiles)
   }
   const emit = (event: BaseEvent) => {
+    if (!started && event.type !== 'RUN_STARTED') {
+      pending.push(event)
+      return
+    }
     if (event.type === 'RUN_FINISHED' || event.type === 'RUN_ERROR') {
       const final = event as any
       const payload = final.result || {}
@@ -228,7 +233,11 @@ export function createRunStream(observer: EventObserver, context: RunStreamConte
       if (question) observer.next({ type: 'CUSTOM', name: 'on_interrupt', value: question } as BaseEvent)
     }
     observer.next(event)
-    if (event.type === 'RUN_STARTED') { started = true; emitUploaded() }
+    if (event.type === 'RUN_STARTED') {
+      started = true
+      emitUploaded()
+      for (const queued of pending.splice(0)) emit(queued)
+    }
   }
   const fallback = createDifyRunEmitter({ next: emit }, context)
   const ensureStarted = () => { if (!started) fallback.emitRunStarted() }
@@ -239,17 +248,22 @@ export function createRunStream(observer: EventObserver, context: RunStreamConte
       const blob = blobs.ingest(raw)
       if (isDifyBlobEvent(raw)) {
         if (blob) {
-          ensureStarted()
-          observer.next({ type: 'ACTIVITY_SNAPSHOT', messageId: blob.messageId,
+          emit({ type: 'ACTIVITY_SNAPSHOT', messageId: blob.messageId,
             activityType: blob.activityType, content: blob.content } as BaseEvent)
         }
         return
       }
       const native = extractAgUiEvent(raw)
       if (native) {
-        if (!nativeSeen) fallback.closeOpenMessages()
+        if (!nativeSeen) {
+          fallback.closeOpenMessages()
+          if (started && native.type === 'RUN_STARTED') {
+            // Finish a live fallback segment before starting the native run.
+            // The SDK rejects a second RUN_STARTED while the first is active.
+            fallback.emitNormalized({ kind: 'final_state', payload: {} })
+          }
+        }
         nativeSeen = true
-        if (native.type === 'RUN_STARTED' && started) return
         if (!started && native.type !== 'RUN_STARTED') ensureStarted()
         emit(native as BaseEvent)
         return
@@ -257,12 +271,15 @@ export function createRunStream(observer: EventObserver, context: RunStreamConte
       if (nativeSeen && raw?.event !== 'error') return
       const normalized = normalizeDifyEvent(raw)
       if (!normalized.length) return
-      ensureStarted()
       for (const event of normalized) {
+        if (!['generic_activity', 'skill_event', 'guard_event', 'compression_event'].includes(event.kind)) ensureStarted()
         if (event.kind === 'error') throw new Error(event.message || 'Dify event error')
         fallback.emitNormalized(event)
       }
     },
-    finish() { fallback.closeOpenMessages() },
+    finish() {
+      if (pending.length) ensureStarted()
+      fallback.closeOpenMessages()
+    },
   }
 }

@@ -45,14 +45,27 @@ describe('complete run stream', () => {
     expect(events.filter(event => event.type.startsWith('TOOL_CALL')).map(event => event.toolCallId)).toEqual(['external', 'external', 'external', 'external'])
   })
 
-  it('starts once when metadata precedes native events and retains native activities', () => {
+  it('flushes passive fallback output on finish when no native stream arrives', () => {
     const events: any[] = []
     const stream = createRunStream({ next: event => events.push(event) }, { runId: 'r', threadId: 't' })
     stream.ingest({ event: 'agent_log', data: { type: 'metadata', count: 1 } })
-    stream.ingest({ type: 'RUN_STARTED', runId: 'r', threadId: 't' })
+    stream.finish()
+    expect(events.map(event => event.type)).toEqual(['RUN_STARTED', 'ACTIVITY_SNAPSHOT'])
+  })
+
+  it.each([
+    { event: 'agent_log', data: { type: 'metadata', count: 1 } },
+    { type: 'blob', message: { blob: 'Ynl0ZXM=' }, meta: { filename: 'report.txt' } },
+  ])('retains native start identity and extensions after a passive prefix: %j', (prefix) => {
+    const events: any[] = []
+    const stream = createRunStream({ next: event => events.push(event) }, { runId: 'r', threadId: 't' })
+    stream.ingest(prefix)
+    const start = { type: 'RUN_STARTED', runId: 'native-run', threadId: 'native-thread', extension: { trace: 'keep' } }
+    stream.ingest(start)
     const activity = { type: 'ACTIVITY_SNAPSHOT', messageId: 'a', activityType: 'custom', content: { untouched: true } }
     stream.ingest(activity)
     expect(events.filter(event => event.type === 'RUN_STARTED')).toHaveLength(1)
+    expect(events[0]).toEqual(start)
     expect(events[events.length - 1]).toEqual(activity)
   })
 })

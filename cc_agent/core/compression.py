@@ -91,3 +91,18 @@ def _fallback_summary(messages: list[dict[str, Any]], existing_summary: str = ""
         if content:
             lines.append(f"- {message.get('role', 'message')}: {content[:500]}")
     return "\n".join(lines) or "(no prior messages)"
+
+
+def compression_activity(
+    status: str, trigger: str, compression_id: str, metadata: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    payload = dict(metadata or {})
+    payload.update(
+        {
+            "status": status,
+            "trigger": trigger,
+            "compressionId": compression_id,
+            "messageId": compression_id,
+        }
+    )
+    return payload
