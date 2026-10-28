@@ -100,7 +100,11 @@ class SkillRuntime:
             tool_name="SkillReadResource",
             llm_observation="",
             resource_page=TextResourcePage(
-                normalized_path, min(offset, len(text)), text[offset : offset + limit], len(text)
+                normalized_path,
+                min(offset, len(text)),
+                text[offset : offset + limit],
+                len(text),
+                min(limit, self.max_observation_chars),
             ),
         )
         return ResultBudget(min(limit, self.max_observation_chars)).apply(result)

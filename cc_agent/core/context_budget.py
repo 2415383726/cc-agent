@@ -264,6 +264,13 @@ def find_split_point(messages: list[dict[str, Any]], keep_ratio: float = 0.3) ->
             raw_split = index
             break
     adjusted = _respect_tool_pairs(messages, raw_split)
+    # Internal user messages (for example a newly loaded Skill body) can follow
+    # results before the model has consumed them. Keep that whole exchange fresh.
+    for index in range(len(messages) - 1, -1, -1):
+        if messages[index].get("role") == "assistant":
+            if messages[index].get("tool_calls"):
+                adjusted = min(adjusted, index)
+            break
     if adjusted >= len(messages):
         return 0
     return adjusted

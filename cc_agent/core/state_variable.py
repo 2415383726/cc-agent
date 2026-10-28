@@ -342,13 +342,6 @@ def _compact_to_fit(
         )
         warning = "state_compacted_to_fit_variable_limit"
 
-    if not _fits(payload, max_encoded_bytes):
-        payload["tasks"] = []
-        payload["active_skills"] = _compact_active_skills(
-            payload.get("active_skills"), max_items=3, max_summary_chars=1000
-        )
-        warning = "state_compacted_to_minimal_variable_limit"
-
     if not _fits(payload, max_encoded_bytes) and pending_start is None:
         payload["summary"] = _trim_text(
             _merge_summary(
@@ -360,6 +353,13 @@ def _compact_to_fit(
         )
         payload["recent_history"] = []
         payload["active_skills"] = []
+
+    if not _fits(payload, max_encoded_bytes):
+        payload["tasks"] = []
+        payload["active_skills"] = _compact_active_skills(
+            payload.get("active_skills"), max_items=3, max_summary_chars=1000
+        )
+        warning = "state_compacted_to_minimal_variable_limit"
 
     return payload, compacted, warning
 

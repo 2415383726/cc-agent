@@ -204,6 +204,19 @@ class RuntimeFailureTests(unittest.TestCase):
 
 
 class StateCapacityTests(unittest.TestCase):
+    def test_small_tasks_survive_when_a_large_nonpending_tail_must_be_summarized(self):
+        result = AgentRunResult(
+            "Done",
+            [{"role": "assistant", "content": "Large answer " * 40000}],
+            [{"id": "keep", "subject": "Follow up", "status": "pending"}],
+            {"finish_reason": "final"},
+        )
+        DifyStateBackend(AgentRunConfig(), "conversation").commit(result)
+        self.assertTrue(result.state_ref["persisted"])
+        saved = decode_agent_state(result.encoded_agent_state)
+        self.assertEqual(saved.tasks, result.tasks)
+        self.assertTrue(saved.history_payload["summary"])
+
     def test_oversized_pending_operation_is_not_reported_as_persisted_or_silently_modified(self):
         body = "".join(
             random.Random(20261027).choices(string.ascii_letters + string.digits, k=40000)
@@ -232,6 +245,30 @@ class StateCapacityTests(unittest.TestCase):
 
 
 class SkillResourcePagingTests(unittest.TestCase):
+    def test_a_small_requested_page_limit_survives_scheduler_budgeting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "SKILL.md").write_text("Read reference.md", encoding="utf-8")
+            (root / "reference.md").write_text("abcdefghij" * 200, encoding="utf-8")
+            state = AgentState(skills=[{"name": "refs", "path": str(root / "SKILL.md")}])
+            scheduler = SerialToolScheduler(
+                ToolAdapter(ToolCatalog.create(), state), ResultBudget(8000)
+            )
+            result = scheduler.execute(
+                [
+                    ToolCall(
+                        "read",
+                        "SkillReadResource",
+                        {"skill": "refs", "path": "reference.md", "limit": 128},
+                    )
+                ],
+                1,
+            )[0].result
+            self.assertFalse(result.is_error)
+            self.assertLessEqual(len(result.llm_observation), 128)
+            page = result.metadata["resource_page"]
+            self.assertEqual(len(result.llm_observation.split("\n\n", 1)[1]), page["next_offset"])
+
     def test_batch_shrinking_updates_each_resource_cursor_to_the_delivered_content(self):
         source = "ABCDEFGHIJ" * 200
         with tempfile.TemporaryDirectory() as directory:
@@ -327,7 +364,7 @@ class ToolBatchHistoryTests(unittest.TestCase):
 
     def test_skill_injection_keeps_all_executed_results_paired(self):
         state = AgentState(
-            skills=[{"name": "workflow", "kind": "prompt", "body": "Use the task tools."}]
+            skills=[{"name": "workflow", "kind": "prompt", "body": "Use the task tools. " * 100}]
         )
         catalog = ToolCatalog.create()
         prompts = []
@@ -344,7 +381,7 @@ class ToolBatchHistoryTests(unittest.TestCase):
             return AssistantTurn(text="done")
 
         loop = AgentLoop(
-            AgentRunConfig(query="Track the work"),
+            AgentRunConfig(query="Track the work", max_history_messages=4),
             state,
             catalog,
             SimpleNamespace(invoke=invoke),

@@ -78,8 +78,10 @@ class TextResourcePage:
     offset: int
     text: str
     total_chars: int
+    response_limit: int
 
     def render(self, max_chars: int) -> tuple[str, dict[str, Any]]:
+        max_chars = min(max_chars, self.response_limit)
         count = min(len(self.text), max_chars)
         while True:
             end = self.offset + count
