@@ -1,5 +1,7 @@
 # LibreChat 对照：Dify Agent 执行内核
 
+> 以下保留调查阶段的证据与当时状态；2026-10-28 后续实施已完成，最终行为、验证及审查见 spec.md、validation.md、review.md。
+
 日期：2026-10-27。只读代码调查与本地故障探针；本轮未改运行代码，未连接生产 Dify/MCP，未运行全量回归。
 
 - CC Agent 基线：`951526723eb2f32eb90e52bc43e889c7762a5d16`。

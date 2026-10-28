@@ -24,3 +24,13 @@ Scope creep: None found. Deferred stream accumulation, frontend, queue, general 
 超大非 pending 尾部消息不能迫使小 Tasks 提前丢失。新增真实 DifyStateBackend 回归后，把尾部历史归入摘要的步骤移到最终丢弃 Tasks 之前；pending 仍完整保留，装不下时显式失败。
 
 初审共计：Standards 0 项；Spec 2 项，最严重为 P2，均已修复。修复后复核与最终验证见下方记录。
+
+
+## 修复后复核
+
+`6dcea32` 已由两个原审查代理复核：
+
+- Standards：No new documented-standard breaches found. The changes preserve bounded resource paging, tool-call/result pairing, Tasks during state compaction, and exact pending-operation recovery. No substantive baseline smell findings.
+- Spec：Both Spec findings are resolved. Earlier tool cycles remain eligible for summarization; requested page limits and cursors remain correct; small Tasks survive oversized nonpending history while oversized pending operations still fail explicitly. 审查代理另行运行 8 项相关公开回归，全部通过，未发现修复引入的回归。
+
+最终：Standards 0 项；Spec 初审 2 项 P2，修复后剩余 0 项。完整后端 236 项通过，17 个核心模块增量类型检查、格式检查和双架构离线构建通过。扩展静态检查的既有债务及线上验收边界见 validation.md。
