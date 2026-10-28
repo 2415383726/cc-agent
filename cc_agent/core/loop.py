@@ -10,12 +10,20 @@ from .error_classifier import ContextOverflowError, classify_error
 from .failures import public_failure_message
 from .guards import ToolGuard, ToolGuardConfig
 from .history import sanitize_history
-from .internal_events import InternalEvent, LoopIteration, ModelEnded, ModelError, ModelStarted
+from .internal_events import (
+    InternalEvent,
+    LoopIteration,
+    ModelEnded,
+    ModelError,
+    ModelStarted,
+    ToolStarted,
+)
 from .interrupts import UserInterrupts
 from .messages import AgentRunResult, AgentState, AssistantTurn, assistant_message, tool_message
 from .model_requests import ModelRequests
 from .model_stream import AssistantTurnCompleted
 from .result_budget import ResultBudget
+from .run_budget import RunBudget, RunBudgetExceeded
 from .tool_adapter import ToolAdapter
 from .tool_catalog import ToolCatalog
 from .tool_scheduler import SerialToolScheduler
@@ -46,8 +54,10 @@ class AgentLoop:
         include_user_query: bool = True,
         writer: Any | None = None,
         interrupts: UserInterrupts | None = None,
+        run_budget: RunBudget | None = None,
     ):
         self.config = config
+        self.run_budget = run_budget or RunBudget.from_config(config)
         self.state = state
         self.registry = registry
         self.model_adapter = model_adapter
@@ -57,12 +67,17 @@ class AgentLoop:
         self.writer = writer
         self.final_result: AgentRunResult | None = None
         self.requests = ModelRequests(
-            config, state, registry, model_adapter, summarizer, self._write, self._record_timing
+            config,
+            state,
+            registry,
+            model_adapter,
+            summarizer,
+            self._write,
+            self._record_timing,
+            run_budget=self.run_budget,
         )
         self.guard = ToolGuard(
             ToolGuardConfig(
-                allowlist=config.tool_allowlist,
-                denylist=config.tool_denylist,
                 max_repeated_calls=config.max_repeated_tool_calls,
                 max_consecutive_errors=config.max_consecutive_tool_errors,
             )
@@ -75,6 +90,7 @@ class AgentLoop:
             result_budget=ResultBudget(config.max_observation_chars),
             guard=self.guard,
             interrupts=self.interrupts,
+            run_budget=self.run_budget,
         )
         self.events: list[InternalEvent] = []
         self._timings_ms = {
@@ -124,10 +140,10 @@ class AgentLoop:
                 prompt_messages, budget_metadata = self.requests.prepare(
                     transcript, force_final=False
                 )
-            except ContextOverflowError as exc:
+            except (ContextOverflowError, RunBudgetExceeded) as exc:
                 self._set_final_result(
                     self._error_result(
-                        "context_overflow",
+                        classify_error(exc),
                         exc,
                         transcript,
                         compressed,
@@ -261,8 +277,8 @@ class AgentLoop:
                             type(exc).__name__,
                         )
                         finish_reason = (
-                            "context_overflow"
-                            if classify_error(exc) == "context_overflow"
+                            classify_error(exc)
+                            if classify_error(exc) in {"context_overflow", "budget_exhausted"}
                             else turn.finish_reason or "length"
                         )
                     break
@@ -271,10 +287,10 @@ class AgentLoop:
                         final_prompt_messages, final_budget_metadata = self.requests.prepare(
                             transcript, force_final=True
                         )
-                    except ContextOverflowError as exc:
+                    except (ContextOverflowError, RunBudgetExceeded) as exc:
                         self._set_final_result(
                             self._error_result(
-                                "context_overflow",
+                                classify_error(exc),
                                 exc,
                                 transcript,
                                 compressed,
@@ -331,13 +347,16 @@ class AgentLoop:
                 finish_reason = turn.finish_reason or "final"
                 break
 
-            for tool_call in turn.tool_calls:
-                yield from self._write(
-                    "write_tool_call", tool_call.id, tool_call.name, tool_call.arguments
-                )
-
             tool_started = time.perf_counter()
-            scheduled_results = self.scheduler.execute(turn.tool_calls, iteration)
+            scheduled_results = []
+            calls_by_id = {call.id: call for call in turn.tool_calls}
+            for progress in self.scheduler.iter_execute(turn.tool_calls, iteration):
+                if isinstance(progress, ToolStarted):
+                    call = calls_by_id[progress.tool_call_id]
+                    yield from self._write("write_tool_call", call.id, call.name, call.arguments)
+                else:
+                    scheduled_results.append(progress)
+                    yield from self.render_tool_result(progress.result)
             self._record_timing("tool_ms", tool_started, iteration=iteration)
             self._tool_batch_truncated = self._tool_batch_truncated or any(
                 bool((scheduled.result.metadata or {}).get("batch_truncated"))
@@ -345,12 +364,10 @@ class AgentLoop:
             )
             skill_messages = []
             for scheduled in scheduled_results:
-                tool_call = scheduled.tool_call
                 result = scheduled.result
                 total_tool_calls += 1
                 for scheduled_event in scheduled.events:
                     self.events.append(scheduled_event)
-                yield from self.render_tool_result(result)
                 transcript.append(tool_message(result))
                 if result.metadata.get("inject_user_message"):
                     yield from self._write(
@@ -369,9 +386,12 @@ class AgentLoop:
                     skill_messages.append(
                         {
                             "role": "user",
-                            "content": result.metadata.get("injected_message")
-                            or result.llm_observation,
-                            "metadata": {"internal": True, "source_tool": result.tool_name},
+                            "content": f"Skill {result.metadata.get('skill_name') or ''} loaded; its complete instructions are in Active skills.",
+                            "metadata": {
+                                "internal": True,
+                                "source_tool": result.tool_name,
+                                "skill_name": result.metadata.get("skill_name"),
+                            },
                         }
                     )
                 if result.metadata.get("requires_user_input"):
@@ -379,6 +399,10 @@ class AgentLoop:
                     answer = str(awaiting_user_question["question"])
                     finish_reason = "awaiting_user"
             transcript.extend(skill_messages)
+            if self.run_budget.exceeded:
+                finish_reason = "budget_exhausted"
+                answer = public_failure_message(finish_reason)
+                break
             if awaiting_user_question:
                 break
             logger.info(
@@ -396,10 +420,10 @@ class AgentLoop:
                 prompt_messages, budget_metadata = self.requests.prepare(
                     transcript, force_final=True
                 )
-            except ContextOverflowError as exc:
+            except (ContextOverflowError, RunBudgetExceeded) as exc:
                 self._set_final_result(
                     self._error_result(
-                        "context_overflow",
+                        classify_error(exc),
                         exc,
                         transcript,
                         compressed,
@@ -534,6 +558,8 @@ class AgentLoop:
         return f"compression:{trigger}:{iteration}"
 
     def _set_final_result(self, result: AgentRunResult) -> AgentRunResult:
+        result.execution_metadata["run_budget"] = self.run_budget.summary()
+        result.execution_metadata["run_status"] = result.run_status
         self.final_result = result
         return result
 
@@ -575,7 +601,7 @@ class AgentLoop:
     def _timing_metadata(self) -> dict[str, float]:
         return {key: round(value, 3) for key, value in self._timings_ms.items()}
 
-    def _budget_execution_metadata(self) -> dict[str, int | bool]:
+    def _budget_execution_metadata(self) -> dict[str, Any]:
         metadata = self.requests.last_budget_metadata
         return {
             **self.requests.recovery_metadata,
@@ -583,6 +609,7 @@ class AgentLoop:
             "input_budget_tokens": int(metadata.get("input_budget_tokens") or 0),
             "static_context_tokens": int(metadata.get("static_context_tokens") or 0),
             "request_over_budget": bool(metadata.get("request_over_budget")),
+            "context_tokens": metadata.get("context_tokens", {}),
         }
 
     def _error_result(

@@ -2,6 +2,7 @@ import type { BaseEvent } from '@ag-ui/core'
 import { extractAgUiEvent, normalizeDifyEvent, type NormalizedDifyEvent } from './difyEventBridge'
 import { createDifyBlobAccumulator, isDifyBlobEvent } from './difyBlob'
 import type { InterruptQuestion } from './question'
+import { runStatusFromMetadata, type RunStatus } from './runStatus'
 
 interface DifyRunEmitterContext {
   runId: string
@@ -203,6 +204,7 @@ export interface RunStreamContext extends DifyRunEmitterContext {
   onConversationId?: (id: string) => void
   onTaskId?: (id: string) => void
   onInterrupt?: (question: InterruptQuestion | null) => void
+  onRunStatus?: (status: RunStatus, identity: { runId: string }) => void
 }
 
 /** Interpret one complete Dify stream, retaining native events and real fallback behavior. */
@@ -210,6 +212,9 @@ export function createRunStream(observer: EventObserver, context: RunStreamConte
   let started = false
   let nativeSeen = false
   let uploaded = false
+  let terminal = false
+  let finished = false
+  let activeRunId = context.runId
   const pending: BaseEvent[] = []
   const blobs = createDifyBlobAccumulator()
   const emitUploaded = () => {
@@ -223,6 +228,7 @@ export function createRunStream(observer: EventObserver, context: RunStreamConte
       return
     }
     if (event.type === 'RUN_FINISHED' || event.type === 'RUN_ERROR') {
+      terminal = true
       const final = event as any
       const payload = final.result || {}
       const ref = payload.state_ref || payload.stateRef || {}
@@ -231,9 +237,14 @@ export function createRunStream(observer: EventObserver, context: RunStreamConte
       const question = event.type === 'RUN_FINISHED' ? interruptFromResult(payload, final.outcome) : null
       context.onInterrupt?.(question)
       if (question) observer.next({ type: 'CUSTOM', name: 'on_interrupt', value: question } as BaseEvent)
+      const metadata = payload.execution_metadata || payload.executionMetadata || {}
+      context.onRunStatus?.(event.type === 'RUN_ERROR' ? 'failed' : question ? 'awaiting_user' :
+        runStatusFromMetadata(metadata), { runId: String(final.runId || metadata.run_id || activeRunId) })
     }
     observer.next(event)
     if (event.type === 'RUN_STARTED') {
+      activeRunId = String((event as any).runId || context.runId)
+      terminal = false
       started = true
       emitUploaded()
       for (const queued of pending.splice(0)) emit(queued)
@@ -278,8 +289,11 @@ export function createRunStream(observer: EventObserver, context: RunStreamConte
       }
     },
     finish() {
+      if (finished) return
+      finished = true
       if (pending.length) ensureStarted()
       fallback.closeOpenMessages()
+      if (!terminal) context.onRunStatus?.('unknown', { runId: activeRunId })
     },
   }
 }

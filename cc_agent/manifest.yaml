@@ -8,8 +8,8 @@ label:
 created_at: "2026-05-15T00:00:00.000000000Z"
 icon: icon.svg
 description:
-  en_US: Dify-native CC Agent with conversation state, skills, memory, tasks, and injected tools.
-  zh_Hans: Dify-native CC Agent with conversation state, skills, memory, tasks, and injected tools.
+  en_US: Dify-native CC Agent with conversation state, skills, tasks, and injected tools.
+  zh_Hans: Dify-native CC Agent with conversation state, skills, tasks, and injected tools.
 tags:
   - "agent"
 resource:

@@ -19,11 +19,7 @@ TARGET_PLATFORMS = {
     "amd64": ["manylinux_2_28_x86_64", "manylinux2014_x86_64"],
     "arm64": ["manylinux_2_28_aarch64", "manylinux2014_aarch64"],
 }
-ARCH_OUTPUT_SUFFIXES = {
-    "all": "amd64-arm64",
-    "amd64": "amd64",
-    "arm64": "arm64",
-}
+ARCH_OUTPUT_SUFFIXES = {"all": "amd64-arm64", "amd64": "amd64", "arm64": "arm64"}
 
 SKIP_NAMES = {
     ".scratch",
@@ -31,6 +27,9 @@ SKIP_NAMES = {
     ".env.example",
     ".git",
     ".venv",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".pytest_cache",
     ".idea",
     ".vscode",
     "__pycache__",
@@ -84,8 +83,7 @@ def read_lock_requirements() -> dict[str, str]:
 def read_wheel_identity(wheel_path: Path) -> tuple[str, str]:
     with zipfile.ZipFile(wheel_path) as archive:
         metadata_path = next(
-            (name for name in archive.namelist() if name.endswith(".dist-info/METADATA")),
-            None,
+            (name for name in archive.namelist() if name.endswith(".dist-info/METADATA")), None
         )
         if metadata_path is None:
             raise RuntimeError(f"Missing METADATA in wheel: {wheel_path.name}")
@@ -131,7 +129,9 @@ def verify_offline_resolution(arch: str) -> None:
     DIST_DIR.mkdir(parents=True, exist_ok=True)
     for target_arch in selected_arches(arch):
         platforms = TARGET_PLATFORMS[target_arch]
-        with tempfile.TemporaryDirectory(prefix=f"offline-resolution-{target_arch}-", dir=DIST_DIR) as temp_dir:
+        with tempfile.TemporaryDirectory(
+            prefix=f"offline-resolution-{target_arch}-", dir=DIST_DIR
+        ) as temp_dir:
             command = [
                 sys.executable,
                 "-m",
@@ -154,7 +154,9 @@ def verify_offline_resolution(arch: str) -> None:
             ]
             for platform in platforms:
                 command.extend(["--platform", platform])
-            print(f"Verifying offline dependency resolution for {target_arch} ({', '.join(platforms)})")
+            print(
+                f"Verifying offline dependency resolution for {target_arch} ({', '.join(platforms)})"
+            )
             subprocess.run(command, cwd=ROOT, check=True)
 
 
@@ -224,11 +226,11 @@ def build_package(output_path: Path, arch: str) -> Path:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build an offline-installable Dify plugin package.")
+    parser = argparse.ArgumentParser(
+        description="Build an offline-installable Dify plugin package."
+    )
     parser.add_argument(
-        "--output",
-        type=Path,
-        help="Optional output path for the .difypkg artifact.",
+        "--output", type=Path, help="Optional output path for the .difypkg artifact."
     )
     parser.add_argument(
         "--arch",
@@ -241,7 +243,9 @@ def main() -> int:
     ensure_locked_wheels_exist()
     verify_offline_resolution(args.arch)
     plugin_name, plugin_version = parse_manifest_identity()
-    default_name = f"{plugin_name}-{plugin_version}-offline-linux-{ARCH_OUTPUT_SUFFIXES[args.arch]}.difypkg"
+    default_name = (
+        f"{plugin_name}-{plugin_version}-offline-linux-{ARCH_OUTPUT_SUFFIXES[args.arch]}.difypkg"
+    )
     output_path = args.output or (DIST_DIR / default_name)
     output_path = output_path if output_path.is_absolute() else ROOT / output_path
 

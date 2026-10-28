@@ -20,6 +20,7 @@ describe('DifyAgUiAgent', () => {
 
   beforeEach(() => {
     vi.stubGlobal('fetch', fetchMock)
+    vi.spyOn(transport, 'loadConversationRecovery').mockResolvedValue(null)
   })
 
   afterEach(() => {
@@ -152,6 +153,51 @@ describe('DifyAgUiAgent', () => {
     expect(events.filter(event => event.type === 'RUN_STARTED')[1]).toEqual(start)
     const nativeIndex = events.findIndex(event => event.type === 'RUN_STARTED' && event.runId === start.runId)
     expect(events[nativeIndex - 1].type).toBe('RUN_FINISHED')
+  })
+
+  it('restores a pending interaction while loading history and can resume its exact prompt', async () => {
+    vi.spyOn(transport, 'listMessages').mockResolvedValue({ messages: [], hasMore: false, firstId: '' })
+    vi.mocked(transport.loadConversationRecovery).mockResolvedValue({ revision: 7, runId: 'old',
+      status: 'awaiting_user', question: { id: 'pending', question: 'Continue?', purpose: 'permission',
+        options: [{ label: 'Allow', value: 'allow_once' }], fields: [], allowCustomInput: false, multiSelect: false } })
+    const agent = new DifyAgUiAgent({ baseUrl: '/v1', apiKey: 'key', user: 'u' })
+    await agent.loadHistory('conv')
+    expect(agent.state.recovery).toMatchObject({ revision: 7, question: { id: 'pending' } })
+    fetchMock.mockResolvedValue({ ok: true, body: streamFromEvents([
+      { type: 'RUN_STARTED', runId: 'new', threadId: 'default' },
+      { type: 'RUN_FINISHED', runId: 'new', threadId: 'default', result: { answer: 'done' } },
+    ]) })
+    agent.setMessages([{ id: 'answer', role: 'user', content: 'allow_once' }])
+    await agent.runAgent()
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.inputs.user_prompt_response.promptId).toBe('pending')
+    expect(agent.state.recovery).toBeNull()
+  })
+
+  it('keeps history available when recovery cannot be read', async () => {
+    vi.spyOn(transport, 'listMessages').mockResolvedValue({ messages: [{ id: 'a', role: 'assistant', content: 'saved' }], hasMore: false, firstId: '' })
+    vi.mocked(transport.loadConversationRecovery).mockRejectedValue(new Error('unavailable'))
+    const agent = new DifyAgUiAgent({ baseUrl: '/v1', apiKey: 'key', user: 'u' })
+    await agent.loadHistory('conv')
+    expect(agent.messages[0].content).toBe('saved')
+    expect(agent.state.recoveryAvailable).toBe(false)
+  })
+
+  it('does not let a late recovery response overwrite the latest selection of the same conversation', async () => {
+    vi.spyOn(transport, 'listMessages').mockResolvedValue({ messages: [], hasMore: false, firstId: '' })
+    let older!: (value: any) => void
+    let newer!: (value: any) => void
+    vi.mocked(transport.loadConversationRecovery)
+      .mockImplementationOnce(() => new Promise(resolve => { older = resolve }))
+      .mockImplementationOnce(() => new Promise(resolve => { newer = resolve }))
+    const agent = new DifyAgUiAgent({ baseUrl: '/v1', apiKey: 'key', user: 'u' })
+    const first = agent.loadHistory('conv')
+    const second = agent.loadHistory('conv')
+    newer({ revision: 8, runId: 'new', status: 'completed', question: null })
+    await second
+    older({ revision: 7, runId: 'old', status: 'completed', question: null })
+    expect(await first).toMatchObject({ loaded: false })
+    expect(agent.state.recovery.runId).toBe('new')
   })
 
   it('replaces inputs when config is updated from assistant props', async () => {

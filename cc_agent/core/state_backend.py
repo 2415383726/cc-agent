@@ -41,11 +41,11 @@ class StateLoad:
 
 
 class StateBackend(Protocol):
-    def load(self) -> StateLoad:
-        ...
+    def load(self) -> StateLoad: ...
 
-    def commit(self, result: AgentRunResult, *, expected_revision: int | None = None) -> list[dict[str, Any]]:
-        ...
+    def commit(
+        self, result: AgentRunResult, *, previous_revision: int = 0
+    ) -> list[dict[str, Any]]: ...
 
 
 class DifyStateBackend:
@@ -73,10 +73,9 @@ class DifyStateBackend:
             previous_revision=loaded.revision,
         )
 
-    def commit(
-        self, result: AgentRunResult, *, expected_revision: int | None = None
-    ) -> list[dict[str, Any]]:
-        bundle = bundle_from_result(result, revision=int(expected_revision or 0))
+    def commit(self, result: AgentRunResult, *, previous_revision: int = 0) -> list[dict[str, Any]]:
+        result.execution_metadata["run_status"] = result.run_status
+        bundle = bundle_from_result(result, revision=previous_revision)
         save_result = encode_agent_state(bundle)
         state_ref = save_result.to_state_ref(
             conversation_id=self.state_id, loaded_from="conversation_variable"

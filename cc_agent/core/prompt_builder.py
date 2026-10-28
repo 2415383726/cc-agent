@@ -6,7 +6,7 @@ from typing import Any
 
 from .config import AgentRunConfig
 from .context_budget import ContextBudget, estimate_context_tokens
-from .messages import AgentState
+from .messages import AgentState, model_message_view
 from .skills import skill_prompt_index
 from .tasks import list_tasks
 
@@ -33,19 +33,41 @@ class PromptBuilder:
         self, transcript: list[dict[str, Any]], tools: list[Any] | None = None
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         prompt = [{"role": "system", "content": self.system_prompt()}]
-        static_context_tokens = estimate_context_tokens(prompt) + estimate_context_tokens(
-            tools or []
-        )
+        static_context_tokens = estimate_context_tokens(
+            [{"role": "system", "content": self.system_prompt(include_dynamic=False)}]
+        ) + estimate_context_tokens(tools or [])
         if self.state.summary:
             prompt.append(
                 {"role": "system", "content": f"Conversation summary:\n{self.state.summary}"}
             )
-        prompt.extend(transcript)
+        history_view = []
+        for message in transcript:
+            metadata = message.get("metadata") or {}
+            if metadata.get("internal") and (
+                metadata.get("source_tool") == "Skill" or metadata.get("source") == "slash_skill"
+            ):
+                message = {
+                    **message,
+                    "content": "Skill activation recorded; see Active skills for current complete instructions.",
+                }
+            prompt.append(message)
+            history_view.append(message)
         prepared, metadata = self.budget.prepare(prompt, summarizer=self.summarizer, tools=tools)
         metadata["static_context_tokens"] = static_context_tokens
+        metadata["context_tokens"] = {
+            "fixed_and_catalog": static_context_tokens - estimate_context_tokens(tools or []),
+            "tools": estimate_context_tokens(tools or []),
+            "active_skills": estimate_context_tokens(self.state.active_skills),
+            "tasks": estimate_context_tokens(self._visible_tasks()),
+            "summary": estimate_context_tokens(self.state.summary),
+            "history": estimate_context_tokens(model_message_view(history_view)),
+            "attachments": estimate_context_tokens(
+                _uploaded_files_context(self.config.files or [])
+            ),
+        }
         return prepared, metadata
 
-    def system_prompt(self) -> str:
+    def system_prompt(self, *, include_dynamic: bool = True) -> str:
         parts = [_identity_section(), _system_section()]
         strategy_profile = self.config.strategy_profile
         if strategy_profile is None or strategy_profile.structured_answers:
@@ -86,7 +108,9 @@ class PromptBuilder:
             parts.append(
                 f"# Slash commands\nUser-only commands, not tool-callable:\n{commands_text}"
             )
-        visible_tasks = list_tasks(self.state.tasks)
+        if not include_dynamic:
+            return "\n\n".join(parts)
+        visible_tasks = self._visible_tasks()
         if visible_tasks:
             parts.append(
                 "# Current tasks\n"
@@ -99,12 +123,22 @@ class PromptBuilder:
             parts.append(
                 "# Active skills\n"
                 "These skills were recently loaded in this conversation. Follow their loaded instructions when relevant; do not invoke the same skill again unless the task changed.\n"
-                + json.dumps(self.state.active_skills, ensure_ascii=False)
+                + "\n\n".join(
+                    f"[Skill: {skill.get('name')}]\n{skill.get('summary') or ''}"
+                    for skill in self.state.active_skills
+                )
             )
         uploaded_context = _uploaded_files_context(self.config.files or [])
         if uploaded_context:
             parts.append(uploaded_context)
         return "\n\n".join(parts)
+
+    def _visible_tasks(self) -> list[dict[str, Any]]:
+        return [
+            task
+            for task in list_tasks(self.state.tasks)
+            if task.get("status") not in {"completed", "canceled", "deleted"}
+        ]
 
 
 def _identity_section() -> str:
@@ -158,6 +192,9 @@ def _task_behavior_section() -> str:
         "# Doing tasks\n"
         "- Understand the user's actual request before acting. For simple requests, answer directly.\n"
         "- For tasks that need inspection, calculation, retrieval, state updates, or file work, use the relevant tool instead of guessing.\n"
+        "- Before marking a business operation or deliverable completed, verify its result with the relevant tool. Record short job or evidence references in task metadata; a task status is not proof of success.\n"
+        "- For long external jobs, keep the job reference and report the current status. Continue verification on a later user turn instead of polling indefinitely.\n"
+        "- If a remote operation has an unknown outcome, verify the business result before repeating a write operation.\n"
         "- Do not add unrelated features, refactors, or policy changes. Keep work scoped to what the user asked.\n"
         "- If an approach fails, diagnose the failure before switching tactics. Do not repeat the exact same failed tool call.\n"
         "- Ask the user only when a high-impact requirement, approval, or permission cannot be inferred safely."

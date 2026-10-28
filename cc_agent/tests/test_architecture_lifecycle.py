@@ -97,7 +97,7 @@ class FeatureScopeTests(unittest.TestCase):
 
 
 class InterruptLifecycleTests(unittest.TestCase):
-    def test_approved_legacy_confirmation_still_obeys_tool_policy(self):
+    def test_approved_legacy_confirmation_still_obeys_execution_limits(self):
         from types import SimpleNamespace
 
         from cc_agent.core.guards import ToolGuard, ToolGuardConfig
@@ -105,7 +105,10 @@ class InterruptLifecycleTests(unittest.TestCase):
         from cc_agent.core.messages import AgentState, ToolCall, ToolResult
         from cc_agent.core.tool_scheduler import SerialToolScheduler
 
-        for policy in (ToolGuardConfig(denylist=["clock"]), ToolGuardConfig(allowlist=["other"])):
+        for policy in (
+            ToolGuardConfig(max_repeated_calls=0),
+            ToolGuardConfig(max_consecutive_errors=0),
+        ):
             with self.subTest(policy=policy):
                 pending = {
                     "role": "tool",
@@ -263,7 +266,7 @@ class RequestRecoveryTests(unittest.TestCase):
 
 
 class SkillLifecycleTests(unittest.TestCase):
-    def test_restore_obeys_current_profile_and_denylist(self):
+    def test_restore_obeys_current_profile_and_skill_integrity(self):
         from cc_agent.core.profiles import AGUI_STRATEGY_PROFILE, DIFY_STRATEGY_PROFILE
         from cc_agent.core.skill_catalog import SkillCatalog
 
@@ -273,9 +276,7 @@ class SkillLifecycleTests(unittest.TestCase):
         ]
         for profile in (AGUI_STRATEGY_PROFILE, DIFY_STRATEGY_PROFILE):
             with self.subTest(profile=profile.name):
-                config = AgentRunConfig.from_parameters(
-                    {"skill_denylist": "answers-ui"}, strategy_profile=profile
-                )
+                config = AgentRunConfig.from_parameters({}, strategy_profile=profile)
                 self.assertEqual(SkillCatalog.build(config=config).restore_active(records), [])
         config = AgentRunConfig.from_parameters({}, strategy_profile=DIFY_STRATEGY_PROFILE)
         self.assertEqual(SkillCatalog.build(config=config).restore_active(records), [])
@@ -316,7 +317,7 @@ class SkillLifecycleTests(unittest.TestCase):
         self.assertFalse(result.is_error)
         self.assertTrue(
             any(
-                message.get("content") == result.metadata["injected_message"]
+                result.metadata["injected_message"] in str(message.get("content"))
                 for message in prompts[0]
             )
         )

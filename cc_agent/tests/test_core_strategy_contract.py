@@ -1,16 +1,14 @@
-import unittest
 import json
+import unittest
 from pathlib import Path
 
 import yaml
-
 from cc_agent.core.config import AgentRunConfig
 from cc_agent.core.messages import AgentState
 from cc_agent.core.profiles import AGUI_STRATEGY_PROFILE, DIFY_STRATEGY_PROFILE
 from cc_agent.core.prompt_builder import PromptBuilder
 from cc_agent.core.skill_catalog import build_skill_catalog
 from cc_agent.strategies.base import _parameter_summary
-
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -97,12 +95,10 @@ class StrategyContractTests(unittest.TestCase):
 
     def test_strategy_profiles_fix_protocol_prompt_and_skill_surface(self):
         agui = AgentRunConfig.from_parameters(
-            {"query": "hello", "output_protocol": False},
-            strategy_profile=AGUI_STRATEGY_PROFILE,
+            {"query": "hello", "output_protocol": False}, strategy_profile=AGUI_STRATEGY_PROFILE
         )
         dify = AgentRunConfig.from_parameters(
-            {"query": "hello", "output_protocol": True},
-            strategy_profile=DIFY_STRATEGY_PROFILE,
+            {"query": "hello", "output_protocol": True}, strategy_profile=DIFY_STRATEGY_PROFILE
         )
 
         self.assertEqual(agui.output_protocol, "agui")
@@ -118,6 +114,7 @@ class StrategyContractTests(unittest.TestCase):
         self.assertTrue({"answers-charts", "answers-ui"}.isdisjoint(dify_names))
         self.assertNotIn("create-skill", agui_names)
         self.assertNotIn("create-skill", dify_names)
+
     def test_strategy_entry_modules_export_one_strategy_subclass(self):
         from cc_agent.strategies import base, cc_agent_agui, cc_agent_dify
 
@@ -130,6 +127,7 @@ class StrategyContractTests(unittest.TestCase):
                 and issubclass(value, base.BaseCCAgentStrategy)
             ]
             self.assertEqual(len(subclasses), 1, module.__name__)
+
     def test_agent_run_config_defaults_to_dify_state(self):
         config = AgentRunConfig.from_parameters({"query": "hello"})
 
@@ -138,14 +136,15 @@ class StrategyContractTests(unittest.TestCase):
         self.assertEqual(config.agent_state_variable, "")
         self.assertEqual(config.max_total_context_tokens, 131072)
 
-
     def test_removed_storage_parameters_are_ignored_without_parsing(self):
-        config = AgentRunConfig.from_parameters({
-            "query": "hello",
-            "capability_mode": "minio",
-            "storage": "invalid JSON that must not be parsed",
-            "agent_state": "previous-state",
-        })
+        config = AgentRunConfig.from_parameters(
+            {
+                "query": "hello",
+                "capability_mode": "minio",
+                "storage": "invalid JSON that must not be parsed",
+                "agent_state": "previous-state",
+            }
+        )
         self.assertEqual(config.agent_state_variable, "previous-state")
         self.assertFalse(hasattr(config, "capability_mode"))
         self.assertFalse(hasattr(config, "storage"))
@@ -213,8 +212,8 @@ class StrategyContractTests(unittest.TestCase):
         self.assertEqual(config.max_consecutive_tool_errors, 3)
         self.assertFalse(config.state_reset)
         self.assertTrue(config.emit_inline_state)
-        self.assertIsNone(config.tool_allowlist)
-        self.assertIsNone(config.tool_denylist)
+        self.assertFalse(hasattr(config, "tool_allowlist"))
+        self.assertFalse(hasattr(config, "tool_denylist"))
         self.assertIsNone(config.tool_confirmation_list)
         self.assertFalse(hasattr(config, "skill_package_max_bytes"))
 

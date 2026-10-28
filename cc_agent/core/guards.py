@@ -8,8 +8,6 @@ from .messages import ToolCall, ToolResult
 
 @dataclass(slots=True)
 class ToolGuardConfig:
-    allowlist: list[str] | None = None
-    denylist: list[str] | None = None
     max_repeated_calls: int = 3
     max_consecutive_errors: int = 3
 
@@ -21,21 +19,15 @@ class ToolGuard:
     consecutive_errors: int = 0
 
     def before_call(self, tool_call: ToolCall) -> ToolResult | None:
-        if self.config.allowlist and tool_call.name not in self.config.allowlist:
-            return self._reject(tool_call, f"Tool call rejected by policy: {tool_call.name} is not in allowlist.")
-        if self.config.denylist and tool_call.name in self.config.denylist:
-            return self._reject(tool_call, f"Tool call rejected by policy: {tool_call.name} is in denylist.")
         if self.consecutive_errors >= self.config.max_consecutive_errors:
             return self._reject(
-                tool_call,
-                "Tool call rejected by policy: maximum consecutive tool errors reached.",
+                tool_call, "Tool call rejected by policy: maximum consecutive tool errors reached."
             )
         key = f"{tool_call.name}:{json.dumps(tool_call.arguments, sort_keys=True, ensure_ascii=False)}"
         self.repeated_calls[key] = self.repeated_calls.get(key, 0) + 1
         if self.repeated_calls[key] > self.config.max_repeated_calls:
             return self._reject(
-                tool_call,
-                f"Tool call rejected by policy: repeated call to {tool_call.name}.",
+                tool_call, f"Tool call rejected by policy: repeated call to {tool_call.name}."
             )
         return None
 

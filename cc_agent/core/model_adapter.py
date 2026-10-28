@@ -7,6 +7,7 @@ from typing import Any
 
 from .messages import AssistantTurn, ToolCall
 from .model_stream import AssistantTurnCompleted, TextDelta, ThinkingDelta
+from .run_budget import RunBudget
 
 try:  # pragma: no cover - exercised inside Dify runtime
     from dify_plugin.entities.model.llm import LLMModelConfig
@@ -46,23 +47,43 @@ class _DraftToolCall:
 
 @dataclass
 class StreamToolCallAccumulator:
+    mode: str = "delta"
     drafts: dict[str, _DraftToolCall] = field(default_factory=dict)
+    index_keys: dict[int, str] = field(default_factory=dict)
+    id_keys: dict[str, str] = field(default_factory=dict)
 
     def add_delta(self, tool_calls: list[Any] | None) -> None:
         for position, raw_tool_call in enumerate(tool_calls or []):
             index = _int_or_default(_get(raw_tool_call, "index"), position)
             raw_id = str(_get(raw_tool_call, "id") or "")
-            key = raw_id or f"index:{index}"
+            if not raw_id and _get(raw_tool_call, "index") is None and len(self.drafts) > 1:
+                raise ValueError(
+                    "A tool fragment must identify its call when multiple calls are active."
+                )
+            key = self.id_keys.get(raw_id, "") or self.index_keys.get(index, "")
+            if key and raw_id and self.drafts[key].id not in {"", raw_id}:
+                if _get(raw_tool_call, "index") is not None:
+                    raise ValueError("Conflicting tool call identities for one stream index.")
+                key = ""
+            key = key or raw_id or f"index:{index}"
             draft = self.drafts.setdefault(key, _DraftToolCall(index=index, id=raw_id))
+            self.index_keys[index] = key
             if raw_id:
                 draft.id = raw_id
+                self.id_keys[raw_id] = key
             function = _get(raw_tool_call, "function", {})
             name_part = str(_get(function, "name") or "")
             arguments_part = _get(function, "arguments")
             if name_part:
-                draft.name = _merge_stream_part(draft.name, name_part)
+                if self.mode == "snapshot":
+                    draft.name = name_part
+                else:
+                    draft.name += name_part
             if arguments_part is not None:
-                draft.arguments = _merge_stream_arguments_part(draft.arguments, str(arguments_part))
+                if self.mode == "snapshot":
+                    draft.arguments = str(arguments_part)
+                else:
+                    draft.arguments += str(arguments_part)
 
     def finalize(self) -> list[ToolCall]:
         calls: list[ToolCall] = []
@@ -138,12 +159,18 @@ class DifyModelAdapter:
         stream: bool = True,
         deepseek_thinking_compat: bool = False,
         keep_dify_history: bool = False,
+        tool_call_stream_mode: str = "delta",
+        run_budget: RunBudget | None = None,
     ):
         self.session = session
         self.model_config = model_config
         self.stream = stream
         self.keep_dify_history = keep_dify_history
         self.deepseek_thinking_compat = deepseek_thinking_compat
+        if tool_call_stream_mode not in {"delta", "snapshot"}:
+            raise ValueError("tool_call_stream_mode must be delta or snapshot.")
+        self.tool_call_stream_mode = tool_call_stream_mode
+        self.run_budget = run_budget
 
     def invoke(
         self, messages: list[dict[str, Any]], tools: list[Any], force_final: bool = False
@@ -162,6 +189,7 @@ class DifyModelAdapter:
                 tools=prompt_tools,
                 stream=self.stream,
                 force_final=force_final,
+                run_id=self.run_budget.run_id if self.run_budget else "",
             ),
         )
         try:
@@ -199,6 +227,7 @@ class DifyModelAdapter:
                 tools=prompt_tools,
                 stream=self.stream,
                 force_final=force_final,
+                run_id=self.run_budget.run_id if self.run_budget else "",
             ),
         )
         try:
@@ -228,6 +257,8 @@ class DifyModelAdapter:
             yield self._result_event(turn)
 
     def _invoke_llm(self, model_config: Any, prompt_messages: list[Any], prompt_tools: list[Any]):
+        if self.run_budget is not None:
+            self.run_budget.before_model()
         return self.session.model.llm.invoke(
             model_config=model_config,
             prompt_messages=prompt_messages,
@@ -240,6 +271,10 @@ class DifyModelAdapter:
         self, exc: Exception, messages: list[dict[str, Any]]
     ) -> bool:
         if not self.deepseek_thinking_compat:
+            return False
+        from .run_budget import RunBudgetExceeded
+
+        if isinstance(exc, RunBudgetExceeded):
             return False
         return _has_reasoned_tool_history(messages)
 
@@ -266,10 +301,11 @@ class DifyModelAdapter:
         thinking_parts: list[str] = []
         stream_chunks: list[TextDelta | ThinkingDelta] = []
         splitter = StreamContentSplitter()
-        accumulator = StreamToolCallAccumulator()
+        accumulator = StreamToolCallAccumulator(mode=self.tool_call_stream_mode)
         usage: dict[str, Any] = {}
         finish_reason = ""
         raw_message = None
+        event: TextDelta | ThinkingDelta
         try:
             for chunk in chunks:
                 delta = _get(chunk, "delta", chunk)
@@ -549,53 +585,6 @@ def _has_reasoned_tool_history(messages: list[dict[str, Any]]) -> bool:
     )
 
 
-def _merge_stream_part(current: str, incoming: str) -> str:
-    if not incoming:
-        return current
-    if not current:
-        return incoming
-    if incoming == current:
-        return current
-    if incoming.startswith(current):
-        return incoming
-    if current.endswith(incoming):
-        return current
-    return current + incoming
-
-
-def _merge_stream_arguments_part(current: str, incoming: str) -> str:
-    if not incoming:
-        return current
-    if not current:
-        return incoming
-    merged = _merge_stream_part(current, incoming)
-    if merged != current + incoming:
-        return merged
-    if _looks_like_json_restart(current, incoming):
-        return incoming
-    return merged
-
-
-def _looks_like_json_restart(current: str, incoming: str) -> bool:
-    current_text = current.lstrip()
-    incoming_text = incoming.lstrip()
-    if not current_text or not incoming_text:
-        return False
-    if incoming_text[0] not in "{[" or current_text[0] != incoming_text[0]:
-        return False
-    if _json_loads_ok(current + incoming):
-        return False
-    return True
-
-
-def _json_loads_ok(value: str) -> bool:
-    try:
-        json.loads(value)
-    except (TypeError, json.JSONDecodeError):
-        return False
-    return True
-
-
 def _split_partial_marker(buffer: str, marker: str, final: bool) -> tuple[str, str]:
     if final:
         return buffer, ""
@@ -694,8 +683,10 @@ def _model_invoke_summary(
     tools: list[Any],
     stream: bool,
     force_final: bool,
+    run_id: str = "",
 ) -> dict[str, Any]:
     return {
+        "run_id": run_id,
         "install_method": str(
             getattr(
                 getattr(session, "install_method", None),
@@ -715,24 +706,7 @@ def _model_invoke_summary(
         "message_count": len(messages or []),
         "tool_count": len(tools or []),
         "history_prompt_messages_present": bool(_get(model_config, "history_prompt_messages")),
-        "message_previews": [_message_debug_preview(message) for message in (messages or [])[:10]],
     }
-
-
-def _message_debug_preview(message: Any) -> dict[str, Any]:
-    content = _content_to_text(_get(message, "content") or "")
-    return {
-        "role": _role_value(_get(message, "role")) or type(message).__name__,
-        "chars": len(content),
-        "preview": _preview_text(content),
-    }
-
-
-def _preview_text(value: Any, limit: int = 120) -> str:
-    text = str(value or "").replace("\n", "\\n")
-    if len(text) <= limit:
-        return text
-    return text[:limit] + "..."
 
 
 def _redact_url(value: Any) -> str:

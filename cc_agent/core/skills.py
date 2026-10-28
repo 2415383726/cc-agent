@@ -15,20 +15,6 @@ def load_skill_warnings(groups: tuple[str, ...] | list[str] | None = None) -> li
     return list(load_bundled_skill_snapshot(groups).warnings)
 
 
-def filter_denied_skills(
-    skills: list[dict[str, Any]],
-    denylist: list[str] | None,
-) -> list[dict[str, Any]]:
-    denied = {str(name).strip().casefold() for name in denylist or [] if str(name).strip()}
-    if not denied:
-        return list(skills)
-    return [
-        skill
-        for skill in skills
-        if str(skill.get("name") or skill.get("id") or "").strip().casefold() not in denied
-    ]
-
-
 def list_skills(skills: list[dict[str, Any]]) -> list[dict[str, Any]]:
     compact = []
     for skill in skills:
@@ -70,10 +56,7 @@ def skill_prompt_index(skills: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not isinstance(skill, dict) or not skill.get("name"):
             continue
         name = str(skill.get("name"))
-        item: dict[str, Any] = {
-            "name": name,
-            "description": str(skill.get("description") or ""),
-        }
+        item: dict[str, Any] = {"name": name, "description": str(skill.get("description") or "")}
         skill_id = str(skill.get("id") or name)
         if skill_id != name:
             item["id"] = skill_id
@@ -87,7 +70,9 @@ def skill_prompt_index(skills: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return compact
 
 
-def render_skill(skills: list[dict[str, Any]], name: str, args: dict[str, Any] | None = None) -> str:
+def render_skill(
+    skills: list[dict[str, Any]], name: str, args: dict[str, Any] | None = None
+) -> str:
     skill = next((item for item in skills if item.get("name") == name), None)
     if not skill:
         raise KeyError(f"skill not found: {name}")

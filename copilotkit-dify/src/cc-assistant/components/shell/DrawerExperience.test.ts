@@ -5,6 +5,7 @@ import DrawerExperience from './DrawerExperience.vue'
 
 const copilotMocks = vi.hoisted(() => ({
   selectConversation: vi.fn(),
+  state: {} as Record<string, any>,
 }))
 
 vi.mock('@copilotkit/vue/v2', async () => {
@@ -27,7 +28,8 @@ vi.mock('@copilotkit/vue/v2', async () => {
         ])
       },
     }),
-    useAgent: () => ({ agent: vue.ref({ threadId: 'thread-1', messages: [], selectConversation: copilotMocks.selectConversation }) }),
+    CopilotChatMessageView: vue.defineComponent({ setup: () => () => vue.h('div') }),
+    useAgent: () => ({ agent: vue.ref({ threadId: 'thread-1', messages: [], state: copilotMocks.state, selectConversation: copilotMocks.selectConversation }) }),
     useCopilotKit: () => ({ copilotkit: vue.ref({ runAgent: vi.fn() }) }),
     useDefaultRenderTool: vi.fn(),
     useInterrupt: () => ({ slotProps: vue.ref(null) }),
@@ -36,6 +38,19 @@ vi.mock('@copilotkit/vue/v2', async () => {
 })
 
 describe('DrawerExperience', () => {
+  it('renders a recovered pending interaction without requiring a live stream event', async () => {
+    copilotMocks.state.recovery = { question: { id: 'pending', question: '确认继续导出？',
+      purpose: 'clarification', options: [{ label: '继续导出', value: 'allow_once' }] } }
+    try {
+      const html = await renderToString(createSSRApp(DrawerExperience, {
+        activeView: 'chat', conversations: [], expectedThreadId: 'thread-1',
+      }))
+      expect(html).toContain('确认继续导出？')
+      expect(html).toContain('继续导出')
+    } finally {
+      delete copilotMocks.state.recovery
+    }
+  })
   it('places the drawer home composer in a bottom input area without keyboard hint text', async () => {
     const app = createSSRApp(DrawerExperience, {
       activeView: 'home',

@@ -14,9 +14,10 @@ from .messages import AgentRunResult, AgentState
 from .model_adapter import DifyModelAdapter
 from .profiles import StrategyProfile
 from .protocol_renderer import ProtocolRenderer
+from .run_budget import RunBudgetExceeded
 from .run_environment import RunEnvironment
 from .skill_runtime import SkillRuntime
-from .state_backend import DifyStateBackend, empty_state_load
+from .state_backend import DifyStateBackend, StateBackend, empty_state_load
 from .tool_adapter import ToolAdapter
 
 try:  # pragma: no cover - only present under Dify plugin runtime
@@ -207,7 +208,9 @@ class DifyAgentRuntime:
                 permissions=loaded.get("permissions") or {},
                 active_skills=active_skills,
             )
-            summarizer = DifyHistorySummarizer(self.strategy.session, config.model_for("flash"))
+            summarizer = DifyHistorySummarizer(
+                self.strategy.session, config.model_for("flash"), run_budget=env.run_budget
+            )
             all_skills = prompt_skills + local_skills
             manual_compression_id = ""
             if _slash_command_name(config.query) == "compact":
@@ -234,7 +237,7 @@ class DifyAgentRuntime:
                         else ""
                     )
                     try:
-                        injected = env.skill_catalog.activate(
+                        env.skill_catalog.activate(
                             state,
                             str(skill_def.get("name") or ""),
                             skill_args_text,
@@ -247,7 +250,7 @@ class DifyAgentRuntime:
                     state.history.append(
                         {
                             "role": "user",
-                            "content": injected,
+                            "content": f"Skill {skill_def.get('name')} loaded; its complete instructions are in Active skills.",
                             "metadata": {
                                 "internal": True,
                                 "source": "slash_skill",
@@ -281,6 +284,7 @@ class DifyAgentRuntime:
                     active_skills=state.active_skills,
                     execution_metadata={
                         "finish_reason": "command",
+                        "run_id": run_id,
                         "command": skill_def["name"],
                         "kind": skill_def.get("kind"),
                         "reset_effective": skill_def.get("name") == "reset" or reset_effective,
@@ -289,9 +293,10 @@ class DifyAgentRuntime:
                     summary=state.summary,
                     history_schema_version=state.history_version,
                 )
+                result.execution_metadata["run_budget"] = env.run_budget.summary()
                 for event in self._persist_result(
                     result,
-                    config=config,
+                    state_backend=env.state_backend,
                     state_id=state_id,
                     loaded_from=loaded["loaded_from"],
                     previous_revision=loaded["previous_revision"],
@@ -300,11 +305,6 @@ class DifyAgentRuntime:
                     yield event
                 yield from writer.write_run_finished(result)
                 if result.encoded_agent_state:
-                    yield {
-                        "type": "dify_variable",
-                        "name": "agent_state",
-                        "value": result.encoded_agent_state,
-                    }
                     yield {"type": "dify_json", "payload": result.to_json_payload()}
                 elif result.state_ref is not None:
                     yield {"type": "dify_json", "payload": result.to_json_payload()}
@@ -322,6 +322,8 @@ class DifyAgentRuntime:
                 stream=config.stream,
                 deepseek_thinking_compat=config.deepseek_thinking_compat,
                 keep_dify_history=config.use_dify_history,
+                tool_call_stream_mode=config.tool_call_stream_mode,
+                run_budget=env.run_budget,
             )
             tool_adapter = ToolAdapter(
                 registry=tool_catalog,
@@ -347,6 +349,7 @@ class DifyAgentRuntime:
                 include_user_query=True,
                 writer=writer,
                 interrupts=interrupts,
+                run_budget=env.run_budget,
             )
             if config.user_prompt_response:
                 logger.info(
@@ -387,9 +390,10 @@ class DifyAgentRuntime:
                 )
                 return
             final_result.execution_metadata["run_id"] = run_id
+            final_result.execution_metadata["run_budget"] = env.run_budget.summary()
             for event in self._persist_result(
                 final_result,
-                config=config,
+                state_backend=env.state_backend,
                 state_id=state_id,
                 loaded_from=loaded["loaded_from"],
                 previous_revision=loaded["previous_revision"],
@@ -411,17 +415,22 @@ class DifyAgentRuntime:
                 }
             yield {"type": "dify_variable", "name": "answer", "value": final_result.answer or ""}
             if final_result.encoded_agent_state:
-                yield {
-                    "type": "dify_variable",
-                    "name": "agent_state",
-                    "value": final_result.encoded_agent_state,
-                }
                 yield {"type": "dify_json", "payload": final_result.to_output_payload()}
             elif final_result.state_ref is not None:
                 yield {"type": "dify_json", "payload": final_result.to_output_payload()}
         except Exception as exc:  # noqa: BLE001 - Runtime boundary; never log raw provider errors.
-            code = exc.code if isinstance(exc, AgentRuntimeFailure) else "runtime_failed"
-            stage = exc.stage if isinstance(exc, AgentRuntimeFailure) else "runtime"
+            code = (
+                exc.code
+                if isinstance(exc, AgentRuntimeFailure)
+                else (
+                    "budget_exhausted" if isinstance(exc, RunBudgetExceeded) else "runtime_failed"
+                )
+            )
+            stage = (
+                exc.stage
+                if isinstance(exc, AgentRuntimeFailure)
+                else ("budget" if isinstance(exc, RunBudgetExceeded) else "runtime")
+            )
             yield from self._failure_events(writer, code, stage, run_id, exc)
         finally:
             if env is not None:
@@ -465,15 +474,13 @@ class DifyAgentRuntime:
     def _persist_result(
         self,
         result: AgentRunResult,
-        config: AgentRunConfig,
+        state_backend: StateBackend,
         state_id: str,
         loaded_from: str,
         previous_revision: int,
         initial_storage_error: str | None,
-    ) -> list[dict[str, Any]]:
-        DifyStateBackend(config, state_id=state_id).commit(
-            result, expected_revision=previous_revision
-        )
+    ) -> Generator[dict[str, Any], None, None]:
+        state_backend.commit(result, previous_revision=previous_revision)
         state_ref = result.state_ref if isinstance(result.state_ref, dict) else {}
         state_ref["loaded_from"] = loaded_from
         state_ref["storage_error"] = _join_errors(
@@ -483,7 +490,7 @@ class DifyAgentRuntime:
         if not state_ref.get("persisted"):
             raise AgentRuntimeFailure("state_save_failed", "state_save", state_ref)
         logger.info(
-            "cc_agent result persisted: conversation_id=%s backend=%s persisted=%s loaded_from=%s answer_chars=%s history_count=%s finish_reason=%s encoded_bytes=%s payload_bytes=%s storage_error=%s storage_warning=%s",
+            "cc_agent state encoded: conversation_id=%s backend=%s persisted=%s loaded_from=%s answer_chars=%s history_count=%s finish_reason=%s encoded_bytes=%s payload_bytes=%s storage_error=%s storage_warning=%s",
             state_id,
             state_ref.get("backend"),
             state_ref.get("persisted"),
@@ -496,9 +503,13 @@ class DifyAgentRuntime:
             state_ref.get("storage_error") or "",
             state_ref.get("storage_warning") or "",
         )
-        if not result.encoded_agent_state:
-            return []
-        return []
+        if result.encoded_agent_state:
+            yield {
+                "type": "dify_variable",
+                "name": "agent_state",
+                "value": result.encoded_agent_state,
+            }
+            state_ref["delivery_status"] = "emitted"
 
 
 def _extract_dify_history(config: AgentRunConfig) -> list[dict[str, Any]]:

@@ -2,6 +2,7 @@ import { streamDifySse } from './difySse'
 import type { Message } from '@ag-ui/core'
 import { copilotDifyDebug } from './debugLog'
 import { historyRecordToMessages } from './difyHistoryMessages'
+import { decodeConversationRecovery, type ConversationRecovery } from './conversationRecovery'
 
 export interface DifyStreamChatRequest {
   baseUrl: string
@@ -340,7 +341,7 @@ export async function streamChat(request: DifyStreamChatRequest): Promise<DifySt
 }
 
 export async function stopChat(request: DifyStopChatRequest): Promise<void> {
-  await fetch(`${normalizedBaseUrl(request.baseUrl)}/chat-messages/${request.taskId}/stop`, {
+  const response = await fetch(`${normalizedBaseUrl(request.baseUrl)}/chat-messages/${request.taskId}/stop`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${request.apiKey}`,
@@ -348,4 +349,30 @@ export async function stopChat(request: DifyStopChatRequest): Promise<void> {
     },
     body: JSON.stringify({ user: request.user }),
   })
+  if (!response.ok) throw new Error(`Dify stop request failed (${response.status})`)
+}
+
+export async function loadConversationRecovery(
+  request: DifyListMessagesRequest,
+): Promise<ConversationRecovery | null> {
+  const seen = new Set<string>()
+  const signal = AbortSignal.timeout(10_000)
+  let lastId = ''
+  for (;;) {
+    const query = new URLSearchParams({ user: request.user, variable_name: 'agent_state', limit: '100' })
+    if (lastId) query.set('last_id', lastId)
+    const response = await fetch(`${normalizedBaseUrl(request.baseUrl)}/conversations/${encodeURIComponent(request.conversationId)}/variables?${query}`, {
+      headers: { Authorization: `Bearer ${request.apiKey}` },
+      signal,
+    })
+    if (!response.ok) throw new Error(`Conversation recovery request failed (${response.status})`)
+    const page = await response.json()
+    if (!Array.isArray(page.data)) throw new Error('Invalid conversation variable response')
+    const state = page.data.find((variable: any) => variable.name === 'agent_state')
+    if (state?.value) return decodeConversationRecovery(state.value)
+    if (!page.has_more) return null
+    lastId = String(page.data[page.data.length - 1]?.id || '')
+    if (!lastId || seen.has(lastId)) throw new Error('Invalid conversation variable cursor')
+    seen.add(lastId)
+  }
 }

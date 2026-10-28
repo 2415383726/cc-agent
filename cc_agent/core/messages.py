@@ -155,6 +155,28 @@ class AgentRunResult:
     encoded_agent_state: str = ""
     state_summary: dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def run_status(self) -> str:
+        reason = self.execution_metadata.get("finish_reason", "final")
+        if reason == "awaiting_user":
+            return "awaiting_user"
+        if reason in {
+            "max_iterations",
+            "budget_exhausted",
+            "length",
+            "max_tokens",
+            "max_output_tokens",
+            "token_limit",
+        }:
+            return "budget_exhausted"
+        if (
+            self.execution_metadata.get("error_code")
+            or reason == "context_overflow"
+            or str(reason).endswith("_error")
+        ):
+            return "failed"
+        return "completed"
+
     def to_output_payload(self) -> dict[str, Any]:
         """Minimal payload for Dify agent structured output."""
         payload: dict[str, Any] = {

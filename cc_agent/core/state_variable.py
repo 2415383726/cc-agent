@@ -80,6 +80,8 @@ class AgentStateSaveResult:
             "revision": self.revision,
             "loaded_from": loaded_from,
             "persisted": self.persisted,
+            "delivery_status": "encoded" if self.persisted else "failed",
+            "platform_persisted": None,
             "storage_error": self.error,
             "storage_version": self.storage_version,
             "payload_bytes": self.payload_bytes,

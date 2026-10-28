@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { createRunStream } from './runStream'
 
 describe('complete run stream', () => {
+  it('reports an unknown execution outcome when an active stream has no terminal event', () => {
+    const outcomes: string[] = []
+    const stream = createRunStream({ next: () => {} }, { runId: 'r', threadId: 't',
+      onRunStatus: status => outcomes.push(status) })
+    stream.ingest({ type: 'RUN_STARTED', runId: 'r', threadId: 't' })
+    stream.finish()
+    expect(outcomes).toEqual(['unknown'])
+  })
   it.each(['native', 'fallback'])('retains interruption fields and conversation identity from %s', (protocol) => {
     const events: any[] = []
     const questions: any[] = []

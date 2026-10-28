@@ -9,7 +9,7 @@ from .app_skills import load_app_skills
 from .builtin_skills import register_all as register_builtin_skills
 from .config import AgentRunConfig
 from .messages import AgentState
-from .skills import filter_denied_skills, load_bundled_skills, render_skill, shlex_split
+from .skills import load_bundled_skills, render_skill, shlex_split
 
 
 @dataclass(slots=True)
@@ -30,8 +30,8 @@ class SkillCatalog:
         }
         app_snapshot = load_app_skills(config.app_skills_yaml, reserved_names=reserved_names)
         return cls(
-            prompt_skills=filter_denied_skills(base + app_snapshot.skills, config.skill_denylist),
-            local_skills=filter_denied_skills(local, config.skill_denylist),
+            prompt_skills=base + app_snapshot.skills,
+            local_skills=local,
             warnings=app_snapshot.warnings,
         )
 

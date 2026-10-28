@@ -6,6 +6,7 @@ from typing import Any
 from .config import AgentRunConfig
 from .mcp_tools import McpToolProvider
 from .protocol_renderer import ProtocolRenderer
+from .run_budget import RunBudget
 from .skill_catalog import SkillCatalog, build_skill_catalog
 from .state_backend import DifyStateBackend, StateBackend, StateLoad
 from .tool_catalog import ToolCatalog
@@ -22,6 +23,7 @@ class RunEnvironment:
     renderer: ProtocolRenderer
     skill_catalog: SkillCatalog
     state_backend: StateBackend
+    run_budget: RunBudget
     loaded_state: StateLoad | None = None
     tool_catalog: ToolCatalog | None = None
     mcp_provider: McpToolProvider | None = None
@@ -45,7 +47,8 @@ class RunEnvironment:
             thread_id=thread_id,
             run_id=run_id,
             state_id=state_id,
-            renderer=renderer or ProtocolRenderer(
+            renderer=renderer
+            or ProtocolRenderer(
                 config.output_protocol,
                 thread_id=thread_id,
                 run_id=run_id,
@@ -53,13 +56,16 @@ class RunEnvironment:
             ),
             skill_catalog=build_skill_catalog(config=config),
             state_backend=DifyStateBackend(config, state_id=state_id),
+            run_budget=RunBudget.from_config(config, run_id),
         )
 
     def load_state(self) -> dict[str, Any]:
         self.loaded_state = self.state_backend.load()
         return self.loaded_state.to_runtime_dict()
 
-    def build_tool_catalog(self, *, external_tools: list[Any], external_prompt_tools: list[Any]) -> ToolCatalog:
+    def build_tool_catalog(
+        self, *, external_tools: list[Any], external_prompt_tools: list[Any]
+    ) -> ToolCatalog:
         if self.config.mcp_servers:
             self.mcp_provider = McpToolProvider(self.config.mcp_servers)
             self.mcp_provider.__enter__()

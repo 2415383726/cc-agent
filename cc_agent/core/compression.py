@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from .model_adapter import strip_dify_history_from_model_config, to_dify_prompt_messages
+from .run_budget import RunBudget, RunBudgetExceeded
 
 try:  # pragma: no cover - exercised inside Dify runtime
     from dify_plugin.entities.model.llm import LLMModelConfig
@@ -12,8 +13,15 @@ except Exception:  # pragma: no cover
 
 
 class DifyHistorySummarizer:
-    def __init__(self, session: Any, model_config: Any, max_consecutive_failures: int = 3):
+    def __init__(
+        self,
+        session: Any,
+        model_config: Any,
+        max_consecutive_failures: int = 3,
+        run_budget: RunBudget | None = None,
+    ):
         self.session = session
+        self.run_budget = run_budget
         self.model_config = model_config
         self.max_consecutive_failures = max(1, int(max_consecutive_failures))
         self.consecutive_failures = 0
@@ -44,6 +52,8 @@ class DifyHistorySummarizer:
             },
         ]
         try:
+            if self.run_budget is not None:
+                self.run_budget.before_model()
             response = self.session.model.llm.invoke(
                 model_config=self._model_config(),
                 prompt_messages=to_dify_prompt_messages(prompt),
@@ -51,6 +61,8 @@ class DifyHistorySummarizer:
                 stop=None,
                 stream=False,
             )
+            if self.run_budget is not None:
+                self.run_budget.record_usage(getattr(response, "usage", None))
             message = getattr(response, "message", response)
             content = str(getattr(message, "content", "") or "").strip()
             if not content:
@@ -58,6 +70,8 @@ class DifyHistorySummarizer:
                 return _fallback_summary(messages, existing_summary)
             self.consecutive_failures = 0
             return content
+        except RunBudgetExceeded:
+            raise
         except Exception:
             self._record_failure()
             return _fallback_summary(messages, existing_summary)

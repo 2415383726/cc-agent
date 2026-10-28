@@ -1,16 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import json
 import logging
+import math
+from dataclasses import dataclass, field
 from typing import Any
 
 from .mcp_config import McpServerConfig, parse_mcp_servers
-
-from .profiles import (
-    StrategyProfile,
-    strategy_profile_for_output,
-)
+from .profiles import StrategyProfile, strategy_profile_for_output
 
 logger = logging.getLogger(__name__)
 
@@ -26,14 +23,16 @@ class AgentRunConfig:
     tools: list[Any] | None = None
     mcp_servers: list[McpServerConfig] = field(default_factory=list, repr=False)
     maximum_iterations: int = 8
+    max_model_calls: int = 32
+    max_tool_calls: int = 64
+    max_run_seconds: float = 300
+    max_run_tokens: int = 0
     max_observation_chars: int = 8000
     max_history_messages: int = 40
     max_total_context_tokens: int = 131072
     # Deprecated compatibility alias. Internally all context limits are tokens.
     max_total_context_chars: int | None = None
     resolved_context_limit: int = 0
-    tool_allowlist: list[str] | None = None
-    tool_denylist: list[str] | None = None
     tool_confirmation_list: list[str] | None = None
     max_repeated_tool_calls: int = 3
     max_consecutive_tool_errors: int = 3
@@ -53,7 +52,7 @@ class AgentRunConfig:
     output_protocol: str = "agui"
     strategy_profile: StrategyProfile | None = None
     app_skills_yaml: str = ""
-    skill_denylist: list[str] | None = None
+    tool_call_stream_mode: str = "delta"
     files: list[Any] | None = None
     runtime_config: dict[str, Any] = field(default_factory=dict)
 
@@ -69,22 +68,26 @@ class AgentRunConfig:
 
     @classmethod
     def from_parameters(
-        cls,
-        parameters: dict[str, Any],
-        *,
-        strategy_profile: StrategyProfile | None = None,
+        cls, parameters: dict[str, Any], *, strategy_profile: StrategyProfile | None = None
     ) -> "AgentRunConfig":
-        inputs = parameters.get("inputs") if isinstance(parameters.get("inputs"), dict) else {}
+        raw_inputs = parameters.get("inputs")
+        inputs = raw_inputs if isinstance(raw_inputs, dict) else {}
         param = lambda key, default=None: _parameter_value(parameters, inputs, key, default)
         model = parameters.get("model")
         model_features = extract_model_features(model)
         requested_stream = bool(param("stream", True))
         runtime_config = _runtime_config(param("runtime_config", ""))
         node_context_limit = _optional_positive_int(param("max_total_context_tokens"))
-        runtime_context_limit = _optional_positive_int(runtime_config.get("max_total_context_tokens"))
+        runtime_context_limit = _optional_positive_int(
+            runtime_config.get("max_total_context_tokens")
+        )
         legacy_context_limit = _optional_positive_int(runtime_config.get("max_total_context_chars"))
-        configured_context_limit = node_context_limit or runtime_context_limit or legacy_context_limit
-        resolved_context_limit = configured_context_limit or extract_model_context_limit(model, 131072)
+        configured_context_limit = (
+            node_context_limit or runtime_context_limit or legacy_context_limit
+        )
+        resolved_context_limit = configured_context_limit or extract_model_context_limit(
+            model, 131072
+        )
         selected_strategy_profile = strategy_profile or strategy_profile_for_output(
             _output_protocol(param("output_protocol", True))
         )
@@ -95,15 +98,23 @@ class AgentRunConfig:
             tools=parameters.get("tools") or [],
             mcp_servers=parse_mcp_servers(param("mcp_servers_config")),
             maximum_iterations=_positive_int(runtime_config.get("maximum_iterations"), 8),
+            max_model_calls=_positive_int(runtime_config.get("max_model_calls"), 32),
+            max_tool_calls=_positive_int(runtime_config.get("max_tool_calls"), 64),
+            max_run_seconds=_positive_seconds(runtime_config.get("max_run_seconds", 300)),
+            max_run_tokens=max(0, _positive_int(runtime_config.get("max_run_tokens"), 0)),
             max_observation_chars=_positive_int(runtime_config.get("max_observation_chars"), 8000),
             max_history_messages=_positive_int(runtime_config.get("max_history_messages"), 40),
             max_total_context_tokens=resolved_context_limit,
             max_total_context_chars=resolved_context_limit,
             resolved_context_limit=resolved_context_limit,
             max_repeated_tool_calls=_positive_int(runtime_config.get("max_repeated_tool_calls"), 3),
-            max_consecutive_tool_errors=_positive_int(runtime_config.get("max_consecutive_tool_errors"), 3),
+            max_consecutive_tool_errors=_positive_int(
+                runtime_config.get("max_consecutive_tool_errors"), 3
+            ),
             show_tool_calls=_bool(param("show_tool_calls"), True),
-            conversation_id=str(param("conversation_id", parameters.get("conversation_id") or "") or ""),
+            conversation_id=str(
+                param("conversation_id", parameters.get("conversation_id") or "") or ""
+            ),
             state_id=str(param("state_id", "") or ""),
             agent_state_variable=str(param("agent_state", "") or ""),
             history_variable=str(param("agent_state", "") or ""),
@@ -117,7 +128,9 @@ class AgentRunConfig:
             output_protocol=selected_strategy_profile.output_protocol,
             strategy_profile=selected_strategy_profile,
             app_skills_yaml=str(param("app_skills_yaml", "") or ""),
-            skill_denylist=_string_list(param("skill_denylist")),
+            tool_call_stream_mode=_stream_tool_mode(
+                runtime_config.get("tool_call_stream_mode", "delta")
+            ),
             files=_file_list(param("files")),
             runtime_config=runtime_config,
         )
@@ -178,13 +191,20 @@ def _optional_positive_int(value: Any) -> int | None:
     return parsed if parsed > 0 else None
 
 
-def _parameter_value(parameters: dict[str, Any], inputs: dict[str, Any], key: str, default: Any = None) -> Any:
+def _parameter_value(
+    parameters: dict[str, Any], inputs: dict[str, Any], key: str, default: Any = None
+) -> Any:
     if key in parameters and parameters[key] is not None:
         return parameters[key]
     return inputs.get(key, default)
 
 
 _RUNTIME_CONFIG_KEYS = {
+    "max_model_calls",
+    "max_tool_calls",
+    "max_run_seconds",
+    "max_run_tokens",
+    "tool_call_stream_mode",
     "maximum_iterations",
     "max_observation_chars",
     "max_history_messages",
@@ -194,6 +214,19 @@ _RUNTIME_CONFIG_KEYS = {
     "max_consecutive_tool_errors",
     "state_reset",
 }
+
+
+def _stream_tool_mode(value: Any) -> str:
+    if value not in {"delta", "snapshot"}:
+        raise ValueError("tool_call_stream_mode must be delta or snapshot.")
+    return str(value)
+
+
+def _positive_seconds(value: Any) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed) or parsed <= 0:
+        raise ValueError("max_run_seconds must be a positive finite number.")
+    return parsed
 
 
 def _runtime_config(value: Any) -> dict[str, Any]:
@@ -294,32 +327,13 @@ def extract_model_context_limit(model: Any, default: int) -> int:
     return default
 
 
-def _string_list(value: Any) -> list[str] | None:
-    if value is None or value == "":
-        return None
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return None
-        try:
-            parsed = __import__("json").loads(stripped)
-        except Exception:
-            separator = ";" if ";" in stripped else ","
-            parsed = [part.strip() for part in stripped.split(separator)]
-        value = parsed
-    if isinstance(value, (list, tuple, set)):
-        items = [str(item).strip() for item in value if str(item).strip()]
-        return items or None
-    return [str(value)]
-
-
 def _file_list(value: Any) -> list[Any]:
     if value is None or value == "":
         logger.info("cc_agent _file_list: empty value type=%s", type(value).__name__)
         return []
     if isinstance(value, str):
         stripped = value.strip()
-        logger.info("cc_agent _file_list: str len=%s head=%s tail=%s", len(stripped), stripped[:120], stripped[-60:])
+        logger.info("cc_agent _file_list: str len=%s", len(stripped))
         if not stripped:
             return []
         # Dify string templates may double-wrap JSON in extra quotes
@@ -335,7 +349,9 @@ def _file_list(value: Any) -> list[Any]:
                 if parsed is not None:
                     value = parsed
         if isinstance(value, str):
-            logger.warning("cc_agent _file_list: JSON parse failed after unwrap head=%s tail=%s", stripped[:120], stripped[-60:])
+            logger.warning(
+                "cc_agent _file_list: JSON parse failed after unwrap len=%s", len(stripped)
+            )
             return []
     if isinstance(value, dict):
         # Dify may pass the Code node output directly as a dict with a files_json key
@@ -343,7 +359,11 @@ def _file_list(value: Any) -> list[Any]:
         if isinstance(inner_json, str):
             parsed = _try_parse_json(inner_json.strip())
             if parsed is not None:
-                return list(parsed) if isinstance(parsed, list) else [parsed] if isinstance(parsed, dict) else [parsed]
+                return (
+                    list(parsed)
+                    if isinstance(parsed, list)
+                    else [parsed] if isinstance(parsed, dict) else [parsed]
+                )
         # Treat the dict itself as a single file entry
         logger.info("cc_agent _file_list: dict keys=%s", sorted(value.keys()))
         return [value]
@@ -368,7 +388,9 @@ def _strip_outer_quotes(text: str) -> str:
     return text
 
 
-def _user_prompt_response(parameters: dict[str, Any], inputs: dict[str, Any] | None = None) -> dict[str, Any] | None:
+def _user_prompt_response(
+    parameters: dict[str, Any], inputs: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
     inputs = inputs if isinstance(inputs, dict) else {}
     response = _parameter_value(parameters, inputs, "user_prompt_response")
     return response if isinstance(response, dict) else None

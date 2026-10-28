@@ -12,7 +12,6 @@ from cc_agent.core.context_budget import (
     snip_old_tool_results,
 )
 from cc_agent.core.error_classifier import classify_error
-from cc_agent.core.guards import ToolGuard, ToolGuardConfig
 from cc_agent.core.history import dump_history, load_history
 from cc_agent.core.internal_events import ModelEnded, ModelError, ModelStarted, ToolCompleted
 from cc_agent.core.internal_tools import InternalToolExecutor, internal_tool_schemas
@@ -120,13 +119,6 @@ class ConfigAndHistoryEnhancementTests(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             AgentRunConfig.from_parameters({"query": "hello", "output_protocol": "dify_native"})
-
-    def test_skill_denylist_accepts_semicolon_separated_names(self):
-        config = AgentRunConfig.from_parameters(
-            {"query": "hello", "skill_denylist": " answers-charts ; Skill-B "}
-        )
-
-        self.assertEqual(config.skill_denylist, ["answers-charts", "Skill-B"])
 
     def test_history_payload_is_versioned_and_backward_compatible(self):
         payload = dump_history([{"role": "user", "content": "hi"}], summary="s")
@@ -488,14 +480,6 @@ class BudgetAndPromptEnhancementTests(unittest.TestCase):
 
 
 class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
-    def test_guard_rejects_denied_tool_with_synthetic_observation(self):
-        guard = ToolGuard(ToolGuardConfig(denylist=["TaskCreate"]))
-        result = guard.before_call(ToolCall(id="call_1", name="TaskCreate", arguments={}))
-
-        self.assertIsNotNone(result)
-        self.assertTrue(result.synthetic)
-        self.assertTrue(result.is_error)
-        self.assertIn("rejected by policy", result.llm_observation)
 
     def test_guard_requires_confirmation_for_listed_tool(self):
         guard = UserInterrupts(AgentState(), confirmation_tools={"current_time"})
@@ -991,7 +975,7 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
         created = {}
 
         class FakeSummarizer:
-            def __init__(self, session, model_config):
+            def __init__(self, session, model_config, **kwargs):
                 created["summarizer_model"] = model_config
 
         class FakeModelAdapter:
@@ -1047,7 +1031,7 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
         created = {}
 
         class FakeSummarizer:
-            def __init__(self, session, model_config):
+            def __init__(self, session, model_config, **kwargs):
                 created["summarizer_model"] = model_config
 
         class FakeModelAdapter:
@@ -1101,11 +1085,7 @@ class GuardSchedulerAndToolEnhancementTests(unittest.TestCase):
                 return AssistantTurn(text="done")
 
         config = AgentRunConfig(
-            query="x",
-            maximum_iterations=2,
-            tool_denylist=["Denied"],
-            max_history_messages=4,
-            max_total_context_tokens=131072,
+            query="x", maximum_iterations=2, max_history_messages=4, max_total_context_tokens=131072
         )
         state = AgentState(
             history=[{"role": "user", "content": f"old {index} " * 30} for index in range(8)]

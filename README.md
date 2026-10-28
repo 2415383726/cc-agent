@@ -56,6 +56,11 @@ Dify AgentStrategy
 ```json
 {
   "maximum_iterations": 8,
+  "max_model_calls": 32,
+  "max_tool_calls": 64,
+  "max_run_seconds": 300,
+  "max_run_tokens": 0,
+  "tool_call_stream_mode": "delta",
   "max_observation_chars": 8000,
   "max_history_messages": 40,
   "max_total_context_tokens": 131072,
@@ -67,6 +72,10 @@ Dify AgentStrategy
 
 通常可留空。未知字段被忽略。节点上的 `max_total_context_tokens` 优先于 runtime_config；旧 `max_total_context_chars` 配置别名仍被接受，但按 token 限额解释。
 
+`max_model_calls` 统计实际模型请求，包括摘要、续写、最终请求和重试；`max_tool_calls` 统计实际工具执行，包括批准中断后的执行。总预算在开始下一次调用前检查；达到限制时配对未执行工具结果，以 `budget_exhausted` 结束并保留已完成结果。`max_run_seconds` 为协作式耗时上限，不能强行终止已经开始的同步 SDK 或远程业务操作。`max_run_tokens=0` 不启用累计 token 上限；非零时按 provider 已报告用量检查。
+
+工具参数流默认 `delta`：参数片段按顺序追加，保留重复字符；一次性返回完整工具调用同样适用。provider 若返回累计快照，配置 `tool_call_stream_mode=snapshot`，每块替换该工具调用的名称和参数。两种模式均归并同一 index 与后到/省略的 id，不根据 JSON 前后缀猜测模式。Dify 的具体 provider / SDK 输出应按部署版本取样验证。
+
 ## 会话状态
 
 `agent_state` 使用 `ccagent-state:v1:gzip-base64:` 前缀，包含历史与摘要、任务、工具授权、已加载技能和上一轮执行元信息。编码器会按 Dify 对话变量约 190KB 的限制压缩或裁剪状态。
@@ -75,6 +84,10 @@ Dify AgentStrategy
 
 - `state_summary`：历史、任务数量及等待用户、结束原因等只读摘要，不用于恢复状态。
 - `state_ref`：`backend=conversation_variable` 的状态元信息，包含会话标识、版本和保存状态。前端可用它恢复会话标识。
+
+`state_ref.persisted` 保留旧字段语义，表示状态已成功编码并通过容量检查；`delivery_status` 区分 `encoded`、`emitted` 和 `failed`。插件先输出 `agent_state` 变量，再输出运行终态。`platform_persisted=null` 表示插件无法确认后续 Dify 工作流已完成对话变量赋值；应通过下一轮读回核实。revision 是上一快照序号加一，不提供原子并发比较。
+
+`execution_metadata.run_status` 区分 `completed`、`awaiting_user`、`failed`、`budget_exhausted`；`RUN_FINISHED` / `agent_finished` 表示本轮结束，不代表业务操作已成功。`run_budget` 包含模型/工具实际次数、已报告 token、耗时、预算原因及工具 outcome 计数。工具结果携带 run_id，异常远程调用继续标记 unknown。诊断默认不记录模型正文或附件原始 JSON。
 
 `state_summary` 根据实际保存的压缩快照生成。会话授权只免除重复确认，仍受工具策略和服务端业务权限限制；批准的待执行工具也经过相同调度检查。
 
@@ -100,13 +113,19 @@ Dify AgentStrategy
 
 内部工具只处理认知与会话状态。外部文件、执行、搜索和浏览能力由 Dify 工具或配置的远程 MCP 服务提供。Dify 工具返回重复两半的结果时继续按语义去重，JSON 键顺序不同也保留一份。Dify 注入工具的文件、图片、链接等产物继续沿用原输出路径，插件不额外转发；直连 MCP 的 blob 由插件转发，包括批准中断后的执行结果。
 
-`SkillCatalog` 统一技能选择、恢复和激活；旧会话的已激活技能仍受当前策略与 denylist 限制。slash 与模型 `Skill` 调用使用同一激活路径，资源仍通过 `SkillReadResource` 按需读取。
+`SkillCatalog` 统一技能选择、恢复和激活；旧会话的已激活技能仍受当前输出策略、入口资格和定义完整性约束。slash 与模型 `Skill` 调用使用同一激活路径，资源仍通过 `SkillReadResource` 按需读取。工具 allowlist / denylist 与技能 denylist 已移除；外部工具能力由应用配置和业务服务授权。重复调用、连续错误、总执行预算与旧中断恢复继续生效。
 
 工具 schema 仍全量提供，匹配技能优先由提示驱动。技能正文承担流程和参数用法；长参考资料通过 `SkillReadResource(skill, path, offset=0, limit=12000)` 连续读取。`offset` / `limit` 按 Unicode 字符计算，`limit` 至少 128、最多 12000；最终页还受单条和批次结果预算限制。返回头部及 `resource_page` 元数据记录实际交付区间和 `next_offset`，继续读取时使用该位置，直至其为 `null`。页始终保留连续前缀，不按头尾截断后跳过中间内容。预算不足以容纳分页信息时明确报错。
 
 `disable_model_invocation=true` 的技能不出现在模型目录中，也不能由模型直接激活；`user_invocable=false` 禁止 slash 激活。恢复已加载技能时校验定义摘要和完整性，定义变化、旧格式记录或保存时被裁剪的正文会重新变为可加载状态。本轮内保留完整已加载正文；跨轮仍受状态变量容量限制，不承诺恢复已经丢弃的远端原文。
 
 前端 `runStream.ts` 统一解释原生 AG-UI 和 Dify fallback 运行流，保留原生事件字段、附件及中断。`conversationCoordinator.ts` 管理会话/thread 关联、历史加载请求和过期结果，切换期间不会把消息发送给旧 clone；不自动恢复上次会话。
+
+加载已选会话时，前端同时从 Dify 会话变量接口读取 `agent_state`，有界解码并仅保留 revision、run_id、终态和待处理中断作为恢复视图；沿用相同历史 ticket 和过期结果检查。变量读取失败仍展示已保存历史，并提示交互状态不可用。前端检查停止请求响应；停止接收、停止请求成功和服务端业务结果分别表达。缺少可信终态的断流显示结果尚未确认，不自动重放在途工具。部署需验证会话变量读取接口、权限及 `agent_state` 映射。
+
+技能正文在模型请求中只出现一份，历史保存简短激活记录。请求超限时优先释放较旧的活跃技能，保留最新完整正文；退出的技能可再次加载。当前任务投影聚焦未完成任务，全部任务仍可通过 TaskGet / TaskList 读取。预算元数据列出固定目录、工具、活跃技能、任务、附件、摘要和历史的估算成本。
+
+业务成功验收、作业引用与未知结果核实见 [harness 验收指引](docs/harness-validation.md)。
 
 ## MCP 工具
 

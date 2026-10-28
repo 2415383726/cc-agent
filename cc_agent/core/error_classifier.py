@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 
+from .run_budget import RunBudgetExceeded
+
 
 class ContextOverflowError(RuntimeError):
     """Raised when CC Agent can prove a request cannot fit before model invocation."""
@@ -24,6 +26,8 @@ _CONTEXT_ERROR_PATTERNS = (
 
 
 def classify_error(exc: Exception) -> str:
+    if isinstance(exc, RunBudgetExceeded):
+        return "budget_exhausted"
     if isinstance(exc, ContextOverflowError):
         return "context_overflow"
     text = str(exc).lower()

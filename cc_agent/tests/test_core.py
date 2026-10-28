@@ -1,15 +1,19 @@
 import unittest
 from types import SimpleNamespace
 
+from cc_agent.core.compression import DifyHistorySummarizer
 from cc_agent.core.config import AgentRunConfig
 from cc_agent.core.context_budget import ContextBudget
 from cc_agent.core.history import dump_history, load_history, sanitize_history
-from cc_agent.core.model_stream import AssistantTurnCompleted, TextDelta, ThinkingDelta
 from cc_agent.core.internal_tools import InternalToolExecutor
 from cc_agent.core.loop import AgentLoop
 from cc_agent.core.messages import AgentState, AssistantTurn, ToolCall
-from cc_agent.core.compression import DifyHistorySummarizer
-from cc_agent.core.model_adapter import DifyModelAdapter, StreamToolCallAccumulator, to_dify_prompt_messages
+from cc_agent.core.model_adapter import (
+    DifyModelAdapter,
+    StreamToolCallAccumulator,
+    to_dify_prompt_messages,
+)
+from cc_agent.core.model_stream import AssistantTurnCompleted, TextDelta, ThinkingDelta
 from cc_agent.core.tool_adapter import ToolAdapter, normalize_tool_invoke_messages
 from cc_agent.core.tool_catalog import ToolCatalog
 
@@ -38,12 +42,7 @@ class HistoryTests(unittest.TestCase):
                     }
                 ],
             },
-            {
-                "role": "tool",
-                "tool_call_id": "call_1",
-                "name": "TaskCreate",
-                "content": "saved",
-            },
+            {"role": "tool", "tool_call_id": "call_1", "name": "TaskCreate", "content": "saved"},
             {
                 "role": "tool",
                 "tool_call_id": "orphan",
@@ -53,16 +52,16 @@ class HistoryTests(unittest.TestCase):
             {
                 "role": "assistant",
                 "content": "unfinished",
-                "tool_calls": [
-                    {"id": "call_2", "name": "TaskList", "arguments": {}}
-                ],
+                "tool_calls": [{"id": "call_2", "name": "TaskList", "arguments": {}}],
             },
             {"role": "user", "content": "continue"},
         ]
 
         clean = sanitize_history(messages)
 
-        self.assertEqual([m["role"] for m in clean], ["user", "assistant", "tool", "assistant", "user"])
+        self.assertEqual(
+            [m["role"] for m in clean], ["user", "assistant", "tool", "assistant", "user"]
+        )
         self.assertNotIn("tool_calls", clean[3])
         payload = dump_history(clean, summary="previous summary")
         loaded = load_history(payload)
@@ -75,28 +74,9 @@ class StreamToolCallAccumulatorTests(unittest.TestCase):
         acc = StreamToolCallAccumulator()
 
         acc.add_delta(
-            [
-                {
-                    "index": 0,
-                    "id": "",
-                    "function": {
-                        "name": "Task",
-                        "arguments": "{\"query\":\"di",
-                    },
-                }
-            ]
+            [{"index": 0, "id": "", "function": {"name": "Task", "arguments": '{"query":"di'}}]
         )
-        acc.add_delta(
-            [
-                {
-                    "index": 0,
-                    "function": {
-                        "name": "List",
-                        "arguments": "fy\"}",
-                    },
-                }
-            ]
-        )
+        acc.add_delta([{"index": 0, "function": {"name": "List", "arguments": 'fy"}'}}])
 
         calls = acc.finalize()
 
@@ -105,10 +85,12 @@ class StreamToolCallAccumulatorTests(unittest.TestCase):
         self.assertEqual(calls[0].arguments, {"query": "dify"})
 
     def test_accepts_cumulative_arguments_and_preserves_raw_invalid_json(self):
-        acc = StreamToolCallAccumulator()
+        acc = StreamToolCallAccumulator(mode="snapshot")
 
-        acc.add_delta([{"index": 0, "id": "abc", "function": {"name": "Skill", "arguments": "{\"name\":"}}])
-        acc.add_delta([{"index": 0, "id": "abc", "function": {"arguments": "{\"name\":\"brief\"}"}}])
+        acc.add_delta(
+            [{"index": 0, "id": "abc", "function": {"name": "Skill", "arguments": '{"name":'}}]
+        )
+        acc.add_delta([{"index": 0, "id": "abc", "function": {"arguments": '{"name":"brief"}'}}])
         acc.add_delta([{"index": 1, "function": {"name": "Broken", "arguments": "{bad"}}])
 
         calls = acc.finalize()
@@ -117,17 +99,13 @@ class StreamToolCallAccumulatorTests(unittest.TestCase):
         self.assertEqual(calls[1].arguments, {"_raw_arguments": "{bad"})
 
     def test_replaces_restarted_stream_arguments_instead_of_concatenating(self):
-        acc = StreamToolCallAccumulator()
+        acc = StreamToolCallAccumulator(mode="snapshot")
 
-        acc.add_delta([{"index": 0, "id": "abc", "function": {"name": "weekday", "arguments": "{\"year\":2"}}])
         acc.add_delta(
-            [
-                {
-                    "index": 0,
-                    "id": "abc",
-                    "function": {"arguments": "{\"year\":5,\"month\":3,\"day\":24}"},
-                }
-            ]
+            [{"index": 0, "id": "abc", "function": {"name": "weekday", "arguments": '{"year":2'}}]
+        )
+        acc.add_delta(
+            [{"index": 0, "id": "abc", "function": {"arguments": '{"year":5,"month":3,"day":24}'}}]
         )
 
         calls = acc.finalize()
@@ -136,13 +114,19 @@ class StreamToolCallAccumulatorTests(unittest.TestCase):
 
     def test_stream_collector_separates_thinking_from_text(self):
         chunks = [
-            SimpleNamespace(delta=SimpleNamespace(message=SimpleNamespace(content="<think>abc</think>final", tool_calls=[]))),
+            SimpleNamespace(
+                delta=SimpleNamespace(
+                    message=SimpleNamespace(content="<think>abc</think>final", tool_calls=[])
+                )
+            )
         ]
 
         events = list(DifyModelAdapter(None, {}, stream=True).collect_stream_events(chunks))
         turn = events[-1].turn
 
-        self.assertEqual([type(event) for event in events], [ThinkingDelta, TextDelta, AssistantTurnCompleted])
+        self.assertEqual(
+            [type(event) for event in events], [ThinkingDelta, TextDelta, AssistantTurnCompleted]
+        )
         self.assertEqual(events[0].text, "abc")
         self.assertEqual(events[1].text, "final")
         self.assertEqual(turn.text, "final")
@@ -150,9 +134,15 @@ class StreamToolCallAccumulatorTests(unittest.TestCase):
 
     def test_stream_collector_handles_think_tags_split_across_chunks(self):
         chunks = [
-            SimpleNamespace(delta=SimpleNamespace(message=SimpleNamespace(content="<thi", tool_calls=[]))),
-            SimpleNamespace(delta=SimpleNamespace(message=SimpleNamespace(content="nk>abc</thi", tool_calls=[]))),
-            SimpleNamespace(delta=SimpleNamespace(message=SimpleNamespace(content="nk>final", tool_calls=[]))),
+            SimpleNamespace(
+                delta=SimpleNamespace(message=SimpleNamespace(content="<thi", tool_calls=[]))
+            ),
+            SimpleNamespace(
+                delta=SimpleNamespace(message=SimpleNamespace(content="nk>abc</thi", tool_calls=[]))
+            ),
+            SimpleNamespace(
+                delta=SimpleNamespace(message=SimpleNamespace(content="nk>final", tool_calls=[]))
+            ),
         ]
 
         events = list(DifyModelAdapter(None, {}, stream=True).collect_stream_events(chunks))
@@ -167,7 +157,11 @@ class StreamToolCallAccumulatorTests(unittest.TestCase):
 
     def test_stream_collector_keeps_tool_calls_when_thinking_is_present(self):
         chunks = [
-            SimpleNamespace(delta=SimpleNamespace(message=SimpleNamespace(content="<think>abc</think>", tool_calls=[]))),
+            SimpleNamespace(
+                delta=SimpleNamespace(
+                    message=SimpleNamespace(content="<think>abc</think>", tool_calls=[])
+                )
+            ),
             SimpleNamespace(
                 delta=SimpleNamespace(
                     message=SimpleNamespace(
@@ -176,7 +170,9 @@ class StreamToolCallAccumulatorTests(unittest.TestCase):
                             SimpleNamespace(
                                 index=0,
                                 id="call_1",
-                                function=SimpleNamespace(name="TaskList", arguments='{"query":"dify"}'),
+                                function=SimpleNamespace(
+                                    name="TaskList", arguments='{"query":"dify"}'
+                                ),
                             )
                         ],
                     )
@@ -225,7 +221,9 @@ class StreamToolCallAccumulatorTests(unittest.TestCase):
 
     def test_blocking_collector_merges_reasoning_field_and_think_tags(self):
         result = SimpleNamespace(
-            message=SimpleNamespace(content="<think>tag</think>final", reasoning_content="field", tool_calls=[]),
+            message=SimpleNamespace(
+                content="<think>tag</think>final", reasoning_content="field", tool_calls=[]
+            ),
             usage={"total_tokens": 1},
             finish_reason="stop",
         )
@@ -242,13 +240,20 @@ class StreamToolCallAccumulatorTests(unittest.TestCase):
             def invoke(self, **kwargs):
                 captured.update(kwargs)
                 return [
-                    SimpleNamespace(delta=SimpleNamespace(message=SimpleNamespace(content="ok", tool_calls=[]))),
+                    SimpleNamespace(
+                        delta=SimpleNamespace(message=SimpleNamespace(content="ok", tool_calls=[]))
+                    )
                 ]
 
         session = SimpleNamespace(model=SimpleNamespace(llm=FakeLLM()))
         adapter = DifyModelAdapter(
             session,
-            {"model": "demo", "provider": "p", "mode": "chat", "history_prompt_messages": [{"role": "user", "content": "old"}]},
+            {
+                "model": "demo",
+                "provider": "p",
+                "mode": "chat",
+                "history_prompt_messages": [{"role": "user", "content": "old"}],
+            },
             stream=True,
         )
 
@@ -274,7 +279,11 @@ class StreamToolCallAccumulatorTests(unittest.TestCase):
         session = SimpleNamespace(model=SimpleNamespace(llm=FakeLLM()))
         adapter = DifyModelAdapter(
             session,
-            SimpleNamespace(model="demo", provider="p", history_prompt_messages=[{"role": "user", "content": "old"}]),
+            SimpleNamespace(
+                model="demo",
+                provider="p",
+                history_prompt_messages=[{"role": "user", "content": "old"}],
+            ),
             stream=False,
         )
 
@@ -294,7 +303,12 @@ class StreamToolCallAccumulatorTests(unittest.TestCase):
         session = SimpleNamespace(model=SimpleNamespace(llm=FakeLLM()))
         summarizer = DifyHistorySummarizer(
             session,
-            {"model": "demo", "provider": "p", "mode": "chat", "history_prompt_messages": [{"role": "user", "content": "old"}]},
+            {
+                "model": "demo",
+                "provider": "p",
+                "mode": "chat",
+                "history_prompt_messages": [{"role": "user", "content": "old"}],
+            },
         )
 
         result = summarizer([{"role": "user", "content": "current"}])
@@ -321,13 +335,17 @@ class StreamToolCallAccumulatorTests(unittest.TestCase):
         if isinstance(assistant, dict):
             self.assertEqual(assistant["reasoning_content"], "I should call the weekday tool.")
         else:
-            self.assertEqual(getattr(assistant, "reasoning_content"), "I should call the weekday tool.")
+            self.assertEqual(
+                getattr(assistant, "reasoning_content"), "I should call the weekday tool."
+            )
 
     def test_deepseek_reasoning_error_retries_with_flattened_tool_history(self):
         captured = []
 
         def failing_stream():
-            raise Exception("The `reasoning_content` in the thinking mode must be passed back to the API.")
+            raise Exception(
+                "The `reasoning_content` in the thinking mode must be passed back to the API."
+            )
             yield
 
         class FakeLLM:
@@ -336,7 +354,11 @@ class StreamToolCallAccumulatorTests(unittest.TestCase):
                 if len(captured) == 1:
                     return failing_stream()
                 return [
-                    SimpleNamespace(delta=SimpleNamespace(message=SimpleNamespace(content="今天是星期一。", tool_calls=[]))),
+                    SimpleNamespace(
+                        delta=SimpleNamespace(
+                            message=SimpleNamespace(content="今天是星期一。", tool_calls=[])
+                        )
+                    )
                 ]
 
         session = SimpleNamespace(model=SimpleNamespace(llm=FakeLLM()))
@@ -353,11 +375,20 @@ class StreamToolCallAccumulatorTests(unittest.TestCase):
                 "reasoning_content": "I need the current time.",
                 "tool_calls": [{"id": "call_1", "name": "current_time", "arguments": {}}],
             },
-            {"role": "tool", "tool_call_id": "call_1", "name": "current_time", "content": "2026-05-25 11:26:28"},
+            {
+                "role": "tool",
+                "tool_call_id": "call_1",
+                "name": "current_time",
+                "content": "2026-05-25 11:26:28",
+            },
             {"role": "user", "content": "今天星期几？"},
         ]
 
-        events = list(adapter.invoke_stream(messages, [{"name": "weekday", "description": "", "parameters": {}}]))
+        events = list(
+            adapter.invoke_stream(
+                messages, [{"name": "weekday", "description": "", "parameters": {}}]
+            )
+        )
 
         self.assertEqual(events[-1].turn.text, "今天是星期一。")
         self.assertEqual(len(captured), 2)
@@ -366,16 +397,47 @@ class StreamToolCallAccumulatorTests(unittest.TestCase):
         if isinstance(first_assistant, dict):
             self.assertEqual(first_assistant["reasoning_content"], "I need the current time.")
         else:
-            self.assertEqual(getattr(first_assistant, "reasoning_content"), "I need the current time.")
+            self.assertEqual(
+                getattr(first_assistant, "reasoning_content"), "I need the current time."
+            )
         retry_messages = captured[1]["prompt_messages"]
-        retry_roles = [getattr(message, "role", None).value if hasattr(getattr(message, "role", None), "value") else getattr(message, "role", None) or message.get("role") for message in retry_messages]
+        retry_roles = [
+            (
+                getattr(message, "role", None).value
+                if hasattr(getattr(message, "role", None), "value")
+                else getattr(message, "role", None) or message.get("role")
+            )
+            for message in retry_messages
+        ]
         self.assertNotIn("tool", retry_roles)
         retry_assistant_messages = [
-            message for message in retry_messages
-            if (getattr(getattr(message, "role", None), "value", getattr(message, "role", None)) if not isinstance(message, dict) else message.get("role")) == "assistant"
+            message
+            for message in retry_messages
+            if (
+                getattr(getattr(message, "role", None), "value", getattr(message, "role", None))
+                if not isinstance(message, dict)
+                else message.get("role")
+            )
+            == "assistant"
         ]
-        self.assertTrue(all(not (message.get("tool_calls") if isinstance(message, dict) else getattr(message, "tool_calls", [])) for message in retry_assistant_messages))
-        retry_text = "\n".join(str(getattr(message, "content", "") if not isinstance(message, dict) else message.get("content", "")) for message in retry_messages)
+        self.assertTrue(
+            all(
+                not (
+                    message.get("tool_calls")
+                    if isinstance(message, dict)
+                    else getattr(message, "tool_calls", [])
+                )
+                for message in retry_assistant_messages
+            )
+        )
+        retry_text = "\n".join(
+            str(
+                getattr(message, "content", "")
+                if not isinstance(message, dict)
+                else message.get("content", "")
+            )
+            for message in retry_messages
+        )
         self.assertIn("Tool result for current_time", retry_text)
 
 
@@ -402,12 +464,14 @@ class ToolMessageNormalizationTests(unittest.TestCase):
         self.assertEqual(metadata, {})
 
     def test_unknown_retriever_resource_shape_uses_json_fallback(self):
-        response = SimpleNamespace(type="retriever_resources", message=SimpleNamespace(custom={"x": 1}))
+        response = SimpleNamespace(
+            type="retriever_resources", message=SimpleNamespace(custom={"x": 1})
+        )
 
         observation, display_messages, _ = normalize_tool_invoke_messages([response])
 
         self.assertIn("Retrieved resources:", observation)
-        self.assertIn("\"custom\": {\"x\": 1}", observation)
+        self.assertIn('"custom": {"x": 1}', observation)
         self.assertEqual(display_messages, [response])
 
     def test_log_messages_do_not_enter_observation(self):
@@ -419,8 +483,12 @@ class ToolMessageNormalizationTests(unittest.TestCase):
         self.assertEqual(display_messages, [response])
 
     def test_deduplicates_semantically_equal_json_with_reordered_keys(self):
-        first = SimpleNamespace(type="text", message=SimpleNamespace(text='{"result":[{"b":2,"a":1}]}'))
-        second = SimpleNamespace(type="text", message=SimpleNamespace(text='{"result":[{"a":1,"b":2}]}'))
+        first = SimpleNamespace(
+            type="text", message=SimpleNamespace(text='{"result":[{"b":2,"a":1}]}')
+        )
+        second = SimpleNamespace(
+            type="text", message=SimpleNamespace(text='{"result":[{"a":1,"b":2}]}')
+        )
 
         observation, _, _ = normalize_tool_invoke_messages([first, second])
 
@@ -466,7 +534,9 @@ class InternalToolTests(unittest.TestCase):
         )
         executor = InternalToolExecutor(state)
 
-        skill_result = executor.execute("Skill", {"name": "brief", "args": {"audience": "architects", "input": "loop"}})
+        skill_result = executor.execute(
+            "Skill", {"name": "brief", "args": {"audience": "architects", "input": "loop"}}
+        )
         task_result = executor.execute("TaskCreate", {"title": "design loop", "status": "open"})
         executor.execute("TaskUpdate", {"id": task_result.metadata["task"]["id"], "status": "done"})
 
@@ -480,8 +550,19 @@ class InternalToolTests(unittest.TestCase):
         state = AgentState(
             history=[],
             skills=[
-                {"name": "status", "kind": "local", "description": "查看状态", "handler": lambda s, a: "ok"},
-                {"name": "brief", "kind": "prompt", "description": "brief", "body": "Brief for {{topic}} with $ARGUMENTS.", "source": "inline"},
+                {
+                    "name": "status",
+                    "kind": "local",
+                    "description": "查看状态",
+                    "handler": lambda s, a: "ok",
+                },
+                {
+                    "name": "brief",
+                    "kind": "prompt",
+                    "description": "brief",
+                    "body": "Brief for {{topic}} with $ARGUMENTS.",
+                    "source": "inline",
+                },
             ],
             tasks=[],
         )
@@ -500,7 +581,9 @@ class InternalToolTests(unittest.TestCase):
 
 class RegistryAndBudgetTests(unittest.TestCase):
     def test_external_tool_conflicts_are_namespaced_without_overriding_internal_tools(self):
-        registry = ToolCatalog.create(external_tools=[fake_tool("TaskCreate", "web"), fake_tool("Search", "web")])
+        registry = ToolCatalog.create(
+            external_tools=[fake_tool("TaskCreate", "web"), fake_tool("Search", "web")]
+        )
 
         self.assertEqual(registry.resolve("TaskCreate").kind, "internal")
         self.assertEqual(registry.resolve("dify__web__TaskCreate").kind, "external")
@@ -514,15 +597,12 @@ class RegistryAndBudgetTests(unittest.TestCase):
                 "content": "",
                 "tool_calls": [{"id": "call_1", "name": "Search", "arguments": {"q": "x"}}],
             },
-            {
-                "role": "tool",
-                "tool_call_id": "call_1",
-                "name": "Search",
-                "content": "A" * 200,
-            },
+            {"role": "tool", "tool_call_id": "call_1", "name": "Search", "content": "A" * 200},
         ]
 
-        prepared, metadata = ContextBudget(max_history_messages=10, max_observation_chars=60).prepare(messages)
+        prepared, metadata = ContextBudget(
+            max_history_messages=10, max_observation_chars=60
+        ).prepare(messages)
 
         self.assertTrue(metadata["compressed"])
         self.assertIn("truncated", prepared[2]["content"])
@@ -565,7 +645,10 @@ class LoopTests(unittest.TestCase):
         list(loop.run())
 
         self.assertEqual(loop.final_result.answer, "done")
-        tool_names = [tool["name"] if isinstance(tool, dict) else getattr(tool, "name", "") for tool in captured["tools"]]
+        tool_names = [
+            tool["name"] if isinstance(tool, dict) else getattr(tool, "name", "")
+            for tool in captured["tools"]
+        ]
         self.assertIn("get_time", tool_names)
 
     def test_loop_appends_tool_result_for_each_assistant_tool_call(self):
@@ -588,7 +671,9 @@ class LoopTests(unittest.TestCase):
                     )
                 return AssistantTurn(text="已记录。")
 
-        config = AgentRunConfig(query="记住这个项目", instruction="你是系统助手", maximum_iterations=3)
+        config = AgentRunConfig(
+            query="记住这个项目", instruction="你是系统助手", maximum_iterations=3
+        )
         state = AgentState()
         registry = ToolCatalog.create()
         loop = AgentLoop(
@@ -616,9 +701,7 @@ class LoopTests(unittest.TestCase):
                         text="我先查一下。",
                         tool_calls=[
                             ToolCall(
-                                id="call_1",
-                                name="TaskList",
-                                arguments={"query": "上一个问题"},
+                                id="call_1", name="TaskList", arguments={"query": "上一个问题"}
                             )
                         ],
                     )
@@ -626,7 +709,9 @@ class LoopTests(unittest.TestCase):
                     return AssistantTurn(text="")
                 return AssistantTurn(text="你的上一个问题是：今天星期几？")
 
-        config = AgentRunConfig(query="我上一个问题是什么", instruction="你是系统助手", maximum_iterations=3)
+        config = AgentRunConfig(
+            query="我上一个问题是什么", instruction="你是系统助手", maximum_iterations=3
+        )
         state = AgentState()
         registry = ToolCatalog.create()
         loop = AgentLoop(

@@ -11,6 +11,7 @@ from .error_classifier import ContextOverflowError, classify_error, extract_cont
 from .messages import AgentState
 from .model_stream import AssistantTurnCompleted, TextDelta, ThinkingDelta
 from .prompt_builder import PromptBuilder
+from .run_budget import RunBudget
 from .tool_catalog import ToolCatalog
 
 
@@ -26,8 +27,10 @@ class ModelRequests:
         summarizer: Any,
         emit: Callable[..., list[dict[str, Any]]],
         record_timing: Callable[..., float],
+        run_budget: RunBudget | None = None,
     ):
         self.config = config
+        self.run_budget = run_budget or RunBudget.from_config(config)
         self.state = state
         self.registry = catalog
         self.model_adapter = model_adapter
@@ -124,6 +127,34 @@ class ModelRequests:
                 >= self.context_budget.input_budget_tokens
             ):
                 self._raise_budget_error(initial, "static_context_too_large")
+            last_assistant = next(
+                (
+                    i
+                    for i in range(len(transcript) - 1, -1, -1)
+                    if transcript[i].get("role") == "assistant"
+                ),
+                -1,
+            )
+            fresh_skills = {
+                str((message.get("metadata") or {}).get("skill_name") or "")
+                for message in transcript[last_assistant + 1 :]
+                if (message.get("metadata") or {}).get("internal")
+            }
+            released_skills = []
+            while initial.get("request_over_budget") and len(self.state.active_skills) > 1:
+                candidate = next(
+                    (
+                        skill
+                        for skill in self.state.active_skills[:-1]
+                        if skill.get("name") not in fresh_skills
+                    ),
+                    None,
+                )
+                if candidate is None:
+                    break
+                released_skills.append(candidate.get("name"))
+                self.state.active_skills.remove(candidate)
+                _, initial = self.prompt_builder.build(transcript, tools=tools)
             if self.needs_compaction(transcript):
                 compacted = self.compact(transcript)
                 combined_reasons.extend(compacted.get("compressed_reason") or [])
@@ -148,6 +179,7 @@ class ModelRequests:
                         metadata.get("summarized_messages") or 0
                     )
                     metadata["preflight_compactions"] = preflight_compactions
+                    metadata["released_skills"] = released_skills
                     self.last_budget_metadata = dict(metadata)
                     return prompt, metadata
                 if attempt >= 3:
@@ -216,6 +248,8 @@ class ModelRequests:
         started = time.perf_counter()
         try:
             tools = self.tools(force_final)
+            if getattr(self.model_adapter, "run_budget", None) is not self.run_budget:
+                self.run_budget.before_model()
             if hasattr(self.model_adapter, "invoke_stream"):
                 events = self.model_adapter.invoke_stream(
                     prompt_messages, tools, force_final=force_final
@@ -228,6 +262,7 @@ class ModelRequests:
                 events = [*stream_chunks, AssistantTurnCompleted(turn=turn)]
             for event in events:
                 if isinstance(event, AssistantTurnCompleted):
+                    self.run_budget.record_usage(event.turn.usage)
                     yield event
                     continue
                 if isinstance(event, TextDelta):

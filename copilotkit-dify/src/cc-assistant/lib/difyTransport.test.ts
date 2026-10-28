@@ -33,6 +33,12 @@ describe('difyTransport', () => {
     fetchMock.mockReset()
   })
 
+  it('rejects an unsuccessful stop request without exposing the response body', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 500, text: async () => 'private server detail' })
+    await expect(stopChat({ baseUrl: '/v1', apiKey: 'key', user: 'u', taskId: 't' }))
+      .rejects.toThrow('Dify stop request failed (500)')
+  })
+
   it('posts streaming chat requests with the expected payload', async () => {
     fetchMock.mockResolvedValue({
       ok: true,

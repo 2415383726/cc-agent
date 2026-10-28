@@ -44,6 +44,9 @@
         <div v-if="conversationsError" class="drawer-history-status" role="status" aria-live="polite">
           {{ conversationsError }}
         </div>
+        <div v-if="executionNotice && activeView !== 'home'" class="drawer-history-status" role="status" aria-live="polite">
+          {{ executionNotice }}
+        </div>
 
         <div v-if="activeView === 'home'" class="drawer-home">
           <div class="drawer-home__content">
@@ -193,6 +196,16 @@ const pendingFiles = ref<File[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
 const { agent } = useAgent({ agentId: 'default' })
 const { copilotkit } = useCopilotKit()
+const agentRecoveryState = ref<Record<string, any>>({})
+watch(agent, (current, _previous, onCleanup) => {
+  agentRecoveryState.value = current?.state || {}
+  const subscription = current?.subscribe?.({ onStateChanged: ({ state }) => {
+    agentRecoveryState.value = state || {}
+  } })
+  onCleanup(() => subscription?.unsubscribe())
+}, { immediate: true })
+const executionNotice = computed(() => agentRecoveryState.value.execution?.message ||
+  (agentRecoveryState.value.recoveryAvailable === false ? '历史已加载，待处理交互状态暂时无法读取。' : ''))
 
 const catalog = computed(() => props.catalog || defaultAssistantCatalog)
 const titleText = computed(() => props.title || '系统助手')
@@ -504,7 +517,23 @@ const interruptState = useInterrupt({
   renderInChat: false,
   handler: ({ event }) => normalizeInterruptQuestion(event.value),
 })
-const interruptSlotProps = computed(() => interruptState.slotProps.value)
+const interruptSlotProps = computed(() => {
+  const question = agentRecoveryState.value.recovery?.question
+  const live = interruptState.slotProps.value
+  if (!question) return agentRecoveryState.value.recoveryAvailable !== undefined ||
+    agentRecoveryState.value.execution ? null : live
+  if (live?.result?.id === question.id) return live
+  return {
+    result: normalizeInterruptQuestion(question),
+    resolve: (payload: unknown) => {
+      const current = agent.value
+      if (!current || current.isRunning) return
+      void copilotkit.value.runAgent({ agent: current,
+        forwardedProps: { command: { resume: payload, interruptEvent: question } },
+      }).catch(() => { submitError.value = '本轮交互未能继续，请重新加载会话后重试。' })
+    },
+  }
+})
 
 function selectLauncherSkill(skill: AssistantSkill, source: 'drawer' = 'drawer') {
   launcherSkill.value = skill

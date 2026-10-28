@@ -22,6 +22,7 @@ def public_failure_message(code: str) -> str:
         "interrupt_resume_failed": "The pending user interaction could not be resumed.",
         "missing_final_result": "Agent execution ended without a final result.",
         "model_error": "The model provider could not complete this request.",
+        "budget_exhausted": "This run reached its execution budget. Completed operations are preserved; review their results before continuing.",
         "skill_invocation_forbidden": "This skill does not support user invocation.",
     }.get(code, "Agent execution failed.")
 

@@ -3,7 +3,7 @@ import type { BaseEvent } from '@ag-ui/core'
 import { Observable } from 'rxjs'
 import { MISSING_ANSWER_NOTICE, isLikelyWorkflowPlaceholder } from './difyHistoryMessages'
 import { createRunStream } from './runStream'
-import { listMessages, stopChat, streamChat, uploadFile as uploadDifyFile, type DifyUploadedFile } from './difyTransport'
+import { listMessages, loadConversationRecovery, stopChat, streamChat, uploadFile as uploadDifyFile, type DifyUploadedFile } from './difyTransport'
 import { copilotDifyDebug } from './debugLog'
 import { buildInterruptResumePayload, type InterruptQuestion } from './question'
 
@@ -238,6 +238,7 @@ export class DifyAgUiAgent extends AbstractAgent {
   private abortController: AbortController | null = null
   private pendingInterrupt: InterruptQuestion | null = null
   private historyLoadSequence = 0
+  private runSequence = 0
 
   constructor(config: DifyAgentConfig, agentId = 'default', configRef?: DifyAgentConfigRef, options: DifyAgentOptions = {}) {
     super({ agentId })
@@ -282,23 +283,28 @@ export class DifyAgUiAgent extends AbstractAgent {
       currentConversationId: this.conversationId,
       currentMessages: this.messages.length,
     })
-    const history = await listMessages({
+    const request = {
       baseUrl: config.baseUrl,
       apiKey: config.apiKey,
       user: config.user,
       conversationId: id,
       limit: 20,
-    })
+    }
+    const [history, recovery] = await Promise.all([
+      listMessages(request),
+      loadConversationRecovery(request).then(value => ({ value, available: true }),
+        () => ({ value: null, available: false })),
+    ])
     if (
       requestId !== this.historyLoadSequence || !canApply() ||
       config.user !== this.config.user || config.apiKey !== this.config.apiKey ||
       config.baseUrl !== this.config.baseUrl
     ) return { loaded: false, messageCount: 0 }
     this.currentTaskId = ''
-    this.pendingInterrupt = null
+    this.pendingInterrupt = recovery.value?.question || null
     const loadedMessages = normalizeLoadedHistoryMessages(deepClone(history.messages))
     this.setMessages(loadedMessages)
-    this.setState({})
+    this.setState({ recovery: recovery.value, recoveryAvailable: recovery.available })
     this.setConversationId(id)
     copilotDifyDebug('agent.history.load.done', {
       conversationId: id,
@@ -343,6 +349,7 @@ export class DifyAgUiAgent extends AbstractAgent {
 
   clearConversation() {
     this.historyLoadSequence += 1
+    this.runSequence += 1
     if (!this.conversationId && this.messages.length === 0) return
     this.conversationId = ''
     this.currentTaskId = ''
@@ -380,7 +387,11 @@ export class DifyAgUiAgent extends AbstractAgent {
         return
       }
 
-      this.abortController = new AbortController()
+      const sequence = ++this.runSequence
+      const controller = new AbortController()
+      this.abortController = controller
+      this.setState({ ...this.state, recoveryAvailable: undefined,
+        execution: { status: 'running', message: '' } })
       this.historyLoadSequence += 1
 
       const run = async () => {
@@ -393,10 +404,11 @@ export class DifyAgUiAgent extends AbstractAgent {
             query: ctx.query,
             inputs: this.buildInputs(input, ctx.resumeResponse),
             files: ctx.files,
-            signal: this.abortController!.signal,
+            signal: controller.signal,
           })
           if (ctx.resumeResponse || resumePayload(input as any)) {
             this.pendingInterrupt = null
+            this.setState({ ...this.state, recovery: null })
           }
 
           const runId = input.runId || nextMessageId('run')
@@ -405,8 +417,23 @@ export class DifyAgUiAgent extends AbstractAgent {
             runId, threadId,
             uploadedFiles: ctx.files.length ? uploadedFilesActivity(ctx.files) : undefined,
             onConversationId: (id) => this.setConversationId(id),
-            onTaskId: (id) => { this.currentTaskId = id },
-            onInterrupt: (question) => { this.pendingInterrupt = question },
+            onTaskId: (id) => {
+              if (sequence !== this.runSequence || this.currentTaskId === id) return
+              this.currentTaskId = id
+              this.setState({ ...this.state, execution: { ...this.state.execution, difyTaskId: id } })
+            },
+            onInterrupt: (question) => {
+              this.pendingInterrupt = question
+              this.setState({ ...this.state, recovery: question ? { question } : null })
+            },
+            onRunStatus: (status, identity) => {
+              if (sequence !== this.runSequence) return
+              this.setState({ ...this.state, execution: { ...this.state.execution,
+                runId: identity.runId, status,
+                message: status === 'unknown' ? '连接已结束，本轮执行结果尚未确认。请先核实已执行的操作，再继续。' :
+                  status === 'failed' ? '本轮执行未完成，请查看错误信息后继续。' :
+                  status === 'budget_exhausted' ? '本轮已达到执行预算，已完成结果已保留。核实后可继续。' : '' } })
+            },
           })
 
           this.setConversationId(result.response.conversationId || this.conversationId)
@@ -419,11 +446,16 @@ export class DifyAgUiAgent extends AbstractAgent {
           if (error?.name === 'AbortError') {
             observer.complete()
           } else {
+            if (sequence === this.runSequence) this.setState({ ...this.state, execution: {
+              status: 'unknown', message: '连接中断，本轮执行结果尚未确认。请先核实已执行的操作，再继续。',
+            } })
             observer.error(error)
           }
         } finally {
-          this.currentTaskId = ''
-          this.abortController = null
+          if (sequence === this.runSequence) {
+            this.currentTaskId = ''
+            this.abortController = null
+          }
         }
       }
 
@@ -444,6 +476,10 @@ export class DifyAgUiAgent extends AbstractAgent {
 
   override abortRun(): void {
     const taskId = this.currentTaskId
+    if (!taskId && !this.abortController) return
+    const sequence = this.runSequence
+    this.setState({ ...this.state, execution: { status: 'stopping',
+      message: '已停止接收回复，正在请求结束本轮执行。' } })
     this.currentTaskId = ''
     if (taskId && this.config.baseUrl && this.config.apiKey) {
       void stopChat({
@@ -451,7 +487,18 @@ export class DifyAgUiAgent extends AbstractAgent {
         apiKey: this.config.apiKey,
         user: this.config.user,
         taskId,
-      }).catch(() => undefined)
+      }).then(() => {
+        if (sequence === this.runSequence) this.setState({ ...this.state, execution: {
+          status: 'client_stopped', message: '已请求停止。本轮操作的执行结果仍需核实。',
+        } })
+      }, () => {
+        if (sequence === this.runSequence) this.setState({ ...this.state, execution: {
+          status: 'stop_failed', message: '停止请求未成功，服务端执行结果尚未确认。',
+        } })
+      })
+    } else {
+      this.setState({ ...this.state, execution: { status: 'unknown',
+        message: '已停止接收回复，服务端执行结果尚未确认。' } })
     }
     this.abortController?.abort()
   }
