@@ -8,6 +8,45 @@ if TYPE_CHECKING:
     from .model_stream import TextDelta, ThinkingDelta
 
 
+def history_tool_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    """Keep recovery facts, not duplicate display payloads, in conversation history."""
+    return {
+        key: value
+        for key, value in metadata.items()
+        if key
+        not in {
+            "display_messages",
+            "raw_response",
+            "artifacts",
+            "parameters",
+            "output",
+            "injected_message",
+            "activity",
+        }
+    }
+
+
+def model_message_view(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Project exactly the message fields consumed by the Dify model adapter."""
+    projected = []
+    for message in messages:
+        role = message.get("role")
+        if role not in {"system", "user", "assistant", "tool"}:
+            continue
+        item = {"role": role, "content": message.get("content") or ""}
+        if role == "assistant" and message.get("tool_calls"):
+            item["tool_calls"] = [
+                {key: call[key] for key in ("id", "name", "arguments") if key in call}
+                for call in message["tool_calls"]
+            ]
+        elif role == "tool":
+            item.update(
+                tool_call_id=message.get("tool_call_id") or "", name=message.get("name") or ""
+            )
+        projected.append(item)
+    return projected
+
+
 @dataclass(slots=True)
 class ToolCall:
     id: str
@@ -16,11 +55,7 @@ class ToolCall:
     raw_arguments: str = ""
 
     def to_history(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "id": self.id,
-            "name": self.name,
-            "arguments": self.arguments,
-        }
+        payload: dict[str, Any] = {"id": self.id, "name": self.name, "arguments": self.arguments}
         if self.raw_arguments:
             payload["raw_arguments"] = self.raw_arguments
         return payload
@@ -38,6 +73,36 @@ class AssistantTurn:
 
 
 @dataclass(slots=True)
+class TextResourcePage:
+    path: str
+    offset: int
+    text: str
+    total_chars: int
+
+    def render(self, max_chars: int) -> tuple[str, dict[str, Any]]:
+        count = min(len(self.text), max_chars)
+        while True:
+            end = self.offset + count
+            next_offset = end if end < self.total_chars else None
+            header = (
+                f"Skill resource loaded: {self.path}\n"
+                f"chars={self.offset}:{end}/{self.total_chars}; next_offset={next_offset}"
+            )
+            available = max_chars - len(header) - 2
+            if available < 0 or (available < 1 and self.text):
+                raise ValueError("Resource result budget is too small for paging metadata.")
+            if count <= available:
+                return header + "\n\n" + self.text[:count], {
+                    "path": self.path,
+                    "offset": self.offset,
+                    "end_offset": end,
+                    "next_offset": next_offset,
+                    "total_chars": self.total_chars,
+                }
+            count = max(0, available)
+
+
+@dataclass(slots=True)
 class ToolResult:
     tool_call_id: str
     tool_name: str
@@ -46,6 +111,7 @@ class ToolResult:
     metadata: dict[str, Any] = field(default_factory=dict)
     is_error: bool = False
     synthetic: bool = False
+    resource_page: TextResourcePage | None = field(default=None, repr=False)
 
     def to_history(self) -> dict[str, Any]:
         return {
@@ -53,11 +119,7 @@ class ToolResult:
             "tool_call_id": self.tool_call_id,
             "name": self.tool_name,
             "content": self.llm_observation or "(tool completed with no output)",
-            "metadata": {
-                key: value
-                for key, value in self.metadata.items()
-                if key not in {"display_messages", "raw_response", "artifacts", "parameters"}
-            },
+            "metadata": history_tool_metadata(self.metadata),
             "is_error": self.is_error,
             "synthetic": self.synthetic,
         }
@@ -93,7 +155,7 @@ class AgentRunResult:
 
     def to_output_payload(self) -> dict[str, Any]:
         """Minimal payload for Dify agent structured output."""
-        payload = {
+        payload: dict[str, Any] = {
             "event": "agent_finished",
             "answer": self.answer,
             "execution_metadata": self.execution_metadata,
@@ -108,7 +170,7 @@ class AgentRunResult:
         return payload
 
     def to_json_payload(self) -> dict[str, Any]:
-        payload = {
+        payload: dict[str, Any] = {
             "event": "agent_finished",
             "answer": self.answer,
             "execution_metadata": self.execution_metadata,
@@ -138,10 +200,7 @@ class AgentRunResult:
 
 
 def assistant_message(turn: AssistantTurn) -> dict[str, Any]:
-    message: dict[str, Any] = {
-        "role": "assistant",
-        "content": turn.text or "",
-    }
+    message: dict[str, Any] = {"role": "assistant", "content": turn.text or ""}
     if turn.tool_calls:
         message["tool_calls"] = [tool_call.to_history() for tool_call in turn.tool_calls]
     if turn.usage:

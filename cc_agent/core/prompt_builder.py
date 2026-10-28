@@ -25,28 +25,28 @@ class PromptBuilder:
         self.budget = budget or ContextBudget(
             max_history_messages=config.max_history_messages,
             max_observation_chars=config.max_observation_chars,
-            max_total_context_chars=config.resolved_context_limit or config.max_total_context_tokens,
+            max_total_context_chars=config.resolved_context_limit
+            or config.max_total_context_tokens,
         )
 
     def build(
-        self,
-        transcript: list[dict[str, Any]],
-        tools: list[Any] | None = None,
+        self, transcript: list[dict[str, Any]], tools: list[Any] | None = None
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         prompt = [{"role": "system", "content": self.system_prompt()}]
+        static_context_tokens = estimate_context_tokens(prompt) + estimate_context_tokens(
+            tools or []
+        )
         if self.state.summary:
-            prompt.append({"role": "system", "content": f"Conversation summary:\n{self.state.summary}"})
-        static_context_tokens = estimate_context_tokens(prompt) + estimate_context_tokens(tools or [])
+            prompt.append(
+                {"role": "system", "content": f"Conversation summary:\n{self.state.summary}"}
+            )
         prompt.extend(transcript)
         prepared, metadata = self.budget.prepare(prompt, summarizer=self.summarizer, tools=tools)
         metadata["static_context_tokens"] = static_context_tokens
         return prepared, metadata
 
     def system_prompt(self) -> str:
-        parts = [
-            _identity_section(),
-            _system_section(),
-        ]
+        parts = [_identity_section(), _system_section()]
         strategy_profile = self.config.strategy_profile
         if strategy_profile is None or strategy_profile.structured_answers:
             parts.append(_structured_answers_section())
@@ -61,7 +61,11 @@ class PromptBuilder:
         )
         if self.config.instruction:
             parts.append(f"# Application instruction\n{self.config.instruction}")
-        prompt_skills = [s for s in (self.state.skills or []) if s.get("kind") != "local"]
+        prompt_skills = [
+            s
+            for s in (self.state.skills or [])
+            if s.get("kind") != "local" and not s.get("disable_model_invocation")
+        ]
         local_skills = [s for s in (self.state.skills or []) if s.get("kind") == "local"]
 
         if prompt_skills:
@@ -79,7 +83,9 @@ class PromptBuilder:
             commands_text = "\n".join(
                 f"  /{s['name']:<12}{s.get('description', '')}" for s in local_skills
             )
-            parts.append(f"# Slash commands\nUser-only commands, not tool-callable:\n{commands_text}")
+            parts.append(
+                f"# Slash commands\nUser-only commands, not tool-callable:\n{commands_text}"
+            )
         visible_tasks = list_tasks(self.state.tasks)
         if visible_tasks:
             parts.append(

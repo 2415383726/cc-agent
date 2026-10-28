@@ -1,10 +1,10 @@
-from cc_agent.core.interrupts import UserInterrupts
 import unittest
 from types import SimpleNamespace
 
+from cc_agent.core import runtime as runtime_module
+from cc_agent.core.interrupts import UserInterrupts
 from cc_agent.core.messages import AgentRunResult, AgentState
 from cc_agent.core.runtime import DifyAgentRuntime
-from cc_agent.core import runtime as runtime_module
 from cc_agent.core.state_variable import AgentStateBundle, encode_agent_state
 
 
@@ -46,7 +46,9 @@ class RuntimeAgUiBoundaryTests(unittest.TestCase):
             _init_prompt_tools=lambda tools: [],
         )
 
-        events = list(DifyAgentRuntime(strategy).run({"query": "hello", "conversation_id": "conv-1"}))
+        events = list(
+            DifyAgentRuntime(strategy).run({"query": "hello", "conversation_id": "conv-1"})
+        )
         run_finished = next(event for event in events if event.get("type") == "RUN_FINISHED")
 
         self.assertEqual(events[0]["type"], "RUN_STARTED")
@@ -55,7 +57,12 @@ class RuntimeAgUiBoundaryTests(unittest.TestCase):
         self.assertEqual(run_finished["result"]["state_ref"]["variable_name"], "agent_state")
         self.assertIn("state_summary", run_finished["result"])
         self.assertTrue(any(event.get("type") == "dify_json" for event in events))
-        self.assertTrue(any(event.get("type") == "dify_variable" and event.get("name") == "agent_state" for event in events))
+        self.assertTrue(
+            any(
+                event.get("type") == "dify_variable" and event.get("name") == "agent_state"
+                for event in events
+            )
+        )
 
     def test_run_without_conversation_id_uses_temporary_state_and_skips_persist(self):
         captured = {}
@@ -68,17 +75,16 @@ class RuntimeAgUiBoundaryTests(unittest.TestCase):
 
             def run(self):
                 self.final_result = AgentRunResult(
-                    answer="ok",
-                    history=[],
-                    tasks=[],
-                    execution_metadata={"finish_reason": "final"},
+                    answer="ok", history=[], tasks=[], execution_metadata={"finish_reason": "final"}
                 )
                 return
                 yield
 
         runtime_module.AgentLoop = FakeLoop
         storage = SimpleNamespace(data={})
-        session = SimpleNamespace(app_id="app-1", session_id="session-1", conversation_id="", storage=storage)
+        session = SimpleNamespace(
+            app_id="app-1", session_id="session-1", conversation_id="", storage=storage
+        )
         strategy = SimpleNamespace(
             session=session,
             runtime=SimpleNamespace(user_id="user-1"),
@@ -118,17 +124,20 @@ class RuntimeAgUiBoundaryTests(unittest.TestCase):
 
         runtime_module.AgentLoop = FakeLoop
         storage = SimpleNamespace(data={})
-        session = SimpleNamespace(app_id="app-1", session_id="session-1", conversation_id="", storage=storage)
+        session = SimpleNamespace(
+            app_id="app-1", session_id="session-1", conversation_id="", storage=storage
+        )
         strategy = SimpleNamespace(
             session=session,
             runtime=SimpleNamespace(user_id="user-1"),
             _init_prompt_tools=lambda tools: [],
         )
 
-        events = list(DifyAgentRuntime(strategy).run({
-            "query": "hello",
-            "inputs": {"state_id": "legacy-state"},
-        }))
+        events = list(
+            DifyAgentRuntime(strategy).run(
+                {"query": "hello", "inputs": {"state_id": "legacy-state"}}
+            )
+        )
 
         self.assertEqual(captured["state"].history, [])
         run_finished = next(event for event in events if event.get("type") == "RUN_FINISHED")
@@ -139,21 +148,28 @@ class RuntimeAgUiBoundaryTests(unittest.TestCase):
         self.assertEqual(storage.data, {})
 
     def test_external_tool_permission_decision_activity_is_emitted_once(self):
-        history = [{
-            "role": "tool", "name": "read_file", "tool_call_id": "call-1",
-            "metadata": {
-                "permission_decision": "allow_conversation",
-                "permission_request": {"tool_name": "read_file"},
-            },
-        }]
+        history = [
+            {
+                "role": "tool",
+                "name": "read_file",
+                "tool_call_id": "call-1",
+                "metadata": {
+                    "permission_decision": "allow_conversation",
+                    "permission_request": {"tool_name": "read_file"},
+                },
+            }
+        ]
         writer = runtime_module._make_writer("agui", "conv-1", "run-1")
         events = UserInterrupts(AgentState(history=history)).decision_activities(writer)
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0]["activityType"], "cc_agent.permission_decision")
-        self.assertEqual(events[0]["content"], {
-            "toolName": "read_file", "decision": "allow_conversation", "scope": "conversation",
-        })
-        self.assertEqual(UserInterrupts(AgentState(history=history)).decision_activities(writer), [])
+        self.assertEqual(
+            events[0]["content"],
+            {"toolName": "read_file", "decision": "allow_conversation", "scope": "conversation"},
+        )
+        self.assertEqual(
+            UserInterrupts(AgentState(history=history)).decision_activities(writer), []
+        )
 
     def test_runtime_loads_state_from_input_agent_state(self):
         captured = {}
@@ -193,7 +209,9 @@ class RuntimeAgUiBoundaryTests(unittest.TestCase):
 
         runtime_module.AgentLoop = FakeLoop
         strategy = SimpleNamespace(
-            session=SimpleNamespace(app_id="app-1", session_id="session-1", conversation_id="conv-1"),
+            session=SimpleNamespace(
+                app_id="app-1", session_id="session-1", conversation_id="conv-1"
+            ),
             runtime=SimpleNamespace(user_id="user-1"),
             _init_prompt_tools=lambda tools: [],
         )
@@ -216,8 +234,12 @@ class RuntimeAgUiBoundaryTests(unittest.TestCase):
         self.assertEqual(captured["state"].history[0]["content"], "from saved variable")
         self.assertEqual(captured["state"].summary, "saved summary")
         self.assertEqual(captured["state"].tasks[0]["id"], "task-1")
-        self.assertEqual(captured["state"].permissions["allowed_tools"]["run_python"], "conversation")
-        self.assertEqual(captured["state"].active_skills[0]["name"], "answers-ui")
+        self.assertEqual(
+            captured["state"].permissions["allowed_tools"]["run_python"], "conversation"
+        )
+        # Legacy records cannot prove the loaded instructions are complete/current.
+        self.assertEqual(captured["state"].active_skills, [])
+        self.assertTrue(any(skill["name"] == "answers-ui" for skill in captured["state"].skills))
         self.assertEqual(run_finished["result"]["state_ref"]["revision"], 6)
         self.assertIn("agent_state", run_finished["result"])
         self.assertNotIn("history", run_finished["result"])

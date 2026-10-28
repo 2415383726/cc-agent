@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .messages import ToolResult
-
+from .messages import TextResourcePage, ToolResult
+from .result_budget import ResultBudget
 
 TEXT_RESOURCE_SUFFIXES = {
     ".csv",
@@ -23,7 +23,28 @@ TEXT_RESOURCE_SUFFIXES = {
 class SkillRuntime:
     """Read text references bundled with a skill."""
 
-    def read_resource(self, skill: dict[str, Any], path: str, limit: int = 12000) -> ToolResult:
+    def __init__(self, max_observation_chars: int = 8000):
+        self.max_observation_chars = max_observation_chars
+
+    def read_resource(
+        self, skill: dict[str, Any], path: str, limit: int = 12000, *, offset: int = 0
+    ) -> ToolResult:
+        if (
+            isinstance(offset, bool)
+            or not isinstance(offset, int)
+            or offset < 0
+            or isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or limit < 128
+        ):
+            return ToolResult(
+                "SkillReadResource",
+                "SkillReadResource",
+                "Invalid resource range: offset must be nonnegative and limit must be at least 128 characters.",
+                is_error=True,
+                synthetic=True,
+            )
+        limit = min(limit, 12000)
         skill_dir, root_error = _skill_dir(skill)
         if root_error:
             return ToolResult(
@@ -74,13 +95,15 @@ class SkillRuntime:
                 is_error=True,
                 synthetic=True,
             )
-        if len(text) > limit:
-            text = text[:limit] + f"\n\n(resource truncated to {limit} chars)"
-        return ToolResult(
+        result = ToolResult(
             tool_call_id="SkillReadResource",
             tool_name="SkillReadResource",
-            llm_observation=f"Skill resource loaded: {normalized_path}\n\n{text}",
+            llm_observation="",
+            resource_page=TextResourcePage(
+                normalized_path, min(offset, len(text)), text[offset : offset + limit], len(text)
+            ),
         )
+        return ResultBudget(min(limit, self.max_observation_chars)).apply(result)
 
 
 def _resolve_under(root: Path, rel_path: str) -> tuple[Path, str]:
@@ -128,10 +151,7 @@ def _normalize_skill_rel_path(rel_path: str, skill: dict[str, Any] | None = None
     if text.startswith("skill://"):
         text = text[len("skill://") :]
     skill = skill if isinstance(skill, dict) else {}
-    names = [
-        str(skill.get("name") or "").strip(),
-        str(skill.get("id") or "").strip(),
-    ]
+    names = [str(skill.get("name") or "").strip(), str(skill.get("id") or "").strip()]
     for _ in range(4):
         changed = False
         while text.startswith("./"):

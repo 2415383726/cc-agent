@@ -5,6 +5,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from .messages import history_tool_metadata
+
 
 @dataclass(slots=True)
 class HistoryState:
@@ -32,7 +34,9 @@ def load_history(value: str | list[dict[str, Any]] | dict[str, Any] | None) -> H
         version = _positive_int(payload.get("version"), 1)
         if not isinstance(messages, list):
             messages = []
-        return HistoryState(messages=sanitize_history(messages), summary=str(summary), version=version)
+        return HistoryState(
+            messages=sanitize_history(messages), summary=str(summary), version=version
+        )
     return HistoryState()
 
 
@@ -75,7 +79,9 @@ def sanitize_history(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
             tool_calls = _normalize_tool_calls(message.get("tool_calls") or [])
             if tool_calls:
                 message["tool_calls"] = tool_calls
-                pending_ids.update(str(tool_call["id"]) for tool_call in tool_calls if tool_call.get("id"))
+                pending_ids.update(
+                    str(tool_call["id"]) for tool_call in tool_calls if tool_call.get("id")
+                )
             elif "tool_calls" in message:
                 message.pop("tool_calls", None)
             clean.append(message)
@@ -130,7 +136,11 @@ def _normalize_tool_message(message: dict[str, Any]) -> dict[str, Any]:
         "tool_call_id": str(message.get("tool_call_id") or ""),
         "name": str(message.get("name") or ""),
         "content": str(message.get("content") or "(tool completed with no output)"),
-        **({"metadata": message["metadata"]} if isinstance(message.get("metadata"), dict) else {}),
+        **(
+            {"metadata": history_tool_metadata(message["metadata"])}
+            if isinstance(message.get("metadata"), dict)
+            else {}
+        ),
         **({"is_error": bool(message.get("is_error"))} if "is_error" in message else {}),
         **({"synthetic": bool(message.get("synthetic"))} if "synthetic" in message else {}),
     }

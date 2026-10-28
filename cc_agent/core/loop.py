@@ -6,14 +6,15 @@ from typing import Any
 
 from .compression import compression_activity
 from .config import AgentRunConfig
+from .error_classifier import ContextOverflowError, classify_error
+from .failures import public_failure_message
+from .guards import ToolGuard, ToolGuardConfig
 from .history import sanitize_history
 from .internal_events import InternalEvent, LoopIteration, ModelEnded, ModelError, ModelStarted
-from .messages import AgentRunResult, AgentState, AssistantTurn, assistant_message, tool_message
-from .model_stream import AssistantTurnCompleted
-from .error_classifier import ContextOverflowError, classify_error
-from .guards import ToolGuard, ToolGuardConfig
-from .model_requests import ModelRequests
 from .interrupts import UserInterrupts
+from .messages import AgentRunResult, AgentState, AssistantTurn, assistant_message, tool_message
+from .model_requests import ModelRequests
+from .model_stream import AssistantTurnCompleted
 from .result_budget import ResultBudget
 from .tool_adapter import ToolAdapter
 from .tool_catalog import ToolCatalog
@@ -119,25 +120,6 @@ class AgentLoop:
                 iteration,
                 len(transcript),
             )
-            compression_id = self._compression_id("auto", iteration)
-            if self.requests.needs_compaction(transcript, force=False):
-                yield from self._write(
-                    "write_activity",
-                    "cc_agent.compression",
-                    compression_activity("started", "auto", compression_id),
-                )
-            compaction_metadata = self.requests.compact(transcript, force=False)
-            compressed = compressed or bool(compaction_metadata.get("compressed"))
-            compressed_reason.extend(compaction_metadata.get("compressed_reason") or [])
-            truncated_observations += int(compaction_metadata.get("truncated_observations") or 0)
-            summarized_messages += int(compaction_metadata.get("summarized_messages") or 0)
-            if compaction_metadata.get("compressed"):
-                yield from self._write(
-                    "write_activity",
-                    "cc_agent.compression",
-                    compression_activity("completed", "auto", compression_id, compaction_metadata),
-                )
-
             try:
                 prompt_messages, budget_metadata = self.requests.prepare(
                     transcript, force_final=False
@@ -192,12 +174,13 @@ class AgentLoop:
                         yield event
                 if turn is None:
                     raise RuntimeError("model stream finished without assistant turn")
-            except Exception as exc:
-                logger.exception(
-                    "cc_agent model iteration failed: iteration=%s error_type=%s error=%s",
+            except (
+                Exception
+            ) as exc:  # noqa: BLE001 - Provider boundary; preserve a safe paired failure.
+                logger.error(
+                    "cc_agent model iteration failed: iteration=%s error_type=%s",
                     iteration,
                     type(exc).__name__,
-                    exc,
                 )
                 self._set_final_result(
                     self._error_result(
@@ -272,11 +255,10 @@ class AgentLoop:
                         answer = f"{turn.text or ''}{continuation_turn.text or ''}"
                         finish_reason = continuation_turn.finish_reason or "final"
                     except Exception as exc:
-                        continuation_error = str(exc)
+                        continuation_error = public_failure_message(classify_error(exc))
                         logger.warning(
-                            "cc_agent truncated answer continuation failed: error_type=%s error=%s",
+                            "cc_agent truncated answer continuation failed: error_type=%s",
                             type(exc).__name__,
-                            exc,
                         )
                         finish_reason = (
                             "context_overflow"
@@ -361,6 +343,7 @@ class AgentLoop:
                 bool((scheduled.result.metadata or {}).get("batch_truncated"))
                 for scheduled in scheduled_results
             )
+            skill_messages = []
             for scheduled in scheduled_results:
                 tool_call = scheduled.tool_call
                 result = scheduled.result
@@ -383,7 +366,7 @@ class AgentLoop:
                             }
                         ),
                     )
-                    transcript.append(
+                    skill_messages.append(
                         {
                             "role": "user",
                             "content": result.metadata.get("injected_message")
@@ -395,7 +378,7 @@ class AgentLoop:
                     awaiting_user_question = self.interrupts.question_from_result(result)
                     answer = str(awaiting_user_question["question"])
                     finish_reason = "awaiting_user"
-                    break
+            transcript.extend(skill_messages)
             if awaiting_user_question:
                 break
             logger.info(
@@ -611,7 +594,8 @@ class AgentLoop:
         total_tool_calls: int,
         total_tokens: int,
     ) -> AgentRunResult:
-        self.events.append(ModelError(message=str(exc), finish_reason=finish_reason, error=exc))
+        message = public_failure_message(finish_reason)
+        self.events.append(ModelError(message=message, finish_reason=finish_reason))
         self.state.history = sanitize_history(transcript)
         return AgentRunResult(
             answer="",
@@ -631,7 +615,10 @@ class AgentLoop:
                 "model_features": self.config.model_features or [],
                 "stream_mode": self.config.stream,
                 "tool_call_supported": self.config.tool_call_supported,
-                "error": str(exc),
+                "error": message,
+                "error_code": finish_reason,
+                "error_type": type(exc).__name__,
+                "stage": "model",
                 "compaction_failures": int(getattr(self.summarizer, "failure_count", 0) or 0),
                 "tool_batch_truncated": self._tool_batch_truncated,
                 **self._budget_execution_metadata(),
@@ -660,7 +647,15 @@ def _safe_tool_metadata(metadata: dict[str, Any] | None) -> dict[str, Any]:
         safe["artifacts"] = [
             {
                 key: artifact.get(key)
-                for key in ("name", "path", "mime_type", "size", "status", "download_url", "expires_at")
+                for key in (
+                    "name",
+                    "path",
+                    "mime_type",
+                    "size",
+                    "status",
+                    "download_url",
+                    "expires_at",
+                )
                 if isinstance(artifact, dict) and artifact.get(key) not in (None, "")
             }
             for artifact in artifacts

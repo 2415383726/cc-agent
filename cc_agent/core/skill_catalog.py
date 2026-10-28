@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -40,18 +42,27 @@ class SkillCatalog:
         return [*self.prompt_skills, *self.local_skills]
 
     def restore_active(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        visible = {str(skill.get("name") or "").casefold() for skill in self.prompt_skills}
+        visible = {str(skill.get("name") or "").casefold(): skill for skill in self.prompt_skills}
         return [
             record
             for record in records
-            if isinstance(record, dict) and str(record.get("name") or "").casefold() in visible
+            if isinstance(record, dict)
+            and (skill := visible.get(str(record.get("name") or "").casefold())) is not None
+            and record.get("complete") is True
+            and record.get("definition_hash") == _definition_hash(skill)
         ][-8:]
 
     @staticmethod
-    def activate(state: AgentState, name: str, args: dict[str, Any] | str) -> str:
+    def activate(
+        state: AgentState, name: str, args: dict[str, Any] | str, *, invocation: str = "model"
+    ) -> str:
         skill = next((skill for skill in state.skills if skill.get("name") == name), None)
         if skill is None:
             raise KeyError(f"Skill not found: {name}")
+        if invocation == "model" and skill.get("disable_model_invocation"):
+            raise PermissionError(f"Skill '{name}' is not available for model invocation.")
+        if invocation == "user" and not skill.get("user_invocable", True):
+            raise PermissionError(f"Skill '{name}' is not available for user invocation.")
         if isinstance(args, str):
             argv = shlex_split(args)
             args = {
@@ -61,7 +72,15 @@ class SkillCatalog:
             }
         rendered = render_skill([skill], name, args)
         active = [record for record in state.active_skills if record.get("name") != name]
-        state.active_skills = [*active, {"name": name, "summary": rendered[:5000]}][-8:]
+        state.active_skills = [
+            *active,
+            {
+                "name": name,
+                "summary": rendered,
+                "definition_hash": _definition_hash(skill),
+                "complete": True,
+            },
+        ][-8:]
         return f"[Skill: {name}]\n{rendered}"
 
     def render(self, name: str, args: dict[str, Any] | None = None) -> str:
@@ -70,3 +89,10 @@ class SkillCatalog:
 
 def build_skill_catalog(*, config: AgentRunConfig) -> SkillCatalog:
     return SkillCatalog.build(config=config)
+
+
+def _definition_hash(skill: dict[str, Any]) -> str:
+    source = {key: skill.get(key) for key in ("name", "body", "version", "resources", "path")}
+    return hashlib.sha256(
+        json.dumps(source, ensure_ascii=False, sort_keys=True).encode()
+    ).hexdigest()

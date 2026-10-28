@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Iterator
-from typing import Any
+from typing import Any, NoReturn
 
 from .compression import compression_activity
 from .config import AgentRunConfig
@@ -118,12 +118,24 @@ class ModelRequests:
         combined_truncated = 0
         combined_summarized = 0
         try:
+            _, initial = self.prompt_builder.build(transcript, tools=tools)
+            if (
+                int(initial.get("static_context_tokens") or 0)
+                >= self.context_budget.input_budget_tokens
+            ):
+                self._raise_budget_error(initial, "static_context_too_large")
+            if self.needs_compaction(transcript):
+                compacted = self.compact(transcript)
+                combined_reasons.extend(compacted.get("compressed_reason") or [])
+                combined_truncated += int(compacted.get("truncated_observations") or 0)
+                combined_summarized += int(compacted.get("summarized_messages") or 0)
             for attempt in range(4):
                 prompt, metadata = self.prompt_builder.build(transcript, tools=tools)
                 if not metadata.get("request_over_budget"):
                     if preflight_compactions:
                         metadata["compressed"] = True
                         combined_reasons.append("request_budget")
+                    metadata["compressed"] = bool(metadata.get("compressed") or combined_reasons)
                     metadata["compressed_reason"] = list(
                         dict.fromkeys(
                             [*combined_reasons, *(metadata.get("compressed_reason") or [])]
@@ -159,15 +171,18 @@ class ModelRequests:
                 >= int(metadata.get("input_budget_tokens") or 0)
                 else "history_could_not_be_compacted_to_fit"
             )
-            self.last_budget_metadata = dict(metadata)
-            self.recovery_metadata["context_overflow_detected"] = True
-            raise ContextOverflowError(
-                "CC Agent request exceeds the configured input budget before model invocation: "
-                f"reason={reason}, estimated_tokens={metadata.get('request_estimated_tokens')}, "
-                f"input_budget_tokens={metadata.get('input_budget_tokens')}"
-            )
+            self._raise_budget_error(metadata, reason)
         finally:
             self._record_timing("prompt_build_ms", started)
+
+    def _raise_budget_error(self, metadata: dict[str, Any], reason: str) -> NoReturn:
+        self.last_budget_metadata = dict(metadata)
+        self.recovery_metadata["context_overflow_detected"] = True
+        raise ContextOverflowError(
+            "CC Agent request exceeds the configured input budget before model invocation: "
+            f"reason={reason}, estimated_tokens={metadata.get('request_estimated_tokens')}, "
+            f"input_budget_tokens={metadata.get('input_budget_tokens')}"
+        )
 
     def compact(self, transcript: list[dict[str, Any]], force: bool = False) -> dict[str, Any]:
         started = time.perf_counter()
@@ -194,7 +209,7 @@ class ModelRequests:
         threshold = self.context_budget.input_budget_tokens
         return (
             len(transcript) > self.context_budget.max_history_messages
-            or estimate_context_tokens(transcript) > threshold
+            or estimate_context_tokens(self.context_budget.prepare(transcript)[0]) > threshold
         )
 
     def _events(self, prompt_messages: list[dict[str, Any]], force_final: bool, iteration: int):

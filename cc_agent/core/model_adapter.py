@@ -15,7 +15,7 @@ try:  # pragma: no cover - exercised inside Dify runtime
         PromptMessageTool,
         SystemPromptMessage,
         ToolPromptMessage,
-    UserPromptMessage,
+        UserPromptMessage,
     )
 except Exception:  # pragma: no cover
     LLMModelConfig = None
@@ -106,7 +106,7 @@ class StreamContentSplitter:
                 if close_index >= 0:
                     if close_index:
                         events.append(ThinkingDelta(text=self.buffer[:close_index]))
-                    self.buffer = self.buffer[close_index + len(self.THINK_CLOSE):]
+                    self.buffer = self.buffer[close_index + len(self.THINK_CLOSE) :]
                     self.in_thinking = False
                     continue
                 emit, keep = _split_partial_marker(self.buffer, self.THINK_CLOSE, final)
@@ -119,7 +119,7 @@ class StreamContentSplitter:
             if open_index >= 0:
                 if open_index:
                     events.append(TextDelta(text=self.buffer[:open_index]))
-                self.buffer = self.buffer[open_index + len(self.THINK_OPEN):]
+                self.buffer = self.buffer[open_index + len(self.THINK_OPEN) :]
                 self.in_thinking = True
                 continue
             emit, keep = _split_partial_marker(self.buffer, self.THINK_OPEN, final)
@@ -145,10 +145,11 @@ class DifyModelAdapter:
         self.keep_dify_history = keep_dify_history
         self.deepseek_thinking_compat = deepseek_thinking_compat
 
-    def invoke(self, messages: list[dict[str, Any]], tools: list[Any], force_final: bool = False) -> AssistantTurn:
+    def invoke(
+        self, messages: list[dict[str, Any]], tools: list[Any], force_final: bool = False
+    ) -> AssistantTurn:
         prompt_messages = to_dify_prompt_messages(
-            messages,
-            preserve_reasoning_content=self.deepseek_thinking_compat,
+            messages, preserve_reasoning_content=self.deepseek_thinking_compat
         )
         prompt_tools = [] if force_final else to_dify_prompt_tools(tools)
         model_config = self._model_config()
@@ -172,9 +173,8 @@ class DifyModelAdapter:
             if not self._should_retry_with_flattened_tool_history(exc, messages):
                 raise
             logger.warning(
-                "cc_agent deepseek thinking compat fallback: mode=blocking error_type=%s error=%s",
+                "cc_agent deepseek thinking compat fallback: mode=blocking error_type=%s",
                 type(exc).__name__,
-                exc,
             )
             retry_messages = to_dify_prompt_messages(flatten_tool_history_for_prompt(messages))
             response = self._invoke_llm(model_config, retry_messages, prompt_tools)
@@ -182,10 +182,11 @@ class DifyModelAdapter:
                 return self._collect_stream(response)
             return self._collect_result(response)
 
-    def invoke_stream(self, messages: list[dict[str, Any]], tools: list[Any], force_final: bool = False):
+    def invoke_stream(
+        self, messages: list[dict[str, Any]], tools: list[Any], force_final: bool = False
+    ):
         prompt_messages = to_dify_prompt_messages(
-            messages,
-            preserve_reasoning_content=self.deepseek_thinking_compat,
+            messages, preserve_reasoning_content=self.deepseek_thinking_compat
         )
         prompt_tools = [] if force_final else to_dify_prompt_tools(tools)
         model_config = self._model_config()
@@ -213,9 +214,8 @@ class DifyModelAdapter:
             if not self._should_retry_with_flattened_tool_history(exc, messages):
                 raise
             logger.warning(
-                "cc_agent deepseek thinking compat fallback: mode=stream error_type=%s error=%s deepseek_thinking_fallback=True",
+                "cc_agent deepseek thinking compat fallback: mode=stream error_type=%s deepseek_thinking_fallback=True",
                 type(exc).__name__,
-                exc,
             )
             retry_messages = to_dify_prompt_messages(flatten_tool_history_for_prompt(messages))
             response = self._invoke_llm(model_config, retry_messages, prompt_tools)
@@ -236,7 +236,9 @@ class DifyModelAdapter:
             stream=self.stream,
         )
 
-    def _should_retry_with_flattened_tool_history(self, exc: Exception, messages: list[dict[str, Any]]) -> bool:
+    def _should_retry_with_flattened_tool_history(
+        self, exc: Exception, messages: list[dict[str, Any]]
+    ) -> bool:
         if not self.deepseek_thinking_compat:
             return False
         return _has_reasoned_tool_history(messages)
@@ -299,10 +301,9 @@ class DifyModelAdapter:
                 stream_chunks.append(event)
                 yield event
         except Exception as exc:
-            logger.exception(
-                "cc_agent model stream failed: error_type=%s error=%s text_chars=%s thinking_chars=%s tool_call_count=%s finish_reason=%s",
+            logger.error(
+                "cc_agent model stream failed: error_type=%s text_chars=%s thinking_chars=%s tool_call_count=%s finish_reason=%s",
                 type(exc).__name__,
-                exc,
                 len("".join(text_parts)),
                 len("".join(thinking_parts)),
                 len(accumulator.finalize()),
@@ -320,21 +321,25 @@ class DifyModelAdapter:
             finish_reason,
             usage,
         )
-        yield self._result_event(AssistantTurn(
-            text=text,
-            tool_calls=tool_calls,
-            usage=usage,
-            finish_reason=finish_reason,
-            raw_message=raw_message,
-            stream_chunks=stream_chunks,
-            reasoning_content=thinking,
-        ))
+        yield self._result_event(
+            AssistantTurn(
+                text=text,
+                tool_calls=tool_calls,
+                usage=usage,
+                finish_reason=finish_reason,
+                raw_message=raw_message,
+                stream_chunks=stream_chunks,
+                reasoning_content=thinking,
+            )
+        )
 
     def _collect_result(self, result: Any) -> AssistantTurn:
         message = _get(result, "message", result)
         accumulator = StreamToolCallAccumulator()
         accumulator.add_delta(_get(message, "tool_calls"))
-        text, reasoning_content, stream_chunks = _split_content_to_turn_parts(_content_to_text(_get(message, "content") or ""))
+        text, reasoning_content, stream_chunks = _split_content_to_turn_parts(
+            _content_to_text(_get(message, "content") or "")
+        )
         reasoning_field = _get(message, "reasoning_content")
         if reasoning_field:
             field_event = ThinkingDelta(text=str(reasoning_field))
@@ -355,8 +360,7 @@ class DifyModelAdapter:
 
 
 def to_dify_prompt_messages(
-    messages: list[dict[str, Any]],
-    preserve_reasoning_content: bool = False,
+    messages: list[dict[str, Any]], preserve_reasoning_content: bool = False
 ) -> list[Any]:
     if not all([SystemPromptMessage, UserPromptMessage, AssistantPromptMessage, ToolPromptMessage]):
         return messages
@@ -369,14 +373,23 @@ def to_dify_prompt_messages(
         elif role == "user":
             converted.append(UserPromptMessage(content=content))
         elif role == "assistant":
-            tool_calls = [_to_dify_tool_call(tool_call) for tool_call in message.get("tool_calls") or []]
+            tool_calls = [
+                _to_dify_tool_call(tool_call) for tool_call in message.get("tool_calls") or []
+            ]
             reasoning_content = str(message.get("reasoning_content") or "")
             if preserve_reasoning_content and reasoning_content and tool_calls:
                 converted.append(
                     {
                         "role": "assistant",
                         "content": content,
-                        "tool_calls": [tool_call.model_dump(mode="json") if hasattr(tool_call, "model_dump") else tool_call for tool_call in tool_calls],
+                        "tool_calls": [
+                            (
+                                tool_call.model_dump(mode="json")
+                                if hasattr(tool_call, "model_dump")
+                                else tool_call
+                            )
+                            for tool_call in tool_calls
+                        ],
                         "reasoning_content": reasoning_content,
                     }
                 )
@@ -413,11 +426,15 @@ def flatten_tool_history_for_prompt(messages: list[dict[str, Any]]) -> list[dict
                 name = str(tool_call.get("name") or "")
                 args = tool_call.get("arguments") or {}
                 pending_tool_names[call_id] = name
-                lines.append(f"- {name or 'unknown_tool'} ({call_id}): {json.dumps(args, ensure_ascii=False)}")
+                lines.append(
+                    f"- {name or 'unknown_tool'} ({call_id}): {json.dumps(args, ensure_ascii=False)}"
+                )
             flattened.append({"role": "user", "content": "\n".join(lines)})
         elif role == "tool":
             tool_call_id = str(message.get("tool_call_id") or "")
-            tool_name = str(message.get("name") or pending_tool_names.get(tool_call_id) or "unknown_tool")
+            tool_name = str(
+                message.get("name") or pending_tool_names.get(tool_call_id) or "unknown_tool"
+            )
             flattened.append(
                 {
                     "role": "user",
@@ -425,12 +442,7 @@ def flatten_tool_history_for_prompt(messages: list[dict[str, Any]]) -> list[dict
                 }
             )
         else:
-            flattened.append(
-                {
-                    "role": role,
-                    "content": content,
-                }
-            )
+            flattened.append({"role": role, "content": content})
     return flattened
 
 
@@ -463,11 +475,7 @@ def _without_dify_history(value: dict[str, Any]) -> dict[str, Any]:
 
 def _namespace_without_dify_history(value: Any) -> Any | None:
     try:
-        data = {
-            key: item
-            for key, item in vars(value).items()
-            if key != "history_prompt_messages"
-        }
+        data = {key: item for key, item in vars(value).items() if key != "history_prompt_messages"}
     except TypeError:
         return None
     return type(value)(**data)
@@ -528,9 +536,7 @@ def _to_dify_tool_call(tool_call: dict[str, Any]) -> Any:
         arguments=json.dumps(tool_call.get("arguments") or {}, ensure_ascii=False),
     )
     return AssistantPromptMessage.ToolCall(
-        id=tool_call.get("id") or "",
-        type="function",
-        function=function,
+        id=tool_call.get("id") or "", type="function", function=function
     )
 
 
@@ -605,7 +611,9 @@ def _split_content_to_turn_parts(content: str) -> tuple[str, str, list[TextDelta
     events = splitter.feed(content)
     events.extend(splitter.flush())
     text = "".join(event.text or "" for event in events if isinstance(event, TextDelta))
-    reasoning_content = "".join(event.text or "" for event in events if isinstance(event, ThinkingDelta))
+    reasoning_content = "".join(
+        event.text or "" for event in events if isinstance(event, ThinkingDelta)
+    )
     return text, reasoning_content, events
 
 
@@ -688,7 +696,13 @@ def _model_invoke_summary(
     force_final: bool,
 ) -> dict[str, Any]:
     return {
-        "install_method": str(getattr(getattr(session, "install_method", None), "value", getattr(session, "install_method", None))),
+        "install_method": str(
+            getattr(
+                getattr(session, "install_method", None),
+                "value",
+                getattr(session, "install_method", None),
+            )
+        ),
         "daemon_url": _redact_url(getattr(session, "dify_plugin_daemon_url", None)),
         "session_id_present": bool(getattr(session, "session_id", None)),
         "conversation_id_present": bool(getattr(session, "conversation_id", None)),

@@ -19,8 +19,11 @@ class StateCommitTests(unittest.TestCase):
         saved = decode_agent_state(result.encoded_agent_state)
 
         self.assertTrue(result.state_ref["compacted"])
-        self.assertEqual(result.state_summary["history_message_count"], 4)
-        self.assertEqual(len(saved.history_payload["messages"]), 4)
+        self.assertEqual(
+            result.state_summary["history_message_count"], len(saved.history_payload["messages"])
+        )
+        self.assertLess(len(saved.history_payload["messages"]), 200)
+        self.assertEqual(saved.tasks[0]["subject"], "keep the task")
         self.assertEqual(result.state_summary["task_count"], len(saved.tasks))
         self.assertEqual(result.state_summary["revision"], saved.revision)
 

@@ -37,9 +37,9 @@ class SerialToolScheduler:
 
     def execute(self, tool_calls: list[ToolCall], iteration: int) -> list[ScheduledToolResult]:
         scheduled: list[ScheduledToolResult] = []
-        for tool_call in tool_calls:
+        for call_index, tool_call in enumerate(tool_calls):
             total_started = time.perf_counter()
-            events = [
+            events: list[InternalEvent] = [
                 ToolStarted(
                     iteration=iteration, tool_call_id=tool_call.id, tool_name=tool_call.name
                 )
@@ -79,6 +79,27 @@ class SerialToolScheduler:
                 )
             scheduled.append(ScheduledToolResult(tool_call=tool_call, result=result, events=events))
             if result.metadata.get("requires_user_input"):
+                for skipped_call in tool_calls[call_index + 1 :]:
+                    skipped = ToolResult(
+                        skipped_call.id,
+                        skipped_call.name,
+                        "Not executed: an earlier tool call is waiting for the user. Request this operation again only after the interrupt is resolved.",
+                        synthetic=True,
+                        metadata={"skipped": True, "skip_reason": "awaiting_user"},
+                    )
+                    scheduled.append(
+                        ScheduledToolResult(
+                            skipped_call,
+                            self.result_budget.apply(skipped),
+                            [
+                                ToolStarted(
+                                    iteration=iteration,
+                                    tool_call_id=skipped_call.id,
+                                    tool_name=skipped_call.name,
+                                )
+                            ],
+                        )
+                    )
                 break
 
         self.result_budget.apply_batch([item.result for item in scheduled])

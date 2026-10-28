@@ -126,13 +126,18 @@ class McpToolProvider:
                 metadata={"output": output} if output is not None else {},
                 display_messages=display,
             )
-        except Exception:  # noqa: BLE001 - always pair failed calls with a safe tool result.
+        except Exception as exc:  # noqa: BLE001 - always pair failed calls with a safe tool result.
             return ToolResult(
                 tool_call_id=tool_call.id,
                 tool_name=tool_call.name,
-                llm_observation="MCP tool invocation failed.",
+                llm_observation="MCP tool invocation failed. The remote execution outcome is unknown; verify it before repeating a write operation.",
                 is_error=True,
                 synthetic=True,
+                metadata={
+                    "error_code": "mcp_tool_failed",
+                    "error_type": type(exc).__name__,
+                    "execution_outcome": "unknown",
+                },
             )
 
 

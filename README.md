@@ -78,7 +78,13 @@ Dify AgentStrategy
 
 `state_summary` 根据实际保存的压缩快照生成。会话授权只免除重复确认，仍受工具策略和服务端业务权限限制；批准的待执行工具也经过相同调度检查。
 
-上下文溢出时先压缩历史再重试一次。工具失败会生成配对的错误 observation，每个 assistant tool call 都必须在下一次模型调用前得到 tool result。
+编码后再次检查 JSON 和编码值的容量。待确认操作的参数必须完整保留；无法装入变量时返回 `agent_failed`，其 `code=state_save_failed`、`state_ref.persisted=false`，不输出无效状态或正常完成终态。此前已执行的外部操作不会因此回滚，不能把保存失败当成业务操作失败并直接重试。
+
+上下文预算只计算实际发送给模型的消息字段和工具 schema，展示产物不重复存进工具历史。旧结果在输入预算压力达到 80% 后优先缩减，最新未消费结果优先保留；摘要读取当前仍保留的缩减前内容，成功摘要完整替换旧摘要。当前用户请求与尾部工具组保留在近期历史中。固定指令和 schema 本身超限时直接拒绝，避免无效摘要调用。估算分别累计中日韩文字和其他字符，仍属于近似预算。
+
+上下文溢出时先压缩历史再重试一次。工具失败会生成配对的错误 observation，每个 assistant tool call 都必须在下一次模型调用前得到 tool result。同批 Skill 正文在全部工具结果配对后注入；遇到用户中断，尾部尚未执行的调用收到明确的 skipped 结果，恢复后由模型重新决定是否调用。
+
+未处理的运行异常在两种策略中均返回安全的 `agent_failed` JSON，带 `code`、`stage`、`run_id` 和异常类型，不输出原始异常或 traceback。外部工具传输失败标记 `execution_outcome=unknown`；对于写操作，应先通过业务查询核实结果。
 
 ## 技能和工具
 
@@ -95,6 +101,10 @@ Dify AgentStrategy
 内部工具只处理认知与会话状态。外部文件、执行、搜索和浏览能力由 Dify 工具或配置的远程 MCP 服务提供。Dify 工具返回重复两半的结果时继续按语义去重，JSON 键顺序不同也保留一份。Dify 注入工具的文件、图片、链接等产物继续沿用原输出路径，插件不额外转发；直连 MCP 的 blob 由插件转发，包括批准中断后的执行结果。
 
 `SkillCatalog` 统一技能选择、恢复和激活；旧会话的已激活技能仍受当前策略与 denylist 限制。slash 与模型 `Skill` 调用使用同一激活路径，资源仍通过 `SkillReadResource` 按需读取。
+
+工具 schema 仍全量提供，匹配技能优先由提示驱动。技能正文承担流程和参数用法；长参考资料通过 `SkillReadResource(skill, path, offset=0, limit=12000)` 连续读取。`offset` / `limit` 按 Unicode 字符计算，`limit` 至少 128、最多 12000；最终页还受单条和批次结果预算限制。返回头部及 `resource_page` 元数据记录实际交付区间和 `next_offset`，继续读取时使用该位置，直至其为 `null`。页始终保留连续前缀，不按头尾截断后跳过中间内容。预算不足以容纳分页信息时明确报错。
+
+`disable_model_invocation=true` 的技能不出现在模型目录中，也不能由模型直接激活；`user_invocable=false` 禁止 slash 激活。恢复已加载技能时校验定义摘要和完整性，定义变化、旧格式记录或保存时被裁剪的正文会重新变为可加载状态。本轮内保留完整已加载正文；跨轮仍受状态变量容量限制，不承诺恢复已经丢弃的远端原文。
 
 前端 `runStream.ts` 统一解释原生 AG-UI 和 Dify fallback 运行流，保留原生事件字段、附件及中断。`conversationCoordinator.ts` 管理会话/thread 关联、历史加载请求和过期结果，切换期间不会把消息发送给旧 clone；不自动恢复上次会话。
 

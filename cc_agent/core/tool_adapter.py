@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any, Iterable
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .mcp_tools import McpToolProvider
@@ -75,10 +76,7 @@ class ToolAdapter:
                 synthetic=True,
             )
         entity = spec.entity
-        parameters = {
-            **_runtime_parameters(entity),
-            **(tool_call.arguments or {}),
-        }
+        parameters = {**_runtime_parameters(entity), **(tool_call.arguments or {})}
         try:
             responses = self.session.tool.invoke(
                 provider_type=_provider_type(_tool_provider_type(entity)),
@@ -92,20 +90,26 @@ class ToolAdapter:
                 tool_name=tool_call.name,
                 llm_observation=observation or "(tool completed with no output)",
                 display_messages=display_messages,
-                metadata={"parameters": parameters, **metadata},
+                metadata=metadata,
             )
         except Exception as exc:
             return ToolResult(
                 tool_call_id=tool_call.id,
                 tool_name=tool_call.name,
-                llm_observation=f"Tool invoke error: {exc}",
+                llm_observation="External tool invocation failed. The remote execution outcome is unknown; verify it before repeating a write operation.",
                 is_error=True,
                 synthetic=True,
-                metadata={"parameters": parameters},
+                metadata={
+                    "error_code": "external_tool_failed",
+                    "error_type": type(exc).__name__,
+                    "execution_outcome": "unknown",
+                },
             )
 
 
-def normalize_tool_invoke_messages(responses: Iterable[Any]) -> tuple[str, list[Any], dict[str, Any]]:
+def normalize_tool_invoke_messages(
+    responses: Iterable[Any],
+) -> tuple[str, list[Any], dict[str, Any]]:
     parts: list[str] = []
     display_messages: list[Any] = []
     metadata: dict[str, Any] = {}
@@ -126,7 +130,9 @@ def normalize_tool_invoke_messages(responses: Iterable[Any]) -> tuple[str, list[
             parts.append("File output generated.")
             display_messages.append(response)
         elif response_type == "variable":
-            metadata.setdefault("variables", []).append(_get(message, "variable_name", None) or message)
+            metadata.setdefault("variables", []).append(
+                _get(message, "variable_name", None) or message
+            )
             parts.append(f"Variable output: {_stringify_message(message)}")
             display_messages.append(response)
         elif response_type == "retriever_resources":
@@ -150,7 +156,9 @@ def _runtime_parameters(entity: Any) -> dict[str, Any]:
 
 def _tool_provider(entity: Any) -> str:
     identity = _get(entity, "identity")
-    return str(_get(identity, "provider") or _get(entity, "provider") or _get(entity, "provider_id") or "")
+    return str(
+        _get(identity, "provider") or _get(entity, "provider") or _get(entity, "provider_id") or ""
+    )
 
 
 def _tool_provider_type(entity: Any) -> Any:
@@ -178,7 +186,9 @@ def _message_text(message: Any) -> str:
 
 def _format_retriever_resources(message: Any) -> str:
     resources = _extract_retriever_items(message)
-    rendered = [_format_retriever_item(item, index) for index, item in enumerate(resources, start=1)]
+    rendered = [
+        _format_retriever_item(item, index) for index, item in enumerate(resources, start=1)
+    ]
     rendered = [item for item in rendered if item]
     if not rendered:
         fallback = _stringify_message(message)
@@ -285,12 +295,7 @@ def _part_fingerprint(part: str) -> str:
         parsed = json.loads(stripped)
     except (TypeError, ValueError):
         return part
-    return "json:" + json.dumps(
-        parsed,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    )
+    return "json:" + json.dumps(parsed, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def _get(obj: Any, key: str, default: Any = None) -> Any:

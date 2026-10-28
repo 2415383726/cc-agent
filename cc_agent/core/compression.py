@@ -30,16 +30,15 @@ class DifyHistorySummarizer:
                     "Summarize prior assistant conversation state for continuation. "
                     "Preserve user goals, current task state, key decisions, tool result conclusions, "
                     "task changes, open tasks, and important conversation facts. "
+                    "Return one complete replacement summary, updating or removing superseded "
+                    "decisions and constraints according to the newest messages. "
                     "Do not invent details."
                 ),
             },
             {
                 "role": "user",
                 "content": json.dumps(
-                    {
-                        "existing_summary": existing_summary or "",
-                        "messages_to_compact": messages,
-                    },
+                    {"existing_summary": existing_summary or "", "messages_to_compact": messages},
                     ensure_ascii=False,
                 ),
             },

@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import base64
-from dataclasses import dataclass, field
 import gzip
 import json
+from dataclasses import dataclass, field
 from typing import Any
 
 from .context_budget import snip_old_tool_results, summarize_messages
 from .history import sanitize_history
 from .interrupts import pending_tool_call_id
-
 
 AGENT_STATE_PREFIX = "ccagent-state:v1:gzip-base64:"
 SCHEMA_VERSION = 1
@@ -97,10 +96,7 @@ def decode_agent_state(value: Any) -> AgentStateLoadResult:
     if not text:
         return AgentStateLoadResult(record=None)
     if not text.startswith(AGENT_STATE_PREFIX):
-        return AgentStateLoadResult(
-            record=None,
-            error="Invalid agent_state: unsupported prefix",
-        )
+        return AgentStateLoadResult(record=None, error="Invalid agent_state: unsupported prefix")
     try:
         encoded = text[len(AGENT_STATE_PREFIX) :]
         raw = gzip.decompress(base64.b64decode(encoded.encode("ascii"), validate=True))
@@ -109,24 +105,43 @@ def decode_agent_state(value: Any) -> AgentStateLoadResult:
             raise ValueError("expected object payload")
         if _positive_int(payload.get("schema_version"), 0) != SCHEMA_VERSION:
             raise ValueError(f"unsupported schema_version: {payload.get('schema_version')}")
-        history_source = payload.get("history") if isinstance(payload.get("history"), dict) else payload
+        history_candidate = payload.get("history")
+        history_source = history_candidate if isinstance(history_candidate, dict) else payload
+        permissions = payload.get("permissions")
+        execution_metadata = payload.get("last_execution_metadata")
         history_payload = {
             "messages": sanitize_history(
-                _dict_list(history_source.get("messages") if "messages" in history_source else payload.get("recent_history"))
+                _dict_list(
+                    history_source.get("messages")
+                    if "messages" in history_source
+                    else payload.get("recent_history")
+                )
             ),
-            "summary": str(history_source.get("summary") if "summary" in history_source else payload.get("summary") or ""),
-            "version": _positive_int(history_source.get("version") if "version" in history_source else payload.get("history_version"), 1) or 1,
+            "summary": str(
+                history_source.get("summary")
+                if "summary" in history_source
+                else payload.get("summary") or ""
+            ),
+            "version": _positive_int(
+                (
+                    history_source.get("version")
+                    if "version" in history_source
+                    else payload.get("history_version")
+                ),
+                1,
+            )
+            or 1,
         }
         return AgentStateLoadResult(
             bundle=AgentStateBundle(
                 revision=_positive_int(payload.get("revision"), 0),
                 history=history_payload,
                 tasks=_dict_list(payload.get("tasks")),
-                permissions=payload.get("permissions") if isinstance(payload.get("permissions"), dict) else {},
+                permissions=permissions if isinstance(permissions, dict) else {},
                 active_skills=_dict_list(payload.get("active_skills")),
-                last_execution_metadata=payload.get("last_execution_metadata")
-                if isinstance(payload.get("last_execution_metadata"), dict)
-                else {},
+                last_execution_metadata=(
+                    execution_metadata if isinstance(execution_metadata, dict) else {}
+                ),
             ),
             record=payload,
         )
@@ -154,7 +169,9 @@ def encode_agent_state(
         active_skills = bundle.active_skills
         last_execution_metadata = bundle.last_execution_metadata
     revision = _positive_int(previous_revision, 0) + 1
-    normalized_history = _normalize_history_payload(history if history is not None else history_payload)
+    normalized_history = _normalize_history_payload(
+        history if history is not None else history_payload
+    )
     payload = {
         "schema_version": SCHEMA_VERSION,
         "revision": revision,
@@ -169,7 +186,9 @@ def encode_agent_state(
         "tasks": _dict_list(tasks or []),
         "permissions": permissions if isinstance(permissions, dict) else {},
         "active_skills": _compact_active_skills(active_skills),
-        "last_execution_metadata": last_execution_metadata if isinstance(last_execution_metadata, dict) else {},
+        "last_execution_metadata": (
+            last_execution_metadata if isinstance(last_execution_metadata, dict) else {}
+        ),
     }
     max_encoded_bytes = max(1024, int(max_encoded_bytes or DEFAULT_MAX_ENCODED_BYTES))
     payload, compacted, warning = _compact_to_fit(payload, max_encoded_bytes)
@@ -187,13 +206,26 @@ def encode_agent_state(
             persisted=False,
             error=f"Invalid agent_state payload: {exc}",
         )
+    payload_bytes = len(_json_bytes(payload))
+    encoded_bytes = len(encoded.encode("utf-8"))
+    if payload_bytes > max_encoded_bytes or encoded_bytes > max_encoded_bytes:
+        return AgentStateSaveResult(
+            value="",
+            revision=revision,
+            persisted=False,
+            error="agent_state_exceeds_variable_limit",
+            warning=warning,
+            payload_bytes=payload_bytes,
+            encoded_bytes=encoded_bytes,
+            compacted=compacted,
+        )
     return AgentStateSaveResult(
         value=encoded,
         revision=revision,
         persisted=bool(encoded),
         warning=warning,
-        payload_bytes=len(_json_bytes(payload)),
-        encoded_bytes=len(encoded.encode("utf-8")),
+        payload_bytes=payload_bytes,
+        encoded_bytes=encoded_bytes,
         compacted=compacted,
     )
 
@@ -201,7 +233,8 @@ def encode_agent_state(
 def state_summary(bundle: AgentStateBundle) -> dict[str, Any]:
     history = _normalize_history_payload(bundle.history)
     permissions = bundle.permissions if isinstance(bundle.permissions, dict) else {}
-    allowed_tools = permissions.get("allowed_tools") if isinstance(permissions.get("allowed_tools"), dict) else {}
+    allowed_candidate = permissions.get("allowed_tools")
+    allowed_tools = allowed_candidate if isinstance(allowed_candidate, dict) else {}
     return {
         "revision": _positive_int(bundle.revision, 0),
         "history_message_count": len(history.get("messages") or []),
@@ -209,8 +242,11 @@ def state_summary(bundle: AgentStateBundle) -> dict[str, Any]:
         "task_count": len(_dict_list(bundle.tasks)),
         "permission_tool_count": len(allowed_tools),
         "active_skill_names": _active_skill_names(bundle.active_skills),
-        "last_finish_reason": str((bundle.last_execution_metadata or {}).get("finish_reason") or ""),
-        "awaiting_user": (bundle.last_execution_metadata or {}).get("finish_reason") == "awaiting_user",
+        "last_finish_reason": str(
+            (bundle.last_execution_metadata or {}).get("finish_reason") or ""
+        ),
+        "awaiting_user": (bundle.last_execution_metadata or {}).get("finish_reason")
+        == "awaiting_user",
     }
 
 
@@ -229,7 +265,9 @@ def bundle_from_parts(
         tasks=_dict_list(tasks or []),
         permissions=permissions if isinstance(permissions, dict) else {},
         active_skills=_compact_active_skills(active_skills),
-        last_execution_metadata=last_execution_metadata if isinstance(last_execution_metadata, dict) else {},
+        last_execution_metadata=(
+            last_execution_metadata if isinstance(last_execution_metadata, dict) else {}
+        ),
     )
 
 
@@ -263,7 +301,9 @@ HistoryVariableLoadResult = AgentStateLoadResult
 HistoryVariableSaveResult = AgentStateSaveResult
 
 
-def _compact_to_fit(payload: dict[str, Any], max_encoded_bytes: int) -> tuple[dict[str, Any], bool, str | None]:
+def _compact_to_fit(
+    payload: dict[str, Any], max_encoded_bytes: int
+) -> tuple[dict[str, Any], bool, str | None]:
     compacted = False
     warning: str | None = None
     payload = dict(payload)
@@ -283,21 +323,43 @@ def _compact_to_fit(payload: dict[str, Any], max_encoded_bytes: int) -> tuple[di
         removed = history[:remove_count]
         history = sanitize_history(history[remove_count:])
         pending_start = None if pending_start is None else max(0, pending_start - remove_count)
-        payload["summary"] = _merge_summary(payload.get("summary"), summarize_messages(removed), max_encoded_bytes)
+        payload["summary"] = _merge_summary(
+            payload.get("summary"), summarize_messages(removed), max_encoded_bytes
+        )
 
     snip_old_tool_results(history, max_chars=800, preserve_last_n_messages=4)
     payload["recent_history"] = sanitize_history(history)
-    payload["summary"] = _trim_text(str(payload.get("summary") or ""), max(1000, max_encoded_bytes // 3))
+    payload["summary"] = _trim_text(
+        str(payload.get("summary") or ""), max(1000, max_encoded_bytes // 3)
+    )
 
     if not _fits(payload, max_encoded_bytes):
-        payload["recent_history"] = _minimal_history(payload["recent_history"], payload.get("last_execution_metadata"))
-        payload["summary"] = _trim_text(str(payload.get("summary") or ""), max(500, max_encoded_bytes // 4))
+        payload["recent_history"] = _minimal_history(
+            payload["recent_history"], payload.get("last_execution_metadata")
+        )
+        payload["summary"] = _trim_text(
+            str(payload.get("summary") or ""), max(500, max_encoded_bytes // 4)
+        )
         warning = "state_compacted_to_fit_variable_limit"
 
     if not _fits(payload, max_encoded_bytes):
         payload["tasks"] = []
-        payload["active_skills"] = _compact_active_skills(payload.get("active_skills"), max_items=3, max_summary_chars=1000)
+        payload["active_skills"] = _compact_active_skills(
+            payload.get("active_skills"), max_items=3, max_summary_chars=1000
+        )
         warning = "state_compacted_to_minimal_variable_limit"
+
+    if not _fits(payload, max_encoded_bytes) and pending_start is None:
+        payload["summary"] = _trim_text(
+            _merge_summary(
+                payload.get("summary"),
+                summarize_messages(payload["recent_history"]),
+                max_encoded_bytes,
+            ),
+            max_encoded_bytes // 4,
+        )
+        payload["recent_history"] = []
+        payload["active_skills"] = []
 
     return payload, compacted, warning
 
@@ -315,6 +377,15 @@ def _encode_payload(payload: dict[str, Any]) -> str:
 
 
 def _json_bytes(payload: dict[str, Any]) -> bytes:
+    if "recent_history" in payload:
+        payload = {
+            **payload,
+            "history": {
+                "messages": payload.get("recent_history", []),
+                "summary": payload.get("summary", ""),
+                "version": payload.get("history_version", 1),
+            },
+        }
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
@@ -327,7 +398,9 @@ def _normalize_history_payload(value: Any) -> dict[str, Any]:
     if not isinstance(messages, list):
         messages = []
     return {
-        "messages": sanitize_history([message for message in messages if isinstance(message, dict)]),
+        "messages": sanitize_history(
+            [message for message in messages if isinstance(message, dict)]
+        ),
         "summary": str(value.get("summary") or value.get("conversation_summary") or ""),
         "version": _positive_int(value.get("version"), 1) or 1,
     }
@@ -376,10 +449,7 @@ def _dict_list(value: Any) -> list[dict[str, Any]]:
 
 
 def _compact_active_skills(
-    value: Any,
-    *,
-    max_items: int = 8,
-    max_summary_chars: int = 5000,
+    value: Any, *, max_items: int = 8, max_summary_chars: int = 5000
 ) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for item in value or []:
@@ -388,10 +458,18 @@ def _compact_active_skills(
         name = str(item.get("name") or item.get("id") or "").strip()
         if not name:
             continue
-        record = {
+        record: dict[str, Any] = {
             "name": name,
-            "summary": _trim_text(str(item.get("summary") or item.get("description") or ""), max_summary_chars),
+            "summary": _trim_text(
+                str(item.get("summary") or item.get("description") or ""), max_summary_chars
+            ),
         }
+        if "definition_hash" in item:
+            record["definition_hash"] = str(item["definition_hash"])
+            record["complete"] = (
+                item.get("complete") is True
+                and len(str(item.get("summary") or "")) <= max_summary_chars
+            )
         if item.get("last_used"):
             record["last_used"] = str(item.get("last_used"))
         result.append(record)

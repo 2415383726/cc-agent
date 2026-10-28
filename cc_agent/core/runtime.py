@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-from collections.abc import Generator
 import logging
+from collections.abc import Generator
 from typing import Any
 from uuid import uuid4
 
-from .config import AgentRunConfig
 from .compression import DifyHistorySummarizer, compression_activity
+from .config import AgentRunConfig
+from .failures import AgentRuntimeFailure, failure_payload
+from .interrupts import UserInterrupts
 from .loop import AgentLoop
 from .messages import AgentRunResult, AgentState
 from .model_adapter import DifyModelAdapter
-from .interrupts import UserInterrupts
 from .profiles import StrategyProfile
 from .protocol_renderer import ProtocolRenderer
 from .run_environment import RunEnvironment
@@ -103,6 +104,7 @@ class DifyAgentRuntime:
                 parameters, strategy_profile=self.strategy_profile
             )
         except Exception as exc:
+            run_id = _run_id_from_parameters(parameters)
             fallback_writer = _make_writer(
                 (
                     self.strategy_profile.output_protocol
@@ -110,9 +112,11 @@ class DifyAgentRuntime:
                     else "agui"
                 ),
                 thread_id=_conversation_id_from_parameters(parameters) or "default",
-                run_id=_run_id_from_parameters(parameters),
+                run_id=run_id,
             )
-            yield from fallback_writer.write_run_error(str(exc), code="config_failed")
+            yield from self._failure_events(
+                fallback_writer, "config_failed", "configuration", run_id, exc
+            )
             return
         logger.info(
             "cc_agent runtime config parsed: output_protocol=%s query_len=%s",
@@ -152,7 +156,9 @@ class DifyAgentRuntime:
                     renderer=writer if isinstance(writer, ProtocolRenderer) else None,
                 )
             except Exception as exc:
-                yield from writer.write_run_error(str(exc), code="environment_failed")
+                yield from self._failure_events(
+                    writer, "environment_failed", "environment", run_id, exc
+                )
                 return
             reset_effective = config.state_reset or _is_reset_query(config.query)
             if reset_effective and not config.state_reset:
@@ -160,9 +166,7 @@ class DifyAgentRuntime:
             assert env is not None
             loaded = env.load_state()
             if loaded.get("storage_error") and not config.state_reset:
-                yield from writer.write_run_error(
-                    str(loaded["storage_error"]), code="state_load_failed"
-                )
+                yield from self._failure_events(writer, "state_load_failed", "state_load", run_id)
                 return
             logger.info(
                 "cc_agent state loaded: conversation_id=%s state_id=%s loaded_from=%s history_count=%s has_pending_interrupt=%s storage_error=%s",
@@ -192,7 +196,7 @@ class DifyAgentRuntime:
                 len(prompt_skills),
                 len(env.skill_catalog.warnings),
             )
-            skill_runtime = SkillRuntime()
+            skill_runtime = SkillRuntime(config.max_observation_chars)
             active_skills = env.skill_catalog.restore_active(loaded.get("active_skills") or [])
             state = AgentState(
                 history=history_state.messages,
@@ -229,9 +233,17 @@ class DifyAgentRuntime:
                         if isinstance(command_payload, dict)
                         else ""
                     )
-                    injected = env.skill_catalog.activate(
-                        state, str(skill_def.get("name") or ""), skill_args_text
-                    )
+                    try:
+                        injected = env.skill_catalog.activate(
+                            state,
+                            str(skill_def.get("name") or ""),
+                            skill_args_text,
+                            invocation="user",
+                        )
+                    except PermissionError:
+                        raise AgentRuntimeFailure(
+                            "skill_invocation_forbidden", "skill_activation"
+                        ) from None
                     state.history.append(
                         {
                             "role": "user",
@@ -355,13 +367,9 @@ class DifyAgentRuntime:
                 )
                 resume_error = resumed.error
                 if resume_error:
-                    logger.warning(
-                        "cc_agent interrupt resume failed: conversation_id=%s state_id=%s error=%s",
-                        conversation_id,
-                        state_id,
-                        resume_error,
+                    yield from self._failure_events(
+                        writer, "interrupt_resume_failed", "interrupt_resume", run_id
                     )
-                    yield from writer.write_run_error(resume_error, code="interrupt_resume_failed")
                     return
                 yield from interrupts.decision_activities(writer)
                 if resumed.result is not None:
@@ -374,10 +382,11 @@ class DifyAgentRuntime:
                     yield event
             final_result = final_result or getattr(loop, "final_result", None)
             if final_result is None:
-                yield from writer.write_run_error(
-                    "Agent loop finished without a final result", code="missing_final_result"
+                yield from self._failure_events(
+                    writer, "missing_final_result", "model_loop", run_id
                 )
                 return
+            final_result.execution_metadata["run_id"] = run_id
             for event in self._persist_result(
                 final_result,
                 config=config,
@@ -410,13 +419,28 @@ class DifyAgentRuntime:
                 yield {"type": "dify_json", "payload": final_result.to_output_payload()}
             elif final_result.state_ref is not None:
                 yield {"type": "dify_json", "payload": final_result.to_output_payload()}
-        except Exception as exc:
-            logger.exception("cc_agent runtime run failed")
-            for event in writer.write_run_error(str(exc), code="runtime_agui_error"):
-                yield event
+        except Exception as exc:  # noqa: BLE001 - Runtime boundary; never log raw provider errors.
+            code = exc.code if isinstance(exc, AgentRuntimeFailure) else "runtime_failed"
+            stage = exc.stage if isinstance(exc, AgentRuntimeFailure) else "runtime"
+            yield from self._failure_events(writer, code, stage, run_id, exc)
         finally:
             if env is not None:
                 env.close()
+
+    @staticmethod
+    def _failure_events(
+        writer: Any, code: str, stage: str, run_id: str, error: Exception | None = None
+    ):
+        payload = failure_payload(code, stage, run_id, error)
+        logger.error(
+            "cc_agent failed: code=%s stage=%s run_id=%s error_type=%s",
+            code,
+            stage,
+            run_id,
+            payload.get("error_type", ""),
+        )
+        yield from writer.write_run_error(payload["message"], code=code)
+        yield {"type": "dify_json", "payload": payload}
 
     def _init_external_prompt_tools(self, tools: list[Any]) -> list[Any]:
         if not tools:
@@ -428,7 +452,9 @@ class DifyAgentRuntime:
             if prompt_tool is not None:
                 prompt_tools.append(prompt_tool)
             elif isinstance(tool, dict):
-                logging.warning("Skipping unsupported dict tool shape: keys=%s", sorted(tool.keys()))
+                logging.warning(
+                    "Skipping unsupported dict tool shape: keys=%s", sorted(tool.keys())
+                )
             else:
                 sdk_tools.append(tool)
         init_prompt_tools = getattr(self.strategy, "_init_prompt_tools", None)
@@ -445,11 +471,17 @@ class DifyAgentRuntime:
         previous_revision: int,
         initial_storage_error: str | None,
     ) -> list[dict[str, Any]]:
-        DifyStateBackend(config, state_id=state_id).commit(result, expected_revision=previous_revision)
+        DifyStateBackend(config, state_id=state_id).commit(
+            result, expected_revision=previous_revision
+        )
         state_ref = result.state_ref if isinstance(result.state_ref, dict) else {}
         state_ref["loaded_from"] = loaded_from
-        state_ref["storage_error"] = _join_errors(initial_storage_error, state_ref.get("storage_error"))
+        state_ref["storage_error"] = _join_errors(
+            initial_storage_error, state_ref.get("storage_error")
+        )
         result.state_ref = state_ref
+        if not state_ref.get("persisted"):
+            raise AgentRuntimeFailure("state_save_failed", "state_save", state_ref)
         logger.info(
             "cc_agent result persisted: conversation_id=%s backend=%s persisted=%s loaded_from=%s answer_chars=%s history_count=%s finish_reason=%s encoded_bytes=%s payload_bytes=%s storage_error=%s storage_warning=%s",
             state_id,
@@ -527,11 +559,7 @@ def _empty_loaded_state(loaded_from: str = "temporary") -> dict[str, Any]:
 
 
 def _prompt_tool_from_selector(selector: Any) -> Any | None:
-    parameters = {
-        "type": "object",
-        "properties": {},
-        "required": [],
-    }
+    parameters: dict[str, Any] = {"type": "object", "properties": {}, "required": []}
     for name, parameter in (_get(selector, "tool_parameters") or {}).items():
         parameter_type = _enum_value(_get(parameter, "type")) or "string"
         parameters["properties"][name] = {
@@ -540,12 +568,16 @@ def _prompt_tool_from_selector(selector: Any) -> Any | None:
         }
         options = _get(parameter, "options")
         if options:
-            parameters["properties"][name]["enum"] = [_enum_value(_get(option, "value")) for option in options]
+            parameters["properties"][name]["enum"] = [
+                _enum_value(_get(option, "value")) for option in options
+            ]
         if bool(_get(parameter, "required")):
             parameters["required"].append(name)
     payload = {
         "name": str(_get(selector, "tool_name") or _get(selector, "name") or ""),
-        "description": str(_get(selector, "tool_description") or _get(selector, "description") or ""),
+        "description": str(
+            _get(selector, "tool_description") or _get(selector, "description") or ""
+        ),
         "parameters": parameters,
     }
     if not payload["name"]:
@@ -568,29 +600,35 @@ def _prompt_tool_from_prompt_schema(tool: dict[str, Any]) -> Any | None:
                 "type": "object",
                 "properties": parameters.get("properties") or {},
                 "required": parameters.get("required") or [],
-                **{key: value for key, value in parameters.items() if key not in {"type", "properties", "required"}},
+                **{
+                    key: value
+                    for key, value in parameters.items()
+                    if key not in {"type", "properties", "required"}
+                },
             },
         }
     )
 
 
 def _prompt_tool_from_entity_dict(tool: dict[str, Any]) -> Any | None:
-    identity = tool.get("identity") if isinstance(tool.get("identity"), dict) else {}
+    identity_candidate = tool.get("identity")
+    identity = identity_candidate if isinstance(identity_candidate, dict) else {}
     name = str(identity.get("name") or tool.get("tool_name") or tool.get("name") or "")
     if not name:
         return None
     description = tool.get("description") or {}
     if isinstance(description, dict):
-        description_text = str(description.get("llm") or description.get("text") or description.get("description") or "")
+        description_text = str(
+            description.get("llm")
+            or description.get("text")
+            or description.get("description")
+            or ""
+        )
     else:
         description_text = str(description or "")
     if not description_text:
         description_text = str(tool.get("tool_description") or "")
-    parameters = {
-        "type": "object",
-        "properties": {},
-        "required": [],
-    }
+    parameters: dict[str, Any] = {"type": "object", "properties": {}, "required": []}
     raw_parameters = tool.get("parameters") or []
     if isinstance(raw_parameters, dict):
         raw_parameters = raw_parameters.get("parameters") or raw_parameters.get("properties") or []
@@ -601,7 +639,9 @@ def _prompt_tool_from_entity_dict(tool: dict[str, Any]) -> Any | None:
         parameters["properties"][property_name] = property_schema
         if required:
             parameters["required"].append(property_name)
-    return _make_prompt_tool({"name": name, "description": description_text, "parameters": parameters})
+    return _make_prompt_tool(
+        {"name": name, "description": description_text, "parameters": parameters}
+    )
 
 
 def _parameter_schema(parameter: Any) -> tuple[str, dict[str, Any] | None, bool]:
@@ -618,11 +658,19 @@ def _parameter_schema(parameter: Any) -> tuple[str, dict[str, Any] | None, bool]
     if isinstance(input_schema, dict):
         schema = dict(input_schema)
     else:
-        if parameter_type in {"select", "secret-input", "secret_input", "dynamic-select", "dynamic_select"}:
+        if parameter_type in {
+            "select",
+            "secret-input",
+            "secret_input",
+            "dynamic-select",
+            "dynamic_select",
+        }:
             parameter_type = "string"
         schema = {
             "type": parameter_type,
-            "description": str(_get(parameter, "llm_description") or _get(parameter, "description") or ""),
+            "description": str(
+                _get(parameter, "llm_description") or _get(parameter, "description") or ""
+            ),
         }
     options = _get(parameter, "options")
     if options:
@@ -698,21 +746,22 @@ def _preview(value: Any, limit: int = 120) -> str:
 
 
 def _conversation_id_from_parameters(parameters: dict[str, Any]) -> str:
-    inputs = parameters.get("inputs") if isinstance(parameters.get("inputs"), dict) else {}
+    inputs_candidate = parameters.get("inputs")
+    inputs = inputs_candidate if isinstance(inputs_candidate, dict) else {}
     return str(parameters.get("conversation_id") or inputs.get("conversation_id") or "").strip()
 
 
 def _run_id_from_parameters(parameters: dict[str, Any]) -> str:
-    inputs = parameters.get("inputs") if isinstance(parameters.get("inputs"), dict) else {}
+    inputs_candidate = parameters.get("inputs")
+    inputs = inputs_candidate if isinstance(inputs_candidate, dict) else {}
     return str(parameters.get("run_id") or inputs.get("run_id") or f"run_{uuid4().hex}")
 
 
-def _make_writer(output_protocol: str, thread_id: str, run_id: str, show_tool_calls: bool = True) -> Any:
+def _make_writer(
+    output_protocol: str, thread_id: str, run_id: str, show_tool_calls: bool = True
+) -> Any:
     return ProtocolRenderer(
-        output_protocol,
-        thread_id=thread_id,
-        run_id=run_id,
-        show_tool_calls=show_tool_calls,
+        output_protocol, thread_id=thread_id, run_id=run_id, show_tool_calls=show_tool_calls
     )
 
 
@@ -723,7 +772,10 @@ def _command_activity_events(writer: Any, event: Any) -> list[dict[str, Any]]:
         if activity_type and isinstance(activity, dict):
             return writer.write_activity(str(activity_type), activity)
         if event.get("type") == "activity" and event.get("activityType"):
-            return writer.write_activity(str(event.get("activityType")), event.get("content") if isinstance(event.get("content"), dict) else {})
+            return writer.write_activity(
+                str(event.get("activityType")),
+                event.get("content") if isinstance(event.get("content"), dict) else {},
+            )
         return [event]
     operations = getattr(event, "operations", None)
     if operations is not None:
