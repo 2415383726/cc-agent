@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import AskUserForm from '../src/components/AskUserForm.vue'
 import ApprovalCard from '../src/components/ApprovalCard.vue'
+import TranscriptEntry from '../src/components/TranscriptEntry.vue'
 import type { Questionnaire } from '../src/projection/transcript'
 
 const questionnaire: Questionnaire = {
@@ -108,4 +109,74 @@ describe('ApprovalCard', () => {
     })
     expect(wrapper.text()).toContain('未执行')
   })
+})
+
+it('keeps generated visualizations inert until a complete native answer has a completed Pi run', async () => {
+  const source = '```pi-visualize\n<section data-pi-visualize="1" data-kit-version="1" data-title="排队演示" data-description="调参观察变化"><script>window.bad=true</script></section>\n```'
+  const wrapper = mount(TranscriptEntry, { props: { entry: {
+    id: 'a1', kind: 'message', role: 'assistant', text: source, ts: 1,
+    streaming: true, answerComplete: false, runStatus: 'completed',
+  } as any } })
+  expect(wrapper.text()).toContain('作品生成中')
+  expect(wrapper.find('iframe').exists()).toBe(false)
+  await wrapper.setProps({ entry: { ...wrapper.props('entry'), streaming: false, answerComplete: true, runStatus: 'stopped' } as any })
+  expect(wrapper.text()).toContain('未自动运行')
+  expect(wrapper.find('iframe').exists()).toBe(false)
+  await wrapper.setProps({ entry: { ...wrapper.props('entry'), answerComplete: false } as any })
+  expect(wrapper.text()).toContain('未自动运行')
+  await wrapper.setProps({ entry: { ...wrapper.props('entry'), role: 'user' } as any })
+  expect(wrapper.find('.pi-visualize').exists()).toBe(false)
+  expect(wrapper.find('iframe').exists()).toBe(false)
+  wrapper.unmount()
+})
+
+it('refuses to run when the required sandbox response policy is missing', async () => {
+  const { vi } = await import('vitest')
+  const { flushPromises } = await import('@vue/test-utils')
+  vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 Chrome/154.0.0.0')
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, headers: new Headers() })
+  vi.stubGlobal('fetch', fetchMock)
+  try {
+    const wrapper = mount(TranscriptEntry, { props: { entry: {
+      id: 'a1', kind: 'message', role: 'assistant', ts: 1, streaming: false,
+      answerComplete: true, runStatus: 'completed',
+      text: '```pi-visualize\n<section data-pi-visualize="1" data-kit-version="1" data-title="排队演示" data-description="调参观察变化"></section>\n```',
+    } as any } })
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('部署尚未启用作品网络隔离')
+    expect(wrapper.find('iframe').exists()).toBe(false)
+    wrapper.unmount()
+  } finally {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  }
+})
+
+it('preserves a single frame while expanding and ignores messages from other frames', async () => {
+  const { vi } = await import('vitest')
+  const { flushPromises } = await import('@vue/test-utils')
+  vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 Chrome/154.0.0.0')
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, headers: new Headers({ 'Connection-Allowlist': '()' }) }))
+  try {
+    const wrapper = mount(TranscriptEntry, { props: { conversationId: 'conv-one', entry: {
+      id: 'a1', kind: 'message', role: 'assistant', ts: 1, streaming: false,
+      answerComplete: true, runStatus: 'completed', platformMessageId: 'platform-a1',
+      text: '```pi-visualize\n<section data-pi-visualize="1" data-kit-version="1" data-title="排队演示" data-description="调参观察变化"></section>\n```',
+    } as any } })
+    await flushPromises()
+    const frame = wrapper.find('iframe').element as HTMLIFrameElement
+    const contentIdentity = wrapper.find('.pi-visualize').attributes('data-content-id')
+    expect(contentIdentity).toMatch(/^conv-one:platform-a1:0:[a-f0-9]+$/)
+    window.dispatchEvent(new MessageEvent('message', { source: window, data: { type: 'pi-visualize:error', id: 'fake', message: 'forged' } }))
+    await wrapper.get('button[aria-expanded]').trigger('click')
+    expect(wrapper.get('button[aria-expanded]').text()).toBe('收起')
+    expect(wrapper.find('iframe').element).toBe(frame)
+    expect(frame.getAttribute('sandbox')).toBe('allow-scripts')
+    await wrapper.get('button[aria-expanded]').trigger('click')
+    expect(wrapper.find('iframe').element).toBe(frame)
+    await wrapper.get('.pi-visualize-actions button:last-child').trigger('click')
+    expect(wrapper.find('iframe').exists()).toBe(false)
+    wrapper.unmount()
+  } finally { vi.restoreAllMocks(); vi.unstubAllGlobals() }
 })

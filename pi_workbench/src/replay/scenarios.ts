@@ -1,3 +1,4 @@
+import queueSource from '../../fixtures/queue-visualize.html?raw'
 import { DisplayEvent, SCHEMA } from '../contract/display'
 import type { Questionnaire } from '../projection/transcript'
 
@@ -6,6 +7,7 @@ export interface ReplayScenario {
   title: string
   description: string
   events: DisplayEvent[]
+  answers?: Array<{ runId: string; platformMessageId: string; text: string }>
   actions?: string[]
 }
 
@@ -64,7 +66,19 @@ const questionnaire: Questionnaire = {
   ],
 }
 
+const queueRun = makeRun('replay_visualize')
+
 export const REPLAY_SCENARIOS: ReplayScenario[] = [
+  {
+    id: 'visualize', title: '交互排队演示', description: '固定原生 SVG 作品；本地回放不代表真实 Dify 验收。',
+    events: [
+      queueRun('message.user', { text: '用可以操作的图解说明排队为什么越来越长。', message_id: 'queue-user' }),
+      queueRun('message.start', { message_id: 'queue-answer' }),
+      queueRun('message.end', { message_id: 'queue-answer', text: '调节两种速度，比较到达与处理的关系。' }),
+      queueRun('run.state', { status: 'completed', answer: '调节两种速度，比较到达与处理的关系。' }),
+    ],
+    answers: [{ runId: 'replay_visualize', platformMessageId: 'replay-queue-platform', text: '调节两种速度，比较到达与处理的关系。\n\n```pi-visualize\n' + queueSource.trim() + '\n```' }],
+  },
   {
     id: 'process',
     title: '工具、技能与压缩',

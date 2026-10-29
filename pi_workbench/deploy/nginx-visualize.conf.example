@@ -1,0 +1,10 @@
+# Include in the server block serving pi_workbench/dist.
+# Adjust the exact URL and root together when hosting under a subpath.
+location = /visualize/sandbox.html {
+    root /var/www/pi-workbench;
+    try_files $uri =404;
+    add_header Connection-Allowlist "()" always;
+    add_header Cache-Control "no-store" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), display-capture=(), usb=()" always;
+}

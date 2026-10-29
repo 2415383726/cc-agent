@@ -108,3 +108,12 @@ describe('transcript projection', () => {
     expect(view.terminal?.status).toBe('state_save_failed')
   })
 })
+
+it('keeps the native answer bytes, including boundary whitespace, while replacing a clipped log', () => {
+  const view = newView()
+  applyEvent(view, event('message.start', { message_id: 'full-a' }))
+  applyEvent(view, event('message.end', { message_id: 'full-a', text: 'clipped' }))
+  mergeFinalAnswer(view, '\n完整回答\r\n```pi-visualize\r\nsource\r\n```\n')
+  expect((view.entries.find((entry: any) => entry.role === 'assistant') as any).text)
+    .toBe('\n完整回答\r\n```pi-visualize\r\nsource\r\n```\n')
+})

@@ -168,7 +168,7 @@ function approvalDecision(
 }
 
 function entryKey(entry: WorkbenchEntry): string {
-  return `${entry.kind}:${entry.id}`
+  return `${ui.value.conversationId}:${entry.kind}:${entry.id}`
 }
 </script>
 
@@ -279,6 +279,7 @@ function entryKey(entry: WorkbenchEntry): string {
           v-for="entry in view.entries"
           :key="entryKey(entry)"
           :entry="entry"
+          :conversation-id="ui.conversationId"
           @submit-answers="submitAnswers"
           @cancel-question="cancelQuestion"
           @approval-decision="approvalDecision"
