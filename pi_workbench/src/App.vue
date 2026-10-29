@@ -281,6 +281,18 @@ function entryKey(entry: WorkbenchEntry): string {
     </main>
 
     <footer class="pi-workbench-footer">
+      <div v-if="view.outputs.length" class="pi-outputs">
+        <strong>Outputs</strong>
+        <a
+          v-for="file in view.outputs"
+          :key="file.id || file.url"
+          :href="file.url"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {{ file.name || 'output file' }}
+        </a>
+      </div>
       <p v-if="pending" class="pi-composer-hint">
         <template v-if="pending.kind === 'question'">Answer the questionnaire above to continue.</template>
         <template v-else>Approve or reject the operation above to continue.</template>

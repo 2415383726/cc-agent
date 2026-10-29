@@ -115,9 +115,6 @@ class McpRuntime:
     def tools(self) -> list[McpTool]:
         return list(self._tools.values())
 
-    def has(self, exposed_name: str) -> bool:
-        return exposed_name in self._tools
-
     async def call(self, exposed_name: str, arguments: dict[str, Any]) -> Any:
         tool = self._tools.get(exposed_name)
         if tool is None:
@@ -268,7 +265,3 @@ def _sanitize(value: str) -> str:
     import re
 
     return re.sub(r"[^A-Za-z0-9_]+", "_", value).strip("_") or "mcp"
-
-
-def redact_servers(servers: list[McpServer]) -> list[dict[str, Any]]:
-    return [{"name": server.name, "transport": server.transport} for server in servers]

@@ -27,6 +27,16 @@ Not reused: Leyline's Node server, Pi SDK runtime, WebSocket protocol, Electron
 shell, project/machine/workspace features, terminal, Git, memory, tracing
 services and extension confirm UI.
 
+Extraction boundary evidence: Leyline's chat assembly lives in a ~5,800-line
+`App.vue` and its session controller (`useSessionWorkspace.js`, ~2,000 lines)
+is directly coupled to REST/WS project and machine APIs. That is beyond the v2
+boundary (no community backend, no project/workspace model), so this workbench
+kept the reusable presentation primitives (card markup/classes, styles,
+status mapping, Markdown/scroll behavior) and wrote a contract-specific
+transcript/controller instead of forking the whole shell. This is a deliberate,
+recorded adaptation rather than a claim that the original container was moved
+unchanged.
+
 ## Other frontend dependencies
 
 - Vue 3 — MIT

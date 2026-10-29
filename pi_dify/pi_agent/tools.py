@@ -172,9 +172,6 @@ class ToolRuntime:
     def agent_tools(self) -> list[PiTool]:
         return list(self._tools.values())
 
-    def tool_names(self) -> set[str]:
-        return set(self._tools)
-
     def resolve(self, name: str) -> ToolSpec | None:
         tool = self._tools.get(name)
         return tool.spec if tool else None

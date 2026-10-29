@@ -70,7 +70,6 @@ class RunLedger:
     finish_reason: str | None = None
     started_at: float = field(init=False)
     _tool_signatures: dict[str, int] = field(default_factory=dict)
-    _sources: dict[str, int] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.started_at = self.clock()
@@ -99,7 +98,6 @@ class RunLedger:
         self, usage: Usage | None, estimated_tokens: int, source: str = "normal"
     ) -> None:
         self.model_requests += 1
-        self._sources[source] = self._sources.get(source, 0) + 1
         if usage is None or (
             not usage.input
             and not usage.output

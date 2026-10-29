@@ -979,3 +979,27 @@ button {
 .transcript-message.assistant-message {
   line-height: 1.6;
 }
+
+.pi-outputs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: min(var(--content-max), 100%);
+  margin: 0 auto 8px;
+  color: var(--muted-strong);
+  font-size: 12px;
+}
+
+.pi-outputs a {
+  padding: 4px 8px;
+  border-radius: 7px;
+  color: #b7adff;
+  background: rgb(138 120 255 / 10%);
+  border: 1px solid rgb(138 120 255 / 20%);
+  text-decoration: none;
+}
+
+.pi-outputs a:hover {
+  background: rgb(138 120 255 / 18%);
+}

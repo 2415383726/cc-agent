@@ -214,7 +214,6 @@ class DifyModelStream:
         model: Model | None = None,
         thinking_tags: bool = True,
         preserve_reasoning_content: bool = False,
-        on_request: Any = None,
     ) -> None:
         self.session = session
         self.model_config = model_config
@@ -223,7 +222,6 @@ class DifyModelStream:
         self.model = model
         self.thinking_tags = thinking_tags
         self.preserve_reasoning_content = preserve_reasoning_content
-        self.on_request = on_request
 
     async def __call__(
         self, model: Model, context: LlmContext, options: StreamOptions | None = None
@@ -297,8 +295,6 @@ class DifyModelStream:
             return _error_stream(model, _marker_for(exc), options, usage=None)
 
     def _invoke(self, prompt_messages: list[Any], prompt_tools: list[Any], *, stream: bool) -> Any:
-        if self.on_request is not None:
-            self.on_request()
         return self.session.model.llm.invoke(
             model_config=_model_config(self.model_config),
             prompt_messages=prompt_messages,

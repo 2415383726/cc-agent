@@ -18,7 +18,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pi_agent_harness.session.memory_storage import MemorySessionStorage
-from pi_agent_harness.session.session import build_session_context
 from pi_agent_harness.types import SessionMetadata, SessionTreeEntry, SessionTreeEntryAdapter
 
 from .errors import StateError
@@ -602,17 +601,6 @@ async def export_session(session: Any) -> tuple[list[dict[str, Any]], str | None
     return ([entry.model_dump(mode="json") for entry in entries], leaf, metadata.createdAt)
 
 
-def session_messages(state: PiState) -> list[Any]:
-    if not state.entries:
-        return []
-    try:
-        storage_entries = [SessionTreeEntryAdapter.validate_python(item) for item in state.entries]
-    except Exception:
-        return []
-    by_id = {entry.id: entry for entry in storage_entries}
-    return build_session_context(_path(storage_entries, by_id, state.leaf_id)).messages
-
-
 def state_summary(state: PiState) -> dict[str, Any]:
     """Read-only description of the actually-encoded snapshot."""
 
@@ -627,10 +615,6 @@ def state_summary(state: PiState) -> dict[str, Any]:
         "grants": len(state.grants),
         "last_status": state.last_status,
     }
-
-
-def prune_consumed(state: PiState) -> None:
-    state.consumed = state.consumed[-MAX_CONSUMED_RECORDS:]
 
 
 def _int(value: Any) -> int:

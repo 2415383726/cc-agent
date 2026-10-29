@@ -253,7 +253,7 @@ def _blob_name(message: Any) -> str:
 
 def _blob_mime(message: Any) -> str:
     return str(
-        _get(message, "mime_type") or _get(message, "mime_type") or "application/octet-stream"
+        _get(message, "mime_type") or _get(message, "mimeType") or "application/octet-stream"
     )
 
 

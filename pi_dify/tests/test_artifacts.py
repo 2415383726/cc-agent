@@ -25,7 +25,11 @@ class DifyArtifactTests(unittest.TestCase):
             [
                 {
                     "type": "blob",
-                    "message": {"filename": "report.pdf", "mime_type": "application/pdf", "size": 42},
+                    "message": {
+                        "filename": "report.pdf",
+                        "mime_type": "application/pdf",
+                        "size": 42,
+                    },
                 }
             ]
         )

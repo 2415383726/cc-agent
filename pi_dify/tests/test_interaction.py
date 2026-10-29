@@ -115,6 +115,24 @@ class ApprovalPolicyTests(unittest.TestCase):
         )
         self.assertFalse(approval_required("delete", "dify", {}, config, []))
 
+    def test_expired_approval_is_rejected(self) -> None:
+        pending = create_approval_pending(
+            tool_call_id="c1",
+            tool_name="write",
+            arguments={},
+            source="dify",
+            annotations={},
+            run_id="run",
+            timeout_seconds=0.001,
+        )
+        import time
+
+        time.sleep(0.01)
+        with self.assertRaises(PendingError):
+            validate_approval_decision(
+                pending, {"type": "approval", "pending_id": pending["id"], "decision": "approve"}
+            )
+
     def test_decision_validation(self) -> None:
         pending = create_approval_pending(
             tool_call_id="c1",

@@ -15,10 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 LOCK_FILE = ROOT / "requirements.lock.txt"
 SMOKE = ROOT / "scripts" / "offline_smoke.py"
 
-PLATFORM = {
-    "amd64": "x86_64-unknown-linux-gnu",
-    "arm64": "aarch64-unknown-linux-gnu",
-}
+PLATFORM = {"amd64": "x86_64-unknown-linux-gnu", "arm64": "aarch64-unknown-linux-gnu"}
 
 
 def sha256(path: Path) -> str:
@@ -37,13 +34,7 @@ def run(
     print("+", " ".join(command))
     try:
         return subprocess.run(
-            command,
-            cwd=cwd,
-            check=True,
-            text=True,
-            capture_output=True,
-            timeout=timeout,
-            env=env,
+            command, cwd=cwd, check=True, text=True, capture_output=True, timeout=timeout, env=env
         )
     except subprocess.CalledProcessError as exc:
         print(exc.stdout)
@@ -124,10 +115,7 @@ def main() -> int:
             import os
 
             smoke = run(
-                [
-                    str(venv / "bin" / "python"),
-                    str(SMOKE),
-                ],
+                [str(venv / "bin" / "python"), str(SMOKE)],
                 cwd=root,
                 env={**os.environ, "PYTHONPATH": str(root)},
             )

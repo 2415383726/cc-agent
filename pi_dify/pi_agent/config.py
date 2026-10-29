@@ -85,7 +85,7 @@ class RuntimeConfig:
     tool_stream_mode: str = "delta"
     stream_mode: str = "stream"
     stream_fallback: bool = True
-    thinking_tags: bool = True
+    thinking_tags: bool = False
     preserve_reasoning_content: bool = False
     compaction_enabled: bool = True
     compaction_reserve_tokens: int = 16_384
@@ -95,18 +95,16 @@ class RuntimeConfig:
     display_max_events: int = 400
     max_duplicate_tool_calls: int = 2
     max_consecutive_errors: int = 3
-    max_tool_result_bytes: int = 32_768
     approval_mode: str = "configured"
     approval_tools: tuple[str, ...] = ()
+    approval_timeout_seconds: float = 0.0
     question_timeout_seconds: float = 0.0
     max_questions: int = 10
     max_options: int = 20
     skill_max_read_chars: int = 12_000
     mcp_tool_timeout: float = 60.0
-    mcp_agent_tools_only: bool = True
     mcp_tools_exclude: tuple[str, ...] = ()
     tool_timeout_seconds: float = 120.0
-    show_tool_calls: bool = True
     user_skill_prefix: str = "/skill:"
 
     @classmethod
@@ -163,7 +161,6 @@ class RuntimeConfig:
                     "display_max_events",
                     "max_duplicate_tool_calls",
                     "max_consecutive_errors",
-                    "max_tool_result_bytes",
                     "max_questions",
                     "max_options",
                     "skill_max_read_chars",
@@ -172,6 +169,7 @@ class RuntimeConfig:
                 elif key in {
                     "max_wall_seconds",
                     "question_timeout_seconds",
+                    "approval_timeout_seconds",
                     "mcp_tool_timeout",
                     "tool_timeout_seconds",
                 }:
@@ -180,14 +178,12 @@ class RuntimeConfig:
                     "stream_fallback",
                     "compaction_enabled",
                     "auto_compact",
-                    "mcp_agent_tools_only",
-                    "show_tool_calls",
                     "thinking_tags",
                     "preserve_reasoning_content",
                 }:
                     setattr(config, key, _as_bool(raw, getattr(config, key)))
-                elif key == "approval_tools":
-                    config.approval_tools = _as_str_list(raw)
+                elif key in {"approval_tools", "mcp_tools_exclude"}:
+                    setattr(config, key, _as_str_list(raw))
                 else:
                     setattr(config, key, _as_str(raw, getattr(config, key)))
         except (TypeError, ValueError) as exc:
@@ -264,10 +260,6 @@ class RequestContext:
     @property
     def session_id(self) -> str:
         return self.conversation_id or self.raw_state_id or "pi-dify-session"
-
-    @property
-    def state_id(self) -> str:
-        return self.conversation_id or self.raw_state_id or "pi-dify-state"
 
 
 def _first(mapping: dict[str, Any], inputs: dict[str, Any], key: str, default: Any = None) -> Any:

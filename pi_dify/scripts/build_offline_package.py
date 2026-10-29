@@ -257,9 +257,7 @@ def build_package(output_path: Path, arch: str) -> Path:
                 archive.writestr("requirements.txt", LOCK_FILE.read_text(encoding="utf-8"))
                 continue
             archive.write(file_path, arcname=relative_path.as_posix())
-        archive.writestr(
-            "VERSION_MANIFEST.json", json.dumps(evidence, indent=2, sort_keys=True)
-        )
+        archive.writestr("VERSION_MANIFEST.json", json.dumps(evidence, indent=2, sort_keys=True))
         for name, content in licenses.items():
             archive.writestr(name, content)
     return output_path
@@ -279,7 +277,12 @@ def main() -> int:
     output_path = output_path if output_path.is_absolute() else ROOT / output_path
     artifact = build_package(output_path, args.arch)
     digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
-    print(json.dumps({"artifact": str(artifact), "sha256": digest, "bytes": artifact.stat().st_size}, indent=2))
+    print(
+        json.dumps(
+            {"artifact": str(artifact), "sha256": digest, "bytes": artifact.stat().st_size},
+            indent=2,
+        )
+    )
     return 0
 
 

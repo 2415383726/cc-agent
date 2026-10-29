@@ -172,6 +172,7 @@ export type WorkbenchEntry =
 
 export interface TranscriptView {
   entries: WorkbenchEntry[]
+  outputs: FileRef[]
   terminal: TerminalInfo | null
   running: boolean
   platformAnswer: string
@@ -188,6 +189,7 @@ const INTERNAL_TOOL_NAMES = new Set(['ask_user', 'activate_skill', 'read_skill_r
 export function newView(): TranscriptView {
   return {
     entries: [],
+    outputs: [],
     terminal: null,
     running: false,
     platformAnswer: '',

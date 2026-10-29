@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 import time
-from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
@@ -351,11 +350,3 @@ def _expired(pending: dict[str, Any]) -> bool:
 def _slug(value: Any) -> str:
     text = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(value or "").strip()).strip("-")
     return text[:64]
-
-
-@dataclass(slots=True)
-class InteractionResult:
-    interaction_type: str
-    pending: dict[str, Any] | None = None
-    text: str = ""
-    cancelled: bool = False

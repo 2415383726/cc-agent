@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import threading
 import unittest
 
 from _support import ROOT  # noqa: F401
@@ -60,8 +59,9 @@ class ParseTests(unittest.TestCase):
             parse_servers({"srv": {"url": "https://example.test", "headers": {"X": "a\nb"}}})
 
     def test_app_only_filter(self) -> None:
-        from pi_agent.mcp import _is_app_only
         from types import SimpleNamespace
+
+        from pi_agent.mcp import _is_app_only
 
         self.assertTrue(_is_app_only(SimpleNamespace(name="app__internal")))
         self.assertTrue(_is_app_only(SimpleNamespace(name="x", meta={"appOnly": True})))

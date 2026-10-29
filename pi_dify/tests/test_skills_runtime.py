@@ -39,8 +39,7 @@ class SkillRuntimeTests(unittest.TestCase):
         outbox = run_turn(
             session,
             base_parameters(
-                query="/skill:refund-policy please check order A-1042",
-                app_skills_yaml=SKILLS,
+                query="/skill:refund-policy please check order A-1042", app_skills_yaml=SKILLS
             ),
         )
         self.assertEqual(last_terminal(outbox)["status"], "completed")
@@ -53,11 +52,23 @@ class SkillRuntimeTests(unittest.TestCase):
         loaded = decode_state(last_state(outbox))
         self.assertEqual([skill["name"] for skill in loaded.state.active_skills], ["refund-policy"])
 
+    def test_revoked_user_skill_content_is_withheld_next_turn(self) -> None:
+        session = FakeSession([text_chunks("first"), text_chunks("second")])
+        first = run_turn(
+            session, base_parameters(query="/skill:refund-policy start", app_skills_yaml=SKILLS)
+        )
+        second = run_turn(
+            session, base_parameters(query="continue", state=last_state(first), app_skills_yaml="")
+        )
+        self.assertEqual(last_terminal(second)["status"], "completed")
+        prompts = prompt_texts(session.model.llm, index=1)
+        self.assertFalse(any("Refunds require an unused item" in text for text in prompts))
+        self.assertTrue(any("no longer eligible" in text for text in prompts))
+
     def test_ineligible_skill_is_not_injected(self) -> None:
         session = FakeSession([text_chunks("ok")])
         outbox = run_turn(
-            session,
-            base_parameters(query="/skill:needs-tool do it", app_skills_yaml=SKILLS),
+            session, base_parameters(query="/skill:needs-tool do it", app_skills_yaml=SKILLS)
         )
         prompts = prompt_texts(session.model.llm)
         self.assertFalse(any("Should stay hidden" in text for text in prompts))
@@ -109,7 +120,9 @@ class SkillRuntimeTests(unittest.TestCase):
         reads = [event for event in events if event.get("type") == "skill.read"]
         self.assertEqual(reads, [])
         notes = [event for event in events if event.get("type") == "activity"]
-        self.assertTrue(any("Invalid skill resource path" in str(event.get("text") or "") for event in notes))
+        self.assertTrue(
+            any("Invalid skill resource path" in str(event.get("text") or "") for event in notes)
+        )
         self.assertEqual(last_terminal(outbox)["status"], "completed")
 
 
@@ -131,8 +144,7 @@ class RecoveryTests(unittest.TestCase):
         second = run_turn(
             session,
             base_parameters(
-                state=last_state(first),
-                interaction={"type": "cancel", "pending_id": pending["id"]},
+                state=last_state(first), interaction={"type": "cancel", "pending_id": pending["id"]}
             ),
         )
         self.assertEqual(last_terminal(second)["status"], "cancelled")
@@ -145,8 +157,7 @@ class RecoveryTests(unittest.TestCase):
         session = FakeSession([text_chunks("first")])
         first = run_turn(session, base_parameters(query="one", conversation_id="conv-1"))
         second = run_turn(
-            session,
-            base_parameters(query="two", state=last_state(first), conversation_id="conv-2"),
+            session, base_parameters(query="two", state=last_state(first), conversation_id="conv-2")
         )
         self.assertEqual(last_terminal(second)["status"], "failed")
         self.assertEqual(last_terminal(second)["error"]["code"], "invalid_state")
@@ -155,19 +166,24 @@ class RecoveryTests(unittest.TestCase):
     def test_state_save_failure_is_not_reported_as_completed(self) -> None:
         long_text = os.urandom(30_000).hex()
         session = FakeSession([text_chunks(long_text)])
-        outbox = run_turn(
-            session,
-            base_parameters(runtime={"state_max_encoded_bytes": 600}),
-        )
+        outbox = run_turn(session, base_parameters(runtime={"state_max_encoded_bytes": 600}))
         terminal = last_terminal(outbox)
         self.assertEqual(terminal["status"], "state_save_failed")
         self.assertEqual(terminal["error"]["code"], "state_save_failed")
         self.assertIn("not reported as completed", terminal["answer"])
         statuses = {event.get("status") for event in _terminal_entry(outbox)}
         self.assertEqual(statuses, {"state_save_failed"})
+        failed = next(
+            event for event in _terminal_entry(outbox) if event.get("type") == "run.state"
+        )
+        self.assertEqual(failed["state_summary"]["delivery_status"], "failed")
 
     def test_unknown_remote_outcome_asks_for_verification(self) -> None:
-        tool = {"name": "write", "description": "Write", "parameters": {"type": "object", "properties": {}}}
+        tool = {
+            "name": "write",
+            "description": "Write",
+            "parameters": {"type": "object", "properties": {}},
+        }
         session = FakeSession(
             [tool_chunks([{"name": "write"}]), text_chunks("Please verify the record.")],
             tool_responses=[RuntimeError("socket reset")],
@@ -182,9 +198,7 @@ class RecoveryTests(unittest.TestCase):
 
 def _terminal_entry(outbox):
     return [
-        event
-        for event in display_events(outbox)
-        if event.get("type") in {"run.state", "run.done"}
+        event for event in display_events(outbox) if event.get("type") in {"run.state", "run.done"}
     ]
 
 

@@ -112,22 +112,6 @@ export class DifyController implements WorkbenchController {
       this.ui.error = safeError(error)
     }
     this._abort?.abort()
-    if (!this.view.terminal || !['awaiting_user', 'awaiting_approval'].includes(this.view.terminal.status)) {
-      const terminal: TerminalInfo = {
-        status: 'stopped',
-        answer: 'Stop was requested. The server may still be finishing the current operation.',
-        error: null,
-      }
-      this.view.terminal = terminal
-      this.view.running = false
-      this.view.entries.push({
-        id: `stop_${Date.now()}`,
-        kind: 'note',
-        text: terminal.answer,
-        tone: 'warning',
-        ts: Date.now(),
-      })
-    }
     this.ui.stoppedNote = 'Stop requested; the result is confirmed only by a server terminal state.'
   }
 
@@ -256,6 +240,20 @@ export class DifyController implements WorkbenchController {
     const { events } = eventsFromHistory(this._records)
     resetView(this.view)
     for (const event of events) applyEvent(this.view, event)
+    for (const record of this._records) {
+      const files = Array.isArray((record as any).message_files) ? (record as any).message_files : []
+      for (const file of files) {
+        const url = String((file as any)?.url || '')
+        if (url && !this.view.outputs.some((item) => item.url === url)) {
+          this.view.outputs.push({
+            id: String((file as any)?.id || url),
+            name: String((file as any)?.filename || (file as any)?.name || 'output file'),
+            mimeType: String((file as any)?.mime_type || (file as any)?.mimeType || ''),
+            url,
+          })
+        }
+      }
+    }
     const last = this._records[this._records.length - 1]
     if (last?.answer) mergeFinalAnswer(this.view, String(last.answer))
     if (!events.length && this._records.length) {
@@ -310,19 +308,26 @@ export class DifyController implements WorkbenchController {
       }
       if (ticket !== this._ticket) return
       if (!this.view.terminal) {
+        const stopped = this.ui.stopRequested
         this.view.terminal = {
           status: 'unknown',
-          answer: '',
+          answer: stopped
+            ? 'Stop was requested, but the server did not confirm a terminal state.'
+            : '',
           error: {
-            code: 'unknown',
+            code: stopped ? 'stopped_unconfirmed' : 'unknown',
             stage: 'transport',
-            message: 'The stream ended without a trusted terminal state.',
+            message: stopped
+              ? 'Stop was requested, but no trusted server terminal state was received.'
+              : 'The stream ended without a trusted terminal state.',
           },
         }
         this.view.entries.push({
           id: `unconfirmed_${Date.now()}`,
           kind: 'note',
-          text: 'The stream ended before a trusted terminal state arrived. No request was resent.',
+          text: stopped
+            ? 'Stop was requested; the outcome is unconfirmed. The request was not resent.'
+            : 'The stream ended before a trusted terminal state arrived. No request was resent.',
           tone: 'warning',
           ts: Date.now(),
         })
@@ -333,10 +338,21 @@ export class DifyController implements WorkbenchController {
       if (this.ui.stopRequested) {
         if (!this.view.terminal) {
           this.view.terminal = {
-            status: 'stopped',
-            answer: 'The run was stopped locally; server confirmation was not received.',
-            error: null,
+            status: 'unknown',
+            answer: 'Stop was requested, but the server did not confirm a terminal state.',
+            error: {
+              code: 'stopped_unconfirmed',
+              stage: 'transport',
+              message: 'Stop was requested, but no trusted server terminal state was received.',
+            },
           }
+          this.view.entries.push({
+            id: `stop_${Date.now()}`,
+            kind: 'note',
+            text: 'Stop was requested; the outcome is unconfirmed. The request was not resent.',
+            tone: 'warning',
+            ts: Date.now(),
+          })
         }
       } else {
         this.ui.error = safeError(error)
@@ -386,6 +402,18 @@ export class DifyController implements WorkbenchController {
     if (eventName === 'message' || eventName === 'agent_message') {
       const answer = String(payload?.answer || '')
       if (answer) this._platformText += answer
+    }
+    if (eventName === 'message_file') {
+      const url = String(payload?.url || '')
+      if (url && !this.view.outputs.some((item) => item.url === url)) {
+        this.view.outputs.push({
+          id: String(payload?.id || url),
+          name: String(payload?.filename || payload?.name || 'output file'),
+          mimeType: String(payload?.type || ''),
+          type: String(payload?.type || ''),
+          url,
+        })
+      }
     }
     const found = findPiEvent(payload)
     if (found?.problem === 'unsupported-version' && !this._warnedVersion) {

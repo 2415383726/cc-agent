@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import Generator
 from typing import Any
 
@@ -43,7 +44,11 @@ class PiAgentStrategy(AgentStrategy):
                 {
                     "piagent": {
                         "schema": "piagent.display.v1",
+                        "schema_version": 1,
                         "type": "agent_failed",
+                        "run_id": str(parameters.get("run_id") or "run_strategy_failed"),
+                        "seq": 0,
+                        "ts": int(time.time() * 1000),
                         "code": "agent_failed",
                         "stage": "strategy",
                         "message": "The Pi agent run failed.",

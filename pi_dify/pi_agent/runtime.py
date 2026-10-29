@@ -22,7 +22,7 @@ from pi_agent_harness.types import AgentHarnessResources, SessionMetadata, Sessi
 from .artifacts import Artifact
 from .budget import RunLedger
 from .config import RequestContext, RuntimeConfig, parse_request
-from .contract import DisplayEvents, clip, public_state_ref, run_state_payload
+from .contract import DisplayEvents, clip, log_envelope, public_state_ref, run_state_payload
 from .errors import PiError
 from .harness import PiHarness
 from .interaction import (
@@ -45,6 +45,7 @@ from .state import (
     export_session,
     now_iso,
     sanitize_entries,
+    state_summary,
     validate_state,
 )
 from .stream import DifyModelStream, error_code_from_message
@@ -204,7 +205,11 @@ class PiAgentRuntime:
             if request is not None and events is not None and ledger is not None:
                 await self._fail(request, state, events, emit, ledger, exc)
             else:
-                emit(_safe_failure_message(exc.code, exc.stage))
+                emit(
+                    _safe_failure_message(
+                        exc.code, exc.stage, run_id=events.run_id if events is not None else ""
+                    )
+                )
         except Exception:
             if request is not None and events is not None and ledger is not None:
                 await self._fail(
@@ -216,7 +221,13 @@ class PiAgentRuntime:
                     PiError("agent_failed", "runtime", "The Pi agent run failed."),
                 )
             else:
-                emit(_safe_failure_message("agent_failed", "runtime"))
+                emit(
+                    _safe_failure_message(
+                        "agent_failed",
+                        "runtime",
+                        run_id=events.run_id if events is not None else "",
+                    )
+                )
         finally:
             watcher.cancel()
             if setup is not None:
@@ -537,15 +548,9 @@ class PiAgentRuntime:
         return harness
 
     def _available_tool_names(self, dify_tools: list[Any], mcp: McpRuntime) -> set[str]:
-        names = {"ask_user", "activate_skill", "read_skill_resource"}
-        for tool in dify_tools:
-            from .tools import extract_dify_tool
+        from .tools import build_specs
 
-            extracted = extract_dify_tool(tool)
-            if extracted:
-                names.add(extracted["name"])
-        names.update(tool.exposed_name for tool in mcp.tools())
-        return names
+        return {spec.name for spec in build_specs(dify_tools, mcp)}
 
     # -- turn execution -----------------------------------------------------
 
@@ -641,6 +646,19 @@ class PiAgentRuntime:
                     ledger,
                     _system_prompt(request, setup.skills),
                 )
+                if retry_mode != "resume" or resume_message is None:
+                    resume_message = CustomMessage(
+                        customType="pi.continuation",
+                        content=(
+                            "The context was compacted after an overflow. Continue the current "
+                            "task from the preserved user request and tool results; do not "
+                            "repeat completed tool operations."
+                        ),
+                        display=False,
+                        details={"kind": "context_compaction", "reason": "context_overflow"},
+                        timestamp=int(time.time() * 1000),
+                    )
+                    retry_mode = "resume"
                 continue
             if code:
                 status = _status_for_code(code)
@@ -677,10 +695,7 @@ class PiAgentRuntime:
         for activation in setup.tools.activated_skills:
             active[activation["name"]] = {**activation, "activated_at": now_iso()}
         state.active_skills = list(active.values())
-        if decision_input and decision_input["kind"] == "approval":
-            state.pending = None
-        else:
-            state.pending = setup.tools.pending
+        state.pending = setup.tools.pending
         await self._finalize(
             request,
             state,
@@ -750,7 +765,18 @@ class PiAgentRuntime:
         tool_name = str(decision.get("tool_name") or "")
         spec = setup.tools.resolve(tool_name)
         pending = state.pending or {}
-        if spec is None:
+        original_call = _original_tool_call(state.entries, call_id)
+        identity_matches = (
+            original_call is not None
+            and original_call.get("name") == pending.get("tool_name")
+            and original_call.get("arguments") == pending.get("arguments")
+        )
+        if (
+            spec is None
+            or not identity_matches
+            or spec.name != str(pending.get("tool_name") or "")
+            or spec.source != str(pending.get("source") or "dify")
+        ):
             outcome_text = (
                 "The approved tool is no longer available in this application; "
                 "the operation was not executed."
@@ -1054,11 +1080,20 @@ class PiAgentRuntime:
                 ),
             }
             answer = error["message"]
+        summary: dict[str, Any] | None = None
+        if state is not None:
+            summary = state_summary(state)
+            if save_error is None and "save" in locals():
+                summary["encoded_bytes"] = save.encoded_bytes
+                summary["delivery_status"] = "encoded"
+            else:
+                summary["delivery_status"] = "failed"
         payload = run_state_payload(
             status=status,
             stats=stats,
             answer=answer,
             state_ref=state_ref,
+            state_summary=summary,
             error=error,
             pending=_public_pending(pending),
         )
@@ -1081,30 +1116,28 @@ class PiAgentRuntime:
 
 
 def _log_event(event: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "type": "log",
-        "label": "Pi event",
-        "data": {"piagent": event},
-        "is_error": event.get("type") == "run.state"
+    return log_envelope(
+        event,
+        is_error=event.get("type") == "run.state"
         and event.get("status") in {"failed", "state_save_failed"},
-    }
+    )
 
 
-def _safe_failure_message(code: str, stage: str) -> dict[str, Any]:
-    return {
-        "type": "log",
-        "label": "Pi agent failed",
-        "data": {
-            "piagent": {
-                "schema": "piagent.display.v1",
-                "type": "agent_failed",
-                "code": code,
-                "stage": stage,
-                "message": "The Pi agent run failed.",
-            }
+def _safe_failure_message(code: str, stage: str, run_id: str = "", seq: int = 0) -> dict[str, Any]:
+    return log_envelope(
+        {
+            "schema": "piagent.display.v1",
+            "schema_version": 1,
+            "type": "agent_failed",
+            "run_id": run_id or "run_unknown",
+            "seq": seq,
+            "ts": int(time.time() * 1000),
+            "code": code,
+            "stage": stage,
+            "message": "The Pi agent run failed.",
         },
-        "is_error": True,
-    }
+        is_error=True,
+    )
 
 
 def _model_from_request(request: RequestContext, config: RuntimeConfig) -> Model:
@@ -1170,26 +1203,42 @@ def _skill_context_hook(skills: SkillCatalog) -> Any:
         eligible = skills.eligible_names()
         messages = []
         for message in getattr(event, "messages", []) or []:
-            details = getattr(message, "details", None)
+            if isinstance(message, dict):
+                details = message.get("details")
+                custom_type = message.get("customType")
+            else:
+                details = getattr(message, "details", None)
+                custom_type = getattr(message, "customType", None)
+            withheld = None
             if (
                 isinstance(message, ToolResultMessage)
                 and isinstance(details, dict)
                 and details.get("kind") == "skill_activation"
                 and details.get("skill") not in eligible
             ):
-                message = message.model_copy(
-                    update={
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": (
-                                    "[The previously activated skill is no longer eligible; "
-                                    "its instructions are withheld.]"
-                                ),
-                            }
-                        ]
+                withheld = [
+                    {
+                        "type": "text",
+                        "text": (
+                            "[The previously activated skill is no longer eligible; "
+                            "its instructions are withheld.]"
+                        ),
                     }
+                ]
+            elif (
+                custom_type == "pi.skill"
+                and isinstance(details, dict)
+                and details.get("skill") not in eligible
+            ):
+                withheld = (
+                    "[The previously activated skill is no longer eligible; "
+                    "its instructions are withheld.]"
                 )
+            if withheld is not None:
+                if isinstance(message, dict):
+                    message = {**message, "content": withheld}
+                else:
+                    message = message.model_copy(update={"content": withheld})
             messages.append(message)
         return {"messages": messages}
 
@@ -1287,14 +1336,12 @@ def _drop_trailing_request(
         while (
             path
             and path[-1].type == "custom_message"
-            and getattr(path[-1], "customType", "") == "pi.approval"
+            and getattr(path[-1], "customType", "") in {"pi.approval", "pi.continuation"}
         ):
             path.pop()
-    else:
-        while path and not (path[-1].type == "message" and path[-1].message.get("role") == "user"):
-            path.pop()
-        if path:
-            path.pop()
+    # A prompt retry keeps the current user request and every completed tool
+    # call/result. The retry is a continuation message, not a second user prompt,
+    # so no completed tool is replayed.
     if not path:
         return None
     repaired: list[SessionTreeEntry] = []
@@ -1304,6 +1351,19 @@ def _drop_trailing_request(
         repaired.append(entry)
         previous = entry.id
     return repaired, repaired[-1].id
+
+
+def _original_tool_call(entries: list[dict[str, Any]], call_id: str) -> dict[str, Any] | None:
+    for entry in entries:
+        if entry.get("type") != "message":
+            continue
+        message = entry.get("message") or {}
+        if message.get("role") != "assistant":
+            continue
+        for block in message.get("content") or []:
+            if isinstance(block, dict) and block.get("id") == call_id:
+                return block
+    return None
 
 
 def _replace_tool_result(

@@ -89,7 +89,9 @@ Cancel either pending interaction:
 Answers are validated against the current `agent_state` pending. Wrong,
 missing, expired, duplicate or already-consumed answers never execute a tool or
 call the model; they return a readable rejection and the current waiting
-projection.
+projection. An approval decision is additionally checked against the original
+session tool call (name and full arguments) and the current tool source, so a
+tampered or rebuilt pending cannot execute a different operation.
 
 ## State
 
@@ -102,9 +104,10 @@ keeps the pending group, leaf and tool pairing.
 
 State is emitted **before** the terminal Dify log. A save failure emits
 `state_save_failed`, keeps the previous encoded state instead of writing an
-empty snapshot, and never reports a normal completion. `state_ref` says
-`encoded`/`failed`; `platform_persisted` remains `null` because the SDK output
-is not proof of a Dify variable write.
+empty snapshot, and never reports a normal completion. `run.state` includes a
+read-only `state_summary` describing the actually encoded snapshot.
+`state_ref` says `encoded`/`failed`; `platform_persisted` remains `null` because
+the SDK output is not proof of a Dify variable write.
 
 ## Skills
 
@@ -120,10 +123,13 @@ skills:
         Step one: verify the order date.
 ```
 
-Skills are discovered from `skills/` (builtin) and `app_skills_yaml`, checked
-for eligibility against the current tool set, activated by the user
+Skills are discovered from `skills/*/SKILL.md` when builtin skills are shipped
+(no builtin skill is bundled by default) and from `app_skills_yaml`. They are
+checked for eligibility against the current tool set, activated by the user
 (`/skill:name ...`) or the model (`activate_skill`), and read through bounded,
-paged `read_skill_resource` calls. Paths outside the skill are rejected.
+paged `read_skill_resource` calls. Paths outside the skill are rejected. On a
+later turn, revoked/ineligible skill bodies are withheld from the model
+projection, including user-activated skill messages.
 
 ## Runtime configuration
 
@@ -140,14 +146,23 @@ paged `read_skill_resource` calls. Paths outside the skill are rejected.
   "auto_compact": true,
   "approval_mode": "configured",
   "approval_tools": ["delete_record"],
-  "state_max_encoded_bytes": 190000
+  "approval_timeout_seconds": 0,
+  "mcp_tools_exclude": [],
+  "state_max_encoded_bytes": 190000,
+  "thinking_tags": false
 }
 ```
 
 `tool_stream_mode` must be `delta` or `snapshot` explicitly. A tool is executed
 only after complete argument validation. Fixed prompt content over the context
 window is rejected without a useless summarization; history overflow compacts
-and retries once, never replaying completed tools.
+and retries once with a continuation message, preserving the current user
+request and every completed tool result without replaying a tool.
+
+`thinking_tags` defaults to `false`: only provider reasoning fields are shown as
+reasoning. Set it to `true` only for providers that emit literal `<think>` tags.
+`approval_timeout_seconds` defaults to 0 (no expiry); a positive value makes an
+approval expire and be rejected before execution.
 
 ## Offline package
 

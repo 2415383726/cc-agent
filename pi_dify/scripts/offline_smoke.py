@@ -24,7 +24,11 @@ class LLM:
                     {
                         "delta": {
                             "message": {"content": "offline ok"},
-                            "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
+                            "usage": {
+                                "prompt_tokens": 3,
+                                "completion_tokens": 2,
+                                "total_tokens": 5,
+                            },
                         }
                     }
                 ]
@@ -74,7 +78,13 @@ def main() -> int:
             }
         )
     )
-    return 0 if state.startswith("piagent-state:v1:") and terminal and terminal.get("status") == "completed" else 1
+    return (
+        0
+        if state.startswith("piagent-state:v1:")
+        and terminal
+        and terminal.get("status") == "completed"
+        else 1
+    )
 
 
 if __name__ == "__main__":

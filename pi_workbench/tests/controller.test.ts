@@ -104,19 +104,39 @@ describe('DifyController', () => {
 
   it('marks stop as best effort and calls the Dify stop endpoint', async () => {
     ;(transport.stopChat as any).mockResolvedValue(undefined)
-    ;(transport.streamChat as any).mockResolvedValue({
+    ;(transport.streamChat as any).mockImplementation(({ signal }: any) => ({
       events: (async function* () {
         yield { event: 'message', task_id: 'task_9', answer: 'partial' }
-        await new Promise((resolve) => setTimeout(resolve, 30))
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(resolve, 30)
+          signal.addEventListener('abort', () => {
+            clearTimeout(timer)
+            reject(new DOMException('aborted', 'AbortError'))
+          })
+        })
       })(),
-    })
+    }))
     const controller = new DifyController(config)
     const pending = controller.send('long request')
     await new Promise((resolve) => setTimeout(resolve, 5))
     await controller.stop()
     await pending
     expect(transport.stopChat).toHaveBeenCalledWith(expect.anything(), 'task_9')
-    expect(controller.view.terminal?.status).toBe('stopped')
+    expect(controller.view.terminal?.status).toBe('unknown')
+    expect(controller.view.terminal?.error?.code).toBe('stopped_unconfirmed')
+  })
+
+  it('records Dify output files for viewing and download', async () => {
+    mockStream([
+      { event: 'message', answer: 'done', task_id: 't', conversation_id: 'c' },
+      { event: 'message_file', id: 'f1', filename: 'report.pdf', url: 'https://files.test/report.pdf' },
+      { event: 'message_end' },
+    ])
+    const controller = new DifyController(config)
+    await controller.send('hi')
+    expect(controller.view.outputs).toHaveLength(1)
+    expect(controller.view.outputs[0].name).toBe('report.pdf')
+    expect(controller.view.outputs[0].url).toContain('report.pdf')
   })
 
   it('does not resend when the stream ends without a terminal state', async () => {

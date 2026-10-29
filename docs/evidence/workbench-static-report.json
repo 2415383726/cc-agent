@@ -1,22 +1,27 @@
 {
-  "generatedAt": "2026-10-29T01:35:07.230Z",
-  "fileCount": 3,
-  "totalBytes": 396258,
+  "generatedAt": "2026-10-29T01:52:33.603Z",
+  "fileCount": 4,
+  "totalBytes": 398353,
   "files": [
     {
-      "file": "assets/index-BkeELx-Q.js",
-      "bytes": 278752,
-      "sha256": "3c194bdd2b80f2cdab60d14d908aff218c9e76ff78911a157893f87564443723"
+      "file": "assets/index-C8ryFKvb.css",
+      "bytes": 117397,
+      "sha256": "3c81ef882b511afd64dad0176ba709ba1bcc406cfe414b79c75a9ab954961dec"
     },
     {
-      "file": "assets/index-CLJFP2j6.css",
-      "bytes": 117051,
-      "sha256": "ca8dc16f7810004dbce17a4f60fb106bc7dd0dc2b9ec0d0f8486cbaf4f9165f6"
+      "file": "assets/index-DT2txwyE.js",
+      "bytes": 280398,
+      "sha256": "907cf805672063e034340dedece9c8a50b5a6f154ceb24b824ed54e01026147f"
+    },
+    {
+      "file": "config.example.json",
+      "bytes": 103,
+      "sha256": "7008a60d7a76602a7713b401c510749728e77af423f7ec96c28eb8a79ae8c5ca"
     },
     {
       "file": "index.html",
       "bytes": 455,
-      "sha256": "54383dcc0b343a1d459e7ced4e6686d6961ec5528d0e6217dc60559990c7c4ed"
+      "sha256": "d28b1024fe54212f6588c9f6e44f1d089cbda0c3a96487446fe42efdc3205024"
     }
   ],
   "violations": []

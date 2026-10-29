@@ -30,6 +30,8 @@ class TextTurnTests(unittest.TestCase):
         terminal = last_terminal(outbox)
         self.assertEqual(terminal["status"], "completed")
         self.assertEqual(terminal["answer"], "Hello!")
+        self.assertEqual(terminal["state_summary"]["delivery_status"], "encoded")
+        self.assertGreater(terminal["state_summary"]["encoded_bytes"], 0)
         self.assertEqual(answer_text(outbox), "Hello!")
         state = last_state(outbox)
         self.assertTrue(state.startswith("piagent-state:v1:gzip-base64:"))
@@ -365,6 +367,126 @@ class OverflowTests(unittest.TestCase):
         self.assertEqual(len(session.model.llm.calls), 5)
         prompts = prompt_texts(session.model.llm, index=4)
         self.assertTrue(any("third question" in text for text in prompts))
+
+
+class NoReplayOverflowTests(unittest.TestCase):
+    def test_overflow_after_a_tool_does_not_replay_the_tool(self) -> None:
+        tool = {
+            "name": "write",
+            "description": "Write once",
+            "parameters": {"type": "object", "properties": {}},
+        }
+        session = FakeSession(
+            [
+                tool_chunks([{"name": "write"}]),
+                Exception("maximum context length exceeded"),
+                text_chunks("Summary after the tool"),
+                text_chunks("Continued with the preserved tool result"),
+            ],
+            tool_responses=[[{"type": "text", "message": "written once"}]],
+        )
+        outbox = run_turn(
+            session,
+            base_parameters(
+                query="write it",
+                tools=[tool],
+                runtime={"auto_compact": False, "compaction_enabled": True},
+            ),
+        )
+        self.assertEqual(last_terminal(outbox)["status"], "completed")
+        self.assertEqual(len(session.tool.calls), 1)
+        self.assertEqual(len(session.model.llm.calls), 4)
+        prompts = prompt_texts(session.model.llm, index=3)
+        self.assertTrue(any("write it" in text for text in prompts))
+        self.assertTrue(any("written once" in text for text in prompts))
+        self.assertTrue(any("context was compacted" in text for text in prompts))
+
+
+class NestedPendingTests(unittest.TestCase):
+    def test_new_pending_created_during_approval_resume_is_persisted(self) -> None:
+        write = {
+            "name": "write",
+            "description": "Write",
+            "parameters": {"type": "object", "properties": {}},
+        }
+        ask = tool_chunks(
+            [
+                {
+                    "name": "ask_user",
+                    "arguments": json.dumps(
+                        {"questions": [{"id": "next", "question": "Continue?", "type": "text"}]}
+                    ),
+                }
+            ]
+        )
+        session = FakeSession(
+            [tool_chunks([{"name": "write"}]), ask],
+            tool_responses=[[{"type": "text", "message": "written"}]],
+        )
+        config = {"approval_mode": "configured", "approval_tools": ["write"]}
+        first = run_turn(session, base_parameters(query="write", tools=[write], runtime=config))
+        pending = decode_state(last_state(first)).state.pending
+        second = run_turn(
+            session,
+            base_parameters(
+                query="",
+                tools=[write],
+                runtime=config,
+                state=last_state(first),
+                interaction={
+                    "type": "approval",
+                    "pending_id": pending["id"],
+                    "decision": "approve",
+                    "scope": "once",
+                },
+            ),
+        )
+        self.assertEqual(last_terminal(second)["status"], "awaiting_user")
+        loaded = decode_state(last_state(second))
+        self.assertEqual(loaded.state.pending["kind"], "ask_user")
+
+    def test_approval_cannot_target_a_different_tool(self) -> None:
+        write = {
+            "name": "write",
+            "description": "Write",
+            "parameters": {"type": "object", "properties": {}},
+        }
+        other = {
+            "name": "other",
+            "description": "Other",
+            "parameters": {"type": "object", "properties": {}},
+        }
+        session = FakeSession(
+            [tool_chunks([{"name": "write"}]), text_chunks("should not run")], tool_responses=[]
+        )
+        config = {"approval_mode": "configured", "approval_tools": ["write", "other"]}
+        first = run_turn(
+            session, base_parameters(query="write", tools=[write, other], runtime=config)
+        )
+        state_text = last_state(first)
+        from pi_agent.state import decode_state as decode
+
+        state = decode(state_text).state
+        state.pending["tool_name"] = "other"
+        from pi_agent.state import encode_state
+
+        tampered = encode_state(state)
+        second = run_turn(
+            session,
+            base_parameters(
+                query="",
+                tools=[write, other],
+                runtime=config,
+                state=tampered.value,
+                interaction={
+                    "type": "approval",
+                    "pending_id": state.pending["id"],
+                    "decision": "approve",
+                },
+            ),
+        )
+        self.assertEqual(last_terminal(second)["status"], "failed")
+        self.assertEqual(len(session.tool.calls), 0)
 
 
 if __name__ == "__main__":

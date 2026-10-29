@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 SCHEMA = "piagent.display.v1"
@@ -151,6 +151,10 @@ class DisplayEvents:
         return event
 
 
+def log_envelope(event: dict[str, Any], *, is_error: bool = False) -> dict[str, Any]:
+    return {"type": "log", "label": "Pi event", "data": {"piagent": event}, "is_error": is_error}
+
+
 def terminal_status(status: str) -> str:
     return status if status in TERMINAL_STATUSES else "unknown"
 
@@ -161,6 +165,7 @@ def run_state_payload(
     stats: dict[str, Any],
     answer: str = "",
     state_ref: dict[str, Any] | None = None,
+    state_summary: dict[str, Any] | None = None,
     error: dict[str, Any] | None = None,
     pending: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -169,6 +174,8 @@ def run_state_payload(
         "stats": stats,
         "answer": clip(answer, 16_000),
     }
+    if state_summary:
+        payload["state_summary"] = state_summary
     if state_ref:
         payload["state_ref"] = state_ref
     if error:
@@ -202,11 +209,3 @@ def public_state_ref(
         "compacted": compacted,
         "storage_error": error,
     }
-
-
-@dataclass(slots=True)
-class OutboxMessage:
-    """A Dify-native message request produced by the runtime, not an SDK type."""
-
-    kind: str
-    payload: dict[str, Any] = field(default_factory=dict)

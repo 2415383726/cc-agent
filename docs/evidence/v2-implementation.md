@@ -23,9 +23,9 @@ providers, real remote MCP services or an arm64 host remain partially verified.
 
 | Check | Result |
 | --- | --- |
-| `python -m unittest discover -s pi_dify/tests` | **61 passed** |
-| `npm run test` (workbench) | **27 passed** |
-| `npm run build` | success, 3 static files, ~396 KB |
+| `python -m unittest discover -s pi_dify/tests` | **73 passed** |
+| `npm run test` (workbench) | **28 passed** |
+| `npm run build` | success, 4 static files, ~398 KB |
 | `npm run check:static` | **0 violations** (no external runtime assets / Pi SDK/Node backend markers) |
 | Static replay browser render | process, questionnaire and approval screenshots |
 | amd64 offline package | built, `--no-index` install, fake-Dify smoke **completed** |
@@ -53,8 +53,8 @@ python3 scripts/verify_offline_package.py dist/pi_dify-0.1.0-offline-linux-arm64
 
 | Architecture | File | Bytes | SHA-256 |
 | --- | --- | ---: | --- |
-| amd64 | `pi_dify-0.1.0-offline-linux-amd64.difypkg` | 26,283,527 | `89f373f35094943c0d58be31aa21dfa50c5572f55e340f65e6c9420650e0f973` |
-| arm64 | `pi_dify-0.1.0-offline-linux-arm64.difypkg` | 25,301,257 | `7f90a1456a80f5ac3c25cc148c83708a9473760ce9478a181f9024b8ec490362` |
+| amd64 | `pi_dify-0.1.0-offline-linux-amd64.difypkg` | 26,462,105 | `91222ca130c852805fca58d19002934ff21bd2ac2eaae962873a68ebec879a04` |
+| arm64 | `pi_dify-0.1.0-offline-linux-arm64.difypkg` | 25,479,834 | `18f00a4a41b91e62b968879261e91bb520694040abc810fac6fcc3cf0544991c` |
 
 Both packages contain 72 architecture-appropriate wheels, `VERSION_MANIFEST.json`,
 third-party notices/license texts, the plugin source, `requirements.lock.txt` and
@@ -107,24 +107,39 @@ verified here.
 
 | Ticket | Core | Local evidence | Platform gap |
 | --- | --- | --- | --- |
-| 01 Vue extraction/replay | yes | static build, 27 tests, three browser screenshots, Leyline NOTICE/license | none material; full third-party asset audit is limited to declared dependencies |
+| 01 Vue extraction/replay | yes | static build, 28 tests, three browser screenshots, Leyline NOTICE/license, recorded hard-coupling boundary (Leyline App.vue/controller coupled to its backend) | full third-party asset audit is limited to declared dependencies |
 | 02 Dify stream penetration | yes | transport/controller/reducer tests with mocked Dify SSE, history extraction, final-answer merge | real Dify agent-log nesting and history retention not tested |
 | 03 Pi Q&A + cross-turn | yes | real pinned Pi 0.6.0 harness, 61 tests, two-turn state round-trips, isolated worker thread | real Dify SDK context / provider identity not tested |
 | 04 dual-arch offline bootstrap | yes | amd64 offline install+smoke; arm64 resolution | arm64 execution and Dify installer offline behavior not tested |
-| 05 Dify tools/cards/attachments | yes | fake Dify tools, pairing, repeated-halves/JSON dedupe, artifacts, generic card | real Dify tool response shapes and blob forwarding not tested |
+| 05 Dify tools/cards/attachments | yes | fake Dify tools, pairing, repeated-halves/JSON dedupe, artifacts, generic card, Dify `message_file` output links | real Dify blob/file response shapes not tested |
 | 06 model stream compatibility | yes | delta/snapshot/interleaved/bad JSON/reasoning/non-stream fallback tests | real provider chunk samples not collected |
 | 07 state/history recovery | yes | codec, 190KB trimming, pending-group retention, corrupt/oversized rejection, stale history test | real Dify variable read-back/history logs not tested |
-| 08 skills lifecycle | yes | discovery/eligibility/activation/resource paging/traversal tests, UI cards | real application YAML and Dify history activity not tested |
+| 08 skills lifecycle | yes | discovery/eligibility/activation/resource paging/traversal tests, revoked-skill body withholding, UI cards | real application YAML and Dify history activity not tested |
 | 09 remote MCP identity/artifacts | yes | per-run sessions, app-only filter, timeout/unknown, one-time blob delivery, isolation test | no real remote MCP server; headers/identity only fake-tested |
 | 10 budgets/guards/stats | yes | model/tool/time/token ledger, duplicate and consecutive-error guards, split reported/estimated usage | real provider usage matrix not tested |
-| 11 compaction/overflow | yes | Pi compaction events in UI; single overflow recovery test with summarization and no tool replay | real provider overflow and long-context behavior not tested |
-| 12 AskUser round-trip | yes | deterministic gate, zero tail execution, cross-turn answer, duplicate/expired/invalid checks, cancel, UI form | real Dify input mapping and refresh evidence not tested |
-| 13 approval/policy re-check | yes | separate approval pending, scope grant, reject/approve, current tool/budget re-check, single result replacement | real Dify policy/permission context not tested |
+| 11 compaction/overflow | yes | Pi compaction events in UI; single overflow recovery with continuation message; a tool executed before overflow is invoked exactly once and its result is preserved | real provider overflow and long-context behavior not tested |
+| 12 AskUser round-trip | yes | deterministic gate, zero tail execution, cross-turn answer, duplicate/expired/invalid checks, cancel, UI form, a new pending created during approval resume is persisted | real Dify input mapping and refresh evidence not tested |
+| 13 approval/policy re-check | yes | separate approval pending, scope grant, reject/approve, current tool/budget re-check, original call name/arguments/source identity check, single result replacement, optional expiry | real Dify policy/permission context not tested |
 | 14 MCP resume/unknown | yes | remote pending has no connection/secrets, current-run reconnect path, unknown write preservation, one-time artifacts | no real remote unknown-side-effect service |
-| 15 stop/failure/security | yes | cooperative abort signal, safe `agent_failed` JSON, secret redaction, stop API wiring, state-save failure test | real Dify stop/disconnect propagation not tested |
+| 15 stop/failure/security | yes | cooperative abort signal, contract-valid `agent_failed` events with run id, secret redaction, stop API wiring, stop without server confirmation shows `unknown` (not a trusted stopped state), state-save failure test | real Dify stop/disconnect propagation not tested |
 | 16 compatibility/static release | yes | manifest minimum 1.7.0, 1.15.0 target documented, explicit node mapping, static report, old plugin untouched | real 1.7.0/1.15.0 runs not performed |
 | 17 amd64 acceptance | partial | offline package + fake Dify smoke only | no target Dify, no controlled real model/tools, no full V01–V19 business run |
 | 18 arm64 acceptance | partial | package + aarch64 wheel resolution only | no arm64 execution, Dify runner or business evidence |
+
+## Review fixes applied
+
+The two-axis review found and this branch fixed: (1) failure events lacked
+`schema_version`/`run_id`/`seq` and were ignored by the workbench; (2) overflow
+recovery dropped the current user/tool group instead of retrying with a
+continuation (the earlier probe could replay a write); (3) an approval resume
+discarded a newly created pending; (4) approval looked up a tool by name only,
+so a tampered pending could target a different operation; (5) revoked
+user-activated skill content was not withheld from the model projection;
+(6) the workbench labelled a requested stop as a trusted `stopped` terminal;
+(7) `state_summary` was produced but not delivered; (8) Dify output files had no
+view/download link; (9) `mcp_tools_exclude` was parsed as a string; (10) the
+Dify `TextPromptMessageContent.data` shape was not read. Regression tests cover
+each runtime/contract fix.
 
 ## Gaps and risks (explicit)
 

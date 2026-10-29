@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import unittest
-from pathlib import Path
 
 from _support import ROOT
 
@@ -62,7 +61,11 @@ class DispatchTests(unittest.TestCase):
         )
         self.assertEqual(
             self.dispatch({"type": "blob", "blob": b"data", "meta": {"filename": "a"}}),
-            ("blob", b"data", {"filename": "a", "output_filename": "a", "mime_type": "application/octet-stream"}),
+            (
+                "blob",
+                b"data",
+                {"filename": "a", "output_filename": "a", "mime_type": "application/octet-stream"},
+            ),
         )
         log = self.dispatch(
             {"type": "log", "label": "Pi event", "data": {"piagent": {"type": "run.start"}}}
@@ -135,6 +138,12 @@ class ConfigurationContractTests(unittest.TestCase):
         self.assertEqual(request.interaction["type"], "cancel")
         self.assertEqual(request.conversation_id, "conv")
         self.assertEqual(request.runtime.max_model_requests, 24)
+
+    def test_mcp_tools_exclude_is_a_real_list(self) -> None:
+        from pi_agent.config import RuntimeConfig
+
+        config = RuntimeConfig.from_value({"mcp_tools_exclude": ["write", "delete"]})
+        self.assertEqual(config.mcp_tools_exclude, ("write", "delete"))
 
 
 if __name__ == "__main__":

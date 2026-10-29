@@ -6,7 +6,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from .contract import DisplayEvents, clip, clip_arguments
+from .contract import DisplayEvents, clip, clip_arguments, log_envelope
 
 TEXT_EVENT_TYPES = {"text_delta", "thinking_delta"}
 
@@ -221,7 +221,7 @@ class DisplayObserver:
         event = self.events.make(event_type, **fields)
         recorded = self.events.record(event)
         if recorded is not None:
-            self.emit({"type": "log", "label": "Pi event", "data": {"piagent": recorded}})
+            self.emit(log_envelope(recorded))
 
 
 def _message_text(message: Any) -> str:
