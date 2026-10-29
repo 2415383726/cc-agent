@@ -130,7 +130,7 @@ it('keeps generated visualizations inert until a complete native answer has a co
   wrapper.unmount()
 })
 
-it('refuses to run when the required sandbox response policy is missing', async () => {
+it.each(['completed', 'unknown'])('refuses to run when the required sandbox response policy is missing (%s)', async (runStatus) => {
   const { vi } = await import('vitest')
   const { flushPromises } = await import('@vue/test-utils')
   vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 Chrome/154.0.0.0')
@@ -139,10 +139,15 @@ it('refuses to run when the required sandbox response policy is missing', async 
   try {
     const wrapper = mount(TranscriptEntry, { props: { entry: {
       id: 'a1', kind: 'message', role: 'assistant', ts: 1, streaming: false,
-      answerComplete: true, runStatus: 'completed',
+      answerComplete: true, runStatus,
       text: '```pi-visualize\n<section data-pi-visualize="1" data-kit-version="1" data-title="排队演示" data-description="调参观察变化"></section>\n```',
     } as any } })
     await flushPromises()
+    if (runStatus === 'unknown') {
+      expect(fetchMock).not.toHaveBeenCalled()
+      await wrapper.get('button').trigger('click')
+      await flushPromises()
+    }
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).toContain('部署尚未启用作品网络隔离')
     expect(wrapper.find('iframe').exists()).toBe(false)
@@ -177,6 +182,36 @@ it('preserves a single frame while expanding and ignores messages from other fra
     expect(wrapper.find('iframe').element).toBe(frame)
     await wrapper.get('.pi-visualize-actions button:last-child').trigger('click')
     expect(wrapper.find('iframe').exists()).toBe(false)
+    wrapper.unmount()
+  } finally { vi.restoreAllMocks(); vi.unstubAllGlobals() }
+})
+
+it('opens a valid unconfirmed native artwork only after an explicit click, without changing its run status', async () => {
+  const { vi } = await import('vitest')
+  const { flushPromises } = await import('@vue/test-utils')
+  vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 Chrome/154.0.0.0')
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, headers: new Headers({ 'Connection-Allowlist': '()' }) })
+  vi.stubGlobal('fetch', fetchMock)
+  try {
+    const entry = { id: 'history-a', kind: 'message', role: 'assistant', ts: 1, streaming: false,
+      answerComplete: true, runStatus: 'unknown',
+      text: '```pi-visualize\n<section data-pi-visualize="1" data-kit-version="1" data-title="已保存作品" data-description="可本地操作"></section>\n```',
+    } as any
+    const wrapper = mount(TranscriptEntry, { props: { entry } })
+    await flushPromises()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(wrapper.find('iframe').exists()).toBe(false)
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('iframe').exists()).toBe(true)
+    expect(entry.runStatus).toBe('unknown')
+    expect(wrapper.text()).toContain('运行状态未确认')
+    for (const runStatus of ['failed', 'stopped', 'budget_exhausted']) {
+      await wrapper.setProps({ entry: { ...entry, runStatus } })
+      expect(wrapper.find('iframe').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('查看作品')
+    }
     wrapper.unmount()
   } finally { vi.restoreAllMocks(); vi.unstubAllGlobals() }
 })

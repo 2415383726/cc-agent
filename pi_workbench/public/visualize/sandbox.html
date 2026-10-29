@@ -4,7 +4,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; ; style-src 'unsafe-inline'; img-src data:; frame-src blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Pi 作品隔离环境</title>
-<style>html,body{margin:0;width:100%;height:100%;overflow:hidden}iframe{display:block;width:100%;height:100%;border:0}</style>
+<style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#0d0d0d}iframe{display:block;width:100%;height:100%;border:0}</style>
 </head><body><script>(() => {
   'use strict';
   let id = '', child = null, blob = '', initialized = false, count = 0, since = 0;
@@ -44,7 +44,7 @@
       const bg = color(data.theme?.background, '#0d0d0d'), fg = color(data.theme?.text, '#ececec');
       const csp = "default-src 'none'; script-src 'unsafe-inline'; script-src-attr 'none'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
       const html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="' + csp + '">' +
-        '<style>:root{--viz-bg:' + bg + ';--viz-text:' + fg + ';color-scheme:dark}*{box-sizing:border-box}body{margin:0;padding:8px;background:var(--viz-bg);color:var(--viz-text);font:14px/1.5 system-ui,sans-serif}button,input,select{font:inherit}svg,canvas{max-width:100%}:focus-visible{outline:2px solid #9b8cff;outline-offset:3px}@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}</style>' +
+        '<style>:root{--viz-bg:' + bg + ';--viz-text:' + fg + ';color-scheme:dark;background:var(--viz-bg)}*{box-sizing:border-box}body{margin:0;padding:8px;background:var(--viz-bg);color:var(--viz-text);font:14px/1.5 system-ui,sans-serif}button,input,select{font:inherit}svg,canvas{max-width:100%}:focus-visible{outline:2px solid #9b8cff;outline-offset:3px}@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}</style>' +
         '<script>(' + bridge.toString() + ')(' + JSON.stringify(id) + ')<' + '/script></head><body>' + data.source + '</body></html>';
       blob = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
       child = document.createElement('iframe');

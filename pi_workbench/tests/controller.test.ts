@@ -72,6 +72,7 @@ describe('DifyController', () => {
       expect(controller.view.entries.find((entry) => entry.kind === 'question')).toMatchObject({
         pendingId: 'q1', status: 'waiting',
       })
+      expect(controller.view.entries.filter((entry: any) => entry.role === 'assistant').map((entry: any) => entry.text)).toEqual(['waiting'])
       expect(transport.streamChat).not.toHaveBeenCalled()
     } finally {
       globalThis.Blob = blob

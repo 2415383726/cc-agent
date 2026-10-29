@@ -304,7 +304,12 @@ export class DifyController implements WorkbenchController {
       if (!value || ticket !== this._ticket) return
       const events = await eventsFromSavedState(value, conversationId)
       if (ticket !== this._ticket) return
-      for (const event of events) applyEvent(this.view, event)
+      for (const event of events) {
+        // Native platform messages already own historical answer content. A latest-state
+        // display snapshot can restore status/pending, but cannot insert another answer.
+        applyEvent(this.view, this._records.length && (event.type === 'run.state' || event.type === 'run.done')
+          ? { ...event, answer: '' } : event)
+      }
     } catch {
       if (ticket === this._ticket) this.view.warnings.push('无法读取当前 Pi 状态；未自动重发请求，请稍后刷新。')
     }

@@ -10,7 +10,11 @@ const ready = ref(false)
 const expanded = ref(false)
 const closed = ref(false)
 const height = ref(360)
-const canRun = computed(() => props.complete && props.status === 'completed' && !props.block.error)
+const manuallyRequested = ref(false)
+const canViewManually = computed(() => props.complete && !props.block.error &&
+  (!props.status || props.status === 'unknown'))
+const canRun = computed(() => props.complete && !props.block.error &&
+  (props.status === 'completed' || (manuallyRequested.value && canViewManually.value)))
 let ticket = 0
 let abort: AbortController | null = null
 let timer: ReturnType<typeof setTimeout> | undefined
@@ -24,7 +28,9 @@ const message = computed(() => {
     ? '此轮未自动运行作品；回答未完整收齐。'
     : '作品生成中，完整回答收齐后再展示。'
   if (props.block.error) return props.block.error
-  if (!canRun.value) return '此轮未自动运行作品；需要已完成的可信运行。'
+  if (!canRun.value) return canViewManually.value
+    ? '运行状态未确认；可点击查看已保存作品。'
+    : '此轮未自动运行作品；需要已完成的可信运行。'
   return error.value || (closed.value ? '作品已关闭。' : '正在准备交互作品…')
 })
 
@@ -114,7 +120,16 @@ function close() {
   closed.value = true
 }
 
-watch(() => [props.contentId, props.block.source, canRun.value], start, { immediate: true })
+function viewSavedArtwork() {
+  if (!canViewManually.value) return
+  manuallyRequested.value = true
+  void start()
+}
+
+watch(() => [props.contentId, props.block.source, props.complete, props.status], () => {
+  manuallyRequested.value = false
+  void start()
+}, { immediate: true })
 onBeforeUnmount(dispose)
 </script>
 
@@ -122,12 +137,16 @@ onBeforeUnmount(dispose)
   <section class="pi-visualize" :class="{ 'is-expanded': expanded }" :aria-label="block.title" :data-content-id="`${contentId}:${block.digest}`">
     <div class="pi-visualize-header">
       <strong>{{ block.title }}</strong>
-      <div v-if="frameUrl" class="pi-visualize-actions">
-        <button type="button" :aria-expanded="expanded" @click="expanded = !expanded">{{ expanded ? '收起' : '展开' }}</button>
-        <button type="button" @click="close">关闭作品</button>
+      <div v-if="frameUrl || (canViewManually && !manuallyRequested)" class="pi-visualize-actions">
+        <button v-if="canViewManually && !manuallyRequested" type="button" @click="viewSavedArtwork">查看作品</button>
+        <template v-if="frameUrl">
+          <button type="button" :aria-expanded="expanded" @click="expanded = !expanded">{{ expanded ? '收起' : '展开' }}</button>
+          <button type="button" @click="close">关闭作品</button>
+        </template>
       </div>
     </div>
     <p class="pi-visualize-description">{{ block.description }}</p>
+    <p v-if="canViewManually && manuallyRequested" class="pi-visualize-status">运行状态未确认；仅查看已保存的本地作品。</p>
     <p v-if="!ready" class="pi-visualize-status" role="status">{{ message }}</p>
     <iframe v-if="frameUrl" ref="frame" :src="frameUrl" :title="block.title"
       sandbox="allow-scripts" credentialless referrerpolicy="no-referrer"
