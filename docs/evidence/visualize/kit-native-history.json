@@ -1,0 +1,119 @@
+{
+  "browser": "154.0.8037.57",
+  "conversation_id": "620c7d61-d0ff-4bce-8a97-b392fde3fc6f",
+  "checks": [
+    "two real Pi native answers each contain a valid >16000-character artwork and all 360 meaningful synthetic records",
+    "new HTTP history response hashes match each recorded SSE answer exactly",
+    "each artwork keeps a distinct platform-message/content identity and requires explicit view because Dify retained no trusted logs",
+    "real restored local D3/Lucide artwork updates controls and expands without new frame",
+    "refresh and clean browser context restore identical source hashes and initial parameters",
+    "old and revised artwork remain separately accessible",
+    "switching conversation removes all artwork frames"
+  ],
+  "stages": [
+    {
+      "name": "first-real-history",
+      "identities": [
+        "620c7d61-d0ff-4bce-8a97-b392fde3fc6f:60a4ba52-4688-4ac7-86d1-cca045c91e5f:0:df4ad319ea724b06",
+        "620c7d61-d0ff-4bce-8a97-b392fde3fc6f:18dda298-ec6c-484c-864c-296e8021a178:0:dd09484bf837269e"
+      ],
+      "hashes": [
+        {
+          "message_id": "60a4ba52-4688-4ac7-86d1-cca045c91e5f",
+          "answer_chars": 30664,
+          "answer_bytes": 31647,
+          "answer_sha256": "09fd2ea7cd484a0cc33575b7268ce737b0b2445afc6aa6ce2d972bff531a4ff4",
+          "source_chars": 30644,
+          "source_bytes": 31627,
+          "source_sha256": "2a2301aa2a70d135f46ed59d68127622d9be9a95a34bca17c08190bb0565a50a",
+          "synthetic_records": 360,
+          "agent_thoughts_count": 0
+        },
+        {
+          "message_id": "18dda298-ec6c-484c-864c-296e8021a178",
+          "answer_chars": 30553,
+          "answer_bytes": 31346,
+          "answer_sha256": "b69bffacc254e3eb0eab21aba6da36f8f6a45b5c89391f8e84ffc8cb5f444015",
+          "source_chars": 30533,
+          "source_bytes": 31326,
+          "source_sha256": "0811d0b51134c5441ce13d19b1d7ee0c97cd7ca667ec636833be1c2b68c473e0",
+          "synthetic_records": 360,
+          "agent_thoughts_count": 0
+        }
+      ],
+      "auto_frame_count": 0
+    },
+    {
+      "name": "after-refresh",
+      "identities": [
+        "620c7d61-d0ff-4bce-8a97-b392fde3fc6f:60a4ba52-4688-4ac7-86d1-cca045c91e5f:0:df4ad319ea724b06",
+        "620c7d61-d0ff-4bce-8a97-b392fde3fc6f:18dda298-ec6c-484c-864c-296e8021a178:0:dd09484bf837269e"
+      ],
+      "hashes": [
+        {
+          "message_id": "60a4ba52-4688-4ac7-86d1-cca045c91e5f",
+          "answer_chars": 30664,
+          "answer_bytes": 31647,
+          "answer_sha256": "09fd2ea7cd484a0cc33575b7268ce737b0b2445afc6aa6ce2d972bff531a4ff4",
+          "source_chars": 30644,
+          "source_bytes": 31627,
+          "source_sha256": "2a2301aa2a70d135f46ed59d68127622d9be9a95a34bca17c08190bb0565a50a",
+          "synthetic_records": 360,
+          "agent_thoughts_count": 0
+        },
+        {
+          "message_id": "18dda298-ec6c-484c-864c-296e8021a178",
+          "answer_chars": 30553,
+          "answer_bytes": 31346,
+          "answer_sha256": "b69bffacc254e3eb0eab21aba6da36f8f6a45b5c89391f8e84ffc8cb5f444015",
+          "source_chars": 30533,
+          "source_bytes": 31326,
+          "source_sha256": "0811d0b51134c5441ce13d19b1d7ee0c97cd7ca667ec636833be1c2b68c473e0",
+          "synthetic_records": 360,
+          "agent_thoughts_count": 0
+        }
+      ],
+      "auto_frame_count": 0
+    },
+    {
+      "name": "fresh-context-no-cookies-cache-storage",
+      "identities": [
+        "620c7d61-d0ff-4bce-8a97-b392fde3fc6f:60a4ba52-4688-4ac7-86d1-cca045c91e5f:0:df4ad319ea724b06",
+        "620c7d61-d0ff-4bce-8a97-b392fde3fc6f:18dda298-ec6c-484c-864c-296e8021a178:0:dd09484bf837269e"
+      ],
+      "hashes": [
+        {
+          "message_id": "60a4ba52-4688-4ac7-86d1-cca045c91e5f",
+          "answer_chars": 30664,
+          "answer_bytes": 31647,
+          "answer_sha256": "09fd2ea7cd484a0cc33575b7268ce737b0b2445afc6aa6ce2d972bff531a4ff4",
+          "source_chars": 30644,
+          "source_bytes": 31627,
+          "source_sha256": "2a2301aa2a70d135f46ed59d68127622d9be9a95a34bca17c08190bb0565a50a",
+          "synthetic_records": 360,
+          "agent_thoughts_count": 0
+        },
+        {
+          "message_id": "18dda298-ec6c-484c-864c-296e8021a178",
+          "answer_chars": 30553,
+          "answer_bytes": 31346,
+          "answer_sha256": "b69bffacc254e3eb0eab21aba6da36f8f6a45b5c89391f8e84ffc8cb5f444015",
+          "source_chars": 30533,
+          "source_bytes": 31326,
+          "source_sha256": "0811d0b51134c5441ce13d19b1d7ee0c97cd7ca667ec636833be1c2b68c473e0",
+          "synthetic_records": 360,
+          "agent_thoughts_count": 0
+        }
+      ],
+      "auto_frame_count": 0
+    }
+  ],
+  "posts": [],
+  "externalRequests": [],
+  "pageErrors": [],
+  "screenshots": [
+    "screenshots/pi-visualize-kit-real-history-light.png",
+    "screenshots/pi-visualize-kit-real-history-fresh-dark.png"
+  ],
+  "capture_note": "Final captures wait for both D3 paths and host ready; fresh-context expanded capture waits 400ms for layout/paint. An earlier incomplete capture was discarded."
+}

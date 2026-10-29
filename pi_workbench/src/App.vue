@@ -30,6 +30,12 @@ if (initialScenario) replay.loadScenario(initialScenario)
 const showReplayPanel = ref(false)
 const transcriptEl = ref<HTMLElement | null>(null)
 const appTitle = ref('Pi Agent 工作台')
+const lightTheme = ref(document.documentElement.dataset.theme === 'light')
+
+function toggleTheme() {
+  lightTheme.value = !lightTheme.value
+  document.documentElement.dataset.theme = lightTheme.value ? 'light' : 'dark'
+}
 
 const active = computed<WorkbenchController>(() =>
   mode.value === 'dify' ? (controller as WorkbenchController) : (replay as WorkbenchController),
@@ -184,6 +190,7 @@ function entryKey(entry: WorkbenchEntry): string {
       </div>
 
       <div class="pi-header-actions">
+        <button type="button" class="pi-button pi-button-ghost" :aria-label="lightTheme ? '切换为深色主题' : '切换为浅色主题'" @click="toggleTheme">{{ lightTheme ? '深色' : '浅色' }}</button>
         <template v-if="mode === 'dify'">
           <select
             class="pi-conversation-select"

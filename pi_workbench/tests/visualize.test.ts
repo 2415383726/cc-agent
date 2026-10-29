@@ -1,8 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { answerSegments } from '../src/projection/visualize'
+import nativeExample from '../examples/visualize-native.html?raw'
+import controlsExample from '../examples/visualize-controls.html?raw'
 
 const fragment = '<section data-pi-visualize="1" data-kit-version="1" data-title="排队演示" data-description="拖动到达速度观察排队人数。"><svg></svg><script>let n=1</script></section>'
 const block = (html = fragment) => `\`\`\`pi-visualize\n${html}\n\`\`\``
+
+it('accepts the complete native author example through the public answer parser', () => {
+  expect(answerSegments(block(nativeExample.trim()))[0]).toMatchObject({ block: { libraries: [], error: '' } })
+})
+
+it('accepts the complete D3 and controls author example with only declared local libraries', () => {
+  expect(answerSegments(block(controlsExample.trim()))[0]).toMatchObject({ block: { libraries: ['d3', 'lucide'], error: '' } })
+})
 
 describe('assistant answer content', () => {
   it('segments a dedicated closed block while keeping ordinary code inert', () => {
@@ -28,10 +38,19 @@ it('rejects unclosed fences, unsupported versions and malformed fragment roots w
     block(fragment.replace('<svg>', '<template><template><img src="https://remote.invalid/pixel"></template></template><svg>')),
     block(fragment.replace('<svg>', '<style>@import "https://remote.invalid/a.css";</style><svg>')),
     block(fragment.replace('<svg>', '<svg><image href="https://remote.invalid/x.svg"/></svg><svg>')),
-    block(fragment.replace('data-kit-version="1"', 'data-kit-version="1" data-libraries="d3"')),
+    block(fragment.replace('data-kit-version="1"', 'data-kit-version="1" data-libraries="chartjs"')),
   ]) {
     const artifact = answerSegments(source).find((part) => part.kind === 'visualize') as any
     expect(artifact?.block.error, source).toBeTruthy()
+  }
+})
+
+it('accepts only the versioned host library identifiers without resource URLs', () => {
+  const supported = fragment.replace('data-kit-version="1"', 'data-kit-version="1" data-libraries="d3 lucide"')
+  expect(answerSegments(block(supported))[0]).toMatchObject({ block: { libraries: ['d3', 'lucide'], error: '' } })
+  for (const name of ['D3', 'd3@7.9.0', 'https://remote.invalid/library.js', 'lucide unknown']) {
+    const source = fragment.replace('data-kit-version="1"', `data-kit-version="1" data-libraries="${name}"`)
+    expect((answerSegments(block(source))[0] as any).block.error).toContain('本地库')
   }
 })
 
