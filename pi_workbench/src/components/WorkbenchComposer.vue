@@ -68,15 +68,15 @@ function removeFile(index: number) {
     <div v-if="files.length || uploading" class="pi-file-chips pi-composer-files">
       <span v-for="(file, index) in files" :key="file.id || index" class="pi-file-chip">
         {{ file.name || file.id }}
-        <button type="button" class="pi-chip-remove" :aria-label="`Remove ${file.name || 'file'}`" @click="removeFile(index)">×</button>
+        <button type="button" class="pi-chip-remove" :aria-label="`移除 ${file.name || '文件'}`" @click="removeFile(index)">×</button>
       </span>
-      <span v-if="uploading" class="pi-file-chip">Uploading…</span>
+      <span v-if="uploading" class="pi-file-chip">上传中…</span>
     </div>
     <div class="pi-composer-row">
       <button
         type="button"
         class="pi-icon-button"
-        title="Attach a file"
+        title="添加附件"
         :disabled="running || uploading"
         @click="fileInput?.click()"
       >
@@ -87,9 +87,9 @@ function removeFile(index: number) {
         v-model="draft"
         class="pi-composer-input"
         rows="1"
-        :placeholder="disabled ? 'Answer the pending question or approval above' : 'Ask the Pi agent…'"
+        :placeholder="disabled ? '请先回答上方的问题或审批' : '向 Pi Agent 提问…'"
         :disabled="disabled"
-        aria-label="Message"
+        aria-label="消息"
         @keydown="onKeydown"
       ></textarea>
       <button
@@ -99,7 +99,7 @@ function removeFile(index: number) {
         :disabled="stopping"
         @click="emit('stop')"
       >
-        {{ stopping ? 'Stopping…' : 'Stop' }}
+        {{ stopping ? '停止中…' : '停止' }}
       </button>
       <button
         v-else
@@ -108,11 +108,11 @@ function removeFile(index: number) {
         :disabled="!canSend"
         @click="submit"
       >
-        Send
+        发送
       </button>
     </div>
     <p class="pi-composer-hint">
-      Enter to send · Shift+Enter for a new line · one active request per conversation
+      回车发送 · Shift+回车换行 · 每个会话同时只有一个活动请求
     </p>
   </div>
 </template>

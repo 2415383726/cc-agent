@@ -23,7 +23,7 @@ export class ReplayController implements WorkbenchController {
     connected: true,
     error: '',
     conversationId: 'replay',
-    conversations: [{ id: 'replay', name: 'Replay scenario', updatedAt: 0 }],
+    conversations: [{ id: 'replay', name: '回放场景', updatedAt: 0 }],
     loadingHistory: false,
     hasMore: false,
     firstId: '',
@@ -54,13 +54,13 @@ export class ReplayController implements WorkbenchController {
     const query = String(text || '').trim()
     if (!query) return
     addOptimisticUser(this.view, query, files)
-    this._append('note', { text: 'Replay mode: no Dify request or model call was made.', tone: 'info' })
-    this._terminal('completed', 'Replay mode does not call a model. Choose a scenario to replay process events.')
+    this._append('note', { text: '回放模式：没有发起 Dify 请求或模型调用。', tone: 'info' })
+    this._terminal('completed', '回放模式不调用模型。请选择一个场景查看过程事件。')
   }
 
   async stop(): Promise<void> {
     this._append('activity', { activity: 'abort' })
-    this._terminal('stopped', 'Replay mode stopped locally.')
+    this._terminal('stopped', '回放模式已在本地停止。')
   }
 
   async upload(file: File): Promise<FileRef | null> {
@@ -89,16 +89,16 @@ export class ReplayController implements WorkbenchController {
     this._append('message.start', { message_id: `replay-answer-assistant-${this._seq}` })
     this._append('message.end', {
       message_id: `replay-answer-assistant-${this._seq}`,
-      text: 'Thanks — the questionnaire was submitted. This is a replay result; a real run resumes through Dify.',
+      text: '谢谢，问卷已提交。这是回放结果；真实运行会通过 Dify 继续。',
       stop_reason: 'stop',
       has_tool_calls: false,
     })
-    this._terminal('completed', 'Questionnaire answered in replay mode.')
+    this._terminal('completed', '已在回放模式提交问卷。')
   }
 
   async cancelQuestion(entry: QuestionEntry): Promise<void> {
     this._append('question.cancelled', { pending_id: entry.pendingId })
-    this._terminal('cancelled', 'The questionnaire was cancelled in replay mode.')
+    this._terminal('cancelled', '问卷已在回放模式取消。')
   }
 
   async submitApproval(
@@ -119,8 +119,8 @@ export class ReplayController implements WorkbenchController {
       status: decision === 'approve' ? 'unknown' : 'not_executed',
       result:
         decision === 'approve'
-          ? 'The replayed remote write returned no confirmation; the business outcome is unknown. Verify it before retrying.'
-          : 'Rejected; the operation was not executed.',
+          ? '回放中的远程写操作没有返回确认，业务结果未知。重试前请先核实。'
+          : '已拒绝；操作未执行。',
       execution_outcome: decision === 'approve' ? 'unknown' : 'not_executed',
       business_ref: decision === 'approve' ? `${entry.tool}:${entry.toolCallId}` : undefined,
     })
@@ -128,12 +128,12 @@ export class ReplayController implements WorkbenchController {
       message_id: `replay-approval-assistant-${this._seq}`,
       text:
         decision === 'approve'
-          ? 'The approval was applied in replay mode. A real remote result would be delivered by the next Dify turn; verify unknown write outcomes.'
-          : 'The operation was rejected and no change was made.',
+          ? '回放模式下已应用审批。真实远程结果会由下一轮 Dify 请求交付；未知写结果需要核实。'
+          : '操作已被拒绝，没有产生变更。',
       stop_reason: 'stop',
       has_tool_calls: false,
     })
-    this._terminal('completed', 'Approval decision replayed.')
+    this._terminal('completed', '审批决定已回放。')
   }
 
   async refreshConversations(): Promise<void> {
@@ -178,7 +178,7 @@ export class ReplayController implements WorkbenchController {
 }
 
 function formatAnswers(questionnaire: Questionnaire, answers: Record<string, string | string[]>): string {
-  const lines = ['Answers to the questionnaire:']
+  const lines = ['问卷答复：']
   for (const question of questionnaire.questions || []) {
     const value = answers[question.id]
     if (value == null) continue

@@ -79,7 +79,7 @@ export function parseInputs(text: string): Record<string, unknown> {
   if (!value) return {}
   const parsed = JSON.parse(value)
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('Inputs must be a JSON object.')
+    throw new Error('应用输入必须是 JSON 对象。')
   }
   return parsed as Record<string, unknown>
 }

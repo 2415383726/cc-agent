@@ -99,8 +99,8 @@ export async function streamChat(request: StreamChatRequest): Promise<DifyStream
         })),
     }),
   })
-  await assertOk(response, 'Dify chat request failed')
-  if (!response.body) throw new Error('Dify streaming response body is empty')
+  await assertOk(response, 'Dify 对话请求失败')
+  if (!response.body) throw new Error('Dify 流式响应为空')
   return { events: streamDifySse(response.body) }
 }
 
@@ -116,7 +116,7 @@ export async function stopChat(
       body: JSON.stringify({ user: config.user }),
     },
   )
-  await assertOk(response, 'Dify stop request failed')
+  await assertOk(response, 'Dify 停止请求失败')
 }
 
 export async function uploadFile(config: DifyConfig, file: File): Promise<UploadedFile> {
@@ -128,7 +128,7 @@ export async function uploadFile(config: DifyConfig, file: File): Promise<Upload
     headers: auth(config),
     body: form,
   })
-  await assertOk(response, 'Dify file upload failed')
+  await assertOk(response, 'Dify 文件上传失败')
   const data = await response.json()
   const mimeType = String(data.mime_type || data.mimeType || file.type || '')
   return {
@@ -163,7 +163,7 @@ export async function listMessages(
   const response = await fetch(`${base(config.baseUrl)}/messages?${params.toString()}`, {
     headers: auth(config),
   })
-  await assertOk(response, 'Dify history request failed')
+  await assertOk(response, 'Dify 历史请求失败')
   const payload = await response.json()
   const records: DifyMessageRecord[] = Array.isArray(payload.data)
     ? payload.data.slice().sort((left: any, right: any) => Number(left.created_at || 0) - Number(right.created_at || 0))
@@ -193,13 +193,13 @@ export async function listConversations(
   const response = await fetch(`${base(config.baseUrl)}/conversations?${params.toString()}`, {
     headers: auth(config),
   })
-  await assertOk(response, 'Dify conversation request failed')
+  await assertOk(response, 'Dify 会话请求失败')
   const payload = await response.json()
   return Array.isArray(payload.data)
     ? payload.data
         .map((item: any) => ({
           id: String(item.id || ''),
-          name: String(item.name || 'Untitled'),
+          name: String(item.name || '未命名会话'),
           updatedAt: Number(item.updated_at || item.created_at || 0),
         }))
         .filter((item: DifyConversation) => item.id)

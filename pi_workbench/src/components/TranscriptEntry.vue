@@ -4,6 +4,7 @@ import AskUserForm from './AskUserForm.vue'
 import ApprovalCard from './ApprovalCard.vue'
 import { escapeHtml, renderJson, renderMarkdown } from '../projection/markdown'
 import { toolStatusLabel, toolStatusTone } from '../projection/toolStatus'
+import { errorText, statusText } from '../projection/labels'
 import type { WorkbenchEntry } from '../projection/transcript'
 
 const props = defineProps<{ entry: WorkbenchEntry }>()
@@ -38,10 +39,13 @@ const resultHtml = computed(() =>
   props.entry.kind === 'tool' ? escapeHtml(props.entry.result || '') : '',
 )
 const skillExpanded = ref(false)
+const reasonText = (reason?: string) => (reason === 'context_overflow' ? '上下文溢出恢复' : reason || '')
+const deliveryText = (value: unknown) => (value === 'encoded' ? '已编码' : value === 'failed' ? '编码失败' : '未知')
+
 const reportedTokens = computed(() => {
-  if (props.entry.kind !== 'terminal') return 'unknown'
+  if (props.entry.kind !== 'terminal') return '未知'
   const usage = (props.entry.terminal.stats?.usage || {}) as Record<string, any>
-  return usage.reported?.total_tokens ?? 'unknown'
+  return usage.reported?.total_tokens ?? '未知'
 })
 </script>
 
@@ -51,7 +55,7 @@ const reportedTokens = computed(() => {
       <p class="pi-user-text">{{ entry.text }}</p>
       <div v-if="entry.files && entry.files.length" class="pi-file-chips">
         <span v-for="file in entry.files" :key="file.id || file.name" class="pi-file-chip">
-          {{ file.name || file.id || 'file' }}
+          {{ file.name || file.id || '文件' }}
           <small v-if="file.mime_type || file.mimeType">· {{ file.mime_type || file.mimeType }}</small>
         </span>
       </div>
@@ -59,14 +63,14 @@ const reportedTokens = computed(() => {
     <div v-else>
       <div class="markdown-body" v-html="assistantHtml"></div>
       <span v-if="entry.streaming" class="pi-streaming-dot" aria-label="streaming"></span>
-      <span v-if="entry.platformConfirmed" class="pi-platform-note">Dify final text merged</span>
+      <span v-if="entry.platformConfirmed" class="pi-platform-note">已合并 Dify 最终文本</span>
     </div>
   </div>
 
   <div v-else-if="entry.kind === 'reasoning'" class="thinking-block" :class="{ 'is-expanded': reasoningExpanded, 'is-streaming': entry.streaming }">
     <button type="button" class="thinking-trigger" :aria-expanded="reasoningExpanded" @click="reasoningExpanded = !reasoningExpanded">
       <span class="chevron" aria-hidden="true">›</span>
-      <span class="thinking-label">{{ entry.streaming ? 'Thinking…' : 'Thinking' }}</span>
+      <span class="thinking-label">{{ entry.streaming ? '思考中…' : '思考' }}</span>
     </button>
     <div class="thinking-expand-wrapper" :class="{ 'is-expanded': reasoningExpanded }">
       <div class="thinking-expand-inner">
@@ -95,26 +99,25 @@ const reportedTokens = computed(() => {
       <div class="tool-expand-inner">
         <div v-if="expanded" class="tool-expanded-body">
           <div class="tool-command-block">
-            <strong>Arguments</strong>
+            <strong>参数</strong>
             <pre v-html="argsHtml"></pre>
           </div>
           <div v-if="entry.updates.length" class="pi-tool-updates">
-            <strong>Updates</strong>
+            <strong>过程更新</strong>
             <pre v-for="(update, index) in entry.updates" :key="index">{{ update }}</pre>
           </div>
           <div v-if="entry.result" class="tool-result-block">
-            <strong>{{ entry.status === 'unknown' ? 'Unknown outcome' : 'Result' }}</strong>
+            <strong>{{ entry.status === 'unknown' ? '结果未知' : '结果' }}</strong>
             <pre>{{ resultHtml }}</pre>
           </div>
           <p v-if="entry.status === 'unknown'" class="pi-warning-text">
-            The external execution outcome is unknown. Verify the business result before retrying a
-            write operation.
+            外部执行结果未知。重试写操作前，请先核实业务结果。
           </p>
           <p v-if="entry.status === 'not_executed'" class="pi-muted">
-            This call was not executed. Its result was recorded so the model can continue safely.
+            本次调用未执行。已记录配对结果，模型可以安全继续。
           </p>
           <div v-if="entry.artifacts.length" class="pi-artifacts">
-            <strong>Outputs</strong>
+            <strong>产物</strong>
             <ul>
               <li v-for="artifact in entry.artifacts" :key="artifact.id">
                 <a v-if="artifact.url" :href="artifact.url" target="_blank" rel="noopener noreferrer">
@@ -126,7 +129,7 @@ const reportedTokens = computed(() => {
             </ul>
           </div>
           <p v-if="entry.businessRef" class="pi-muted pi-small">
-            Business reference: <code>{{ entry.businessRef }}</code>
+            业务引用：<code>{{ entry.businessRef }}</code>
           </p>
           <p v-if="entry.durationMs" class="pi-muted pi-small">{{ entry.durationMs }} ms</p>
         </div>
@@ -138,27 +141,27 @@ const reportedTokens = computed(() => {
     <button type="button" class="pi-skill-button" @click="skillExpanded = !skillExpanded">
       <span class="pi-skill-icon" aria-hidden="true">⌘</span>
       <span>
-        <strong>{{ entry.action === 'activate' ? 'Skill activated' : 'Skill resource read' }}:
+        <strong>{{ entry.action === 'activate' ? '技能已激活' : '技能资料读取' }}：
           {{ entry.skill }}</strong>
         <small v-if="entry.action === 'activate'">
-          {{ entry.activatedBy || 'model' }} · {{ entry.source || 'skill' }}
+          {{ entry.activatedBy === 'user' ? '用户' : '模型' }} · {{ entry.source === 'app' ? '应用技能' : '内置技能' }}
         </small>
         <small v-else>
-          {{ entry.path }}<template v-if="entry.totalChars"> · {{ entry.totalChars }} chars</template>
+          {{ entry.path }}<template v-if="entry.totalChars"> · {{ entry.totalChars }} 字符</template>
           <template v-if="entry.nextOffset !== undefined && entry.nextOffset !== null"> · next page at {{ entry.nextOffset }}</template>
         </small>
       </span>
-      <span class="pi-pill pi-pill-ok">real activity</span>
+      <span class="pi-pill pi-pill-ok">真实活动</span>
     </button>
   </div>
 
   <div v-else-if="entry.kind === 'compaction'" class="pi-activity-row">
     <span class="pi-activity-icon" aria-hidden="true">≡</span>
     <span>
-      <strong>{{ entry.phase === 'start' ? 'Compacting context' : 'Context compacted' }}</strong>
-      <small v-if="entry.tokensBefore"> · {{ entry.tokensBefore }} tokens before</small>
-      <small v-if="entry.summaryChars"> · summary {{ entry.summaryChars }} chars</small>
-      <small v-if="entry.reason"> · {{ entry.reason }}</small>
+      <strong>{{ entry.phase === 'start' ? '正在压缩上下文' : '上下文已压缩' }}</strong>
+      <small v-if="entry.tokensBefore"> · 压缩前 {{ entry.tokensBefore }} tokens</small>
+      <small v-if="entry.summaryChars"> · 摘要 {{ entry.summaryChars }} 字符</small>
+      <small v-if="entry.reason"> · {{ reasonText(entry.reason) }}</small>
     </span>
   </div>
 
@@ -182,18 +185,18 @@ const reportedTokens = computed(() => {
   <div v-else-if="entry.kind === 'terminal'" class="pi-terminal-row" :class="`pi-terminal-${entry.terminal.status}`">
     <span class="pi-terminal-dot" aria-hidden="true"></span>
     <div>
-      <strong>{{ entry.terminal.status.replace(/_/g, ' ') }}</strong>
+      <strong>{{ statusText(entry.terminal.status) }}</strong>
       <p v-if="entry.terminal.error" class="pi-terminal-error">
-        {{ entry.terminal.error.message || entry.terminal.error.code }}
+        {{ errorText(entry.terminal.error.code, entry.terminal.error.message || '运行失败。') }}
       </p>
       <p v-if="entry.terminal.stats" class="pi-muted pi-small">
-        model requests: {{ entry.terminal.stats.model_requests ?? '—' }} ·
-        tool calls: {{ entry.terminal.stats.tool_calls ?? '—' }} ·
-        reported tokens: {{ reportedTokens }}
+        模型请求：{{ entry.terminal.stats.model_requests ?? '—' }} ·
+        工具调用：{{ entry.terminal.stats.tool_calls ?? '—' }} ·
+        已报告 Token：{{ reportedTokens }}
       </p>
       <p v-if="entry.terminal.stateRef" class="pi-muted pi-small">
-        state revision {{ entry.terminal.stateRef.revision ?? '—' }} ·
-        {{ entry.terminal.stateRef.delivery_status || 'unknown' }}
+        状态版本：{{ entry.terminal.stateRef.revision ?? '—' }} ·
+        {{ deliveryText(entry.terminal.stateRef.delivery_status) }}
       </p>
     </div>
   </div>

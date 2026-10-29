@@ -159,7 +159,7 @@ describe('DifyController', () => {
     ])
     const controller = new DifyController(config)
     await controller.send('hi')
-    expect(controller.view.warnings.join(' ')).toContain('unsupported')
+    expect(controller.view.warnings.join(' ')).toContain('不受支持')
     expect(controller.view.entries.some((entry) => entry.kind === 'message' && (entry as any).text === 'Dify text')).toBe(true)
   })
 })

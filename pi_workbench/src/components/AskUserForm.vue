@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
+import { statusText } from '../projection/labels'
 import type { Question, Questionnaire } from '../projection/transcript'
 
 const props = defineProps<{
@@ -39,7 +40,7 @@ watch(
 )
 
 const waiting = computed(() => props.status === 'waiting')
-const title = computed(() => props.questionnaire.title || 'Question from the agent')
+const title = computed(() => props.questionnaire.title || '来自 Agent 的问题')
 const answeredEntries = computed(() =>
   (props.questionnaire.questions || []).map((question) => ({
     question,
@@ -75,21 +76,21 @@ function submit() {
     if (question.type === 'multi') {
       const selected = Array.isArray(value) ? value : []
       if (question.required && !selected.length) {
-        localError.message = `Please answer: ${question.question}`
+        localError.message = `请回答：${question.question}`
         return
       }
       if (selected.length) normalized[question.id] = selected
     } else if (question.type === 'text') {
       const text = String(value || '').trim()
       if (question.required && !text) {
-        localError.message = `Please answer: ${question.question}`
+        localError.message = `请回答：${question.question}`
         return
       }
       if (text) normalized[question.id] = text
     } else {
       const selected = String(value || '')
       if (question.required && !selected) {
-        localError.message = `Please answer: ${question.question}`
+        localError.message = `请回答：${question.question}`
         return
       }
       if (selected) normalized[question.id] = selected
@@ -100,7 +101,7 @@ function submit() {
 }
 
 function displayAnswer(question: Question, value: string | string[] | undefined): string {
-  if (value == null || value === '' || (Array.isArray(value) && !value.length)) return 'No answer'
+  if (value == null || value === '' || (Array.isArray(value) && !value.length)) return '未回答'
   if (question.type === 'text') return String(value)
   const options = new Map((question.options || []).map((option) => [option.id, option.label]))
   if (Array.isArray(value)) return value.map((item) => options.get(item) || item).join(', ')
@@ -116,7 +117,7 @@ function displayAnswer(question: Question, value: string | string[] | undefined)
         <strong>{{ title }}</strong>
         <p v-if="questionnaire.description" class="pi-muted">{{ questionnaire.description }}</p>
       </div>
-      <span class="pi-pill">{{ status === 'waiting' ? 'Waiting for you' : status }}</span>
+      <span class="pi-pill">{{ status === 'waiting' ? '等待回答' : statusText(status) }}</span>
     </header>
 
     <div v-if="waiting" class="pi-question-form">
@@ -130,7 +131,7 @@ function displayAnswer(question: Question, value: string | string[] | undefined)
           <span class="pi-question-index">{{ index + 1 }}</span>
           <span v-if="question.header" class="pi-question-header">{{ question.header }}</span>
           {{ question.question }}
-          <span v-if="question.required" class="pi-required" aria-label="required">*</span>
+          <span v-if="question.required" class="pi-required" aria-label="必填">*</span>
         </legend>
 
         <div v-if="question.type === 'single'" class="pi-options">
@@ -169,7 +170,7 @@ function displayAnswer(question: Question, value: string | string[] | undefined)
           class="pi-textarea"
           rows="3"
           :value="String(draft[question.id] || '')"
-          :placeholder="question.placeholder || 'Type your answer'"
+          :placeholder="question.placeholder || '请输入答案'"
           :maxlength="question.max_length || 4000"
           @input="(event) => setText(question.id, event)"
           @keydown.ctrl.enter.prevent="submit"
@@ -183,16 +184,16 @@ function displayAnswer(question: Question, value: string | string[] | undefined)
 
       <div class="pi-form-actions">
         <button type="button" class="pi-button pi-button-ghost" :disabled="submitting" @click="emit('cancel')">
-          Cancel
+          取消
         </button>
         <button type="button" class="pi-button pi-button-primary" :disabled="submitting" @click="submit">
-          {{ submitting ? 'Submitting…' : 'Submit answers' }}
+          {{ submitting ? '提交中…' : '提交答案' }}
         </button>
       </div>
     </div>
 
     <div v-else class="pi-answered">
-      <p v-if="status === 'cancelled'" class="pi-muted">This questionnaire was cancelled.</p>
+      <p v-if="status === 'cancelled'" class="pi-muted">该问卷已取消。</p>
       <dl v-else>
         <template v-for="item in answeredEntries" :key="item.question.id">
           <dt>{{ item.question.question }}</dt>

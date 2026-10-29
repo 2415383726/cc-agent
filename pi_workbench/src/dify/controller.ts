@@ -112,7 +112,7 @@ export class DifyController implements WorkbenchController {
       this.ui.error = safeError(error)
     }
     this._abort?.abort()
-    this.ui.stoppedNote = 'Stop requested; the result is confirmed only by a server terminal state.'
+    this.ui.stoppedNote = '已请求停止；只有服务端终态才能确认最终结果。'
   }
 
   async submitAnswers(
@@ -280,7 +280,7 @@ export class DifyController implements WorkbenchController {
     const last = this._records[this._records.length - 1]
     if (last?.answer) mergeFinalAnswer(this.view, String(last.answer))
     if (!events.length && this._records.length) {
-      this.view.warnings.push('No Pi process events were saved for this conversation history.')
+      this.view.warnings.push('该会话历史中没有保存 Pi 过程事件。')
     }
     if (!this.view.terminal && this._records.length) {
       this.view.terminal = {
@@ -289,7 +289,7 @@ export class DifyController implements WorkbenchController {
         error: {
           code: 'unknown',
           stage: 'history',
-          message: 'No trusted terminal state was saved for the latest turn.',
+          message: '最近一轮没有保存可信的终态。',
         },
       }
     }
@@ -297,7 +297,7 @@ export class DifyController implements WorkbenchController {
 
   private async _interaction(payload: Record<string, unknown>): Promise<void> {
     const inputs = { ...this.config.inputs, interaction: JSON.stringify(payload) }
-    await this._stream('Submit interaction', inputs, [])
+    await this._stream('提交交互', inputs, [])
   }
 
   private async _stream(
@@ -335,22 +335,22 @@ export class DifyController implements WorkbenchController {
         this.view.terminal = {
           status: 'unknown',
           answer: stopped
-            ? 'Stop was requested, but the server did not confirm a terminal state.'
+            ? '已请求停止，但服务器没有确认终态。'
             : '',
           error: {
             code: stopped ? 'stopped_unconfirmed' : 'unknown',
             stage: 'transport',
             message: stopped
-              ? 'Stop was requested, but no trusted server terminal state was received.'
-              : 'The stream ended without a trusted terminal state.',
+              ? '已请求停止，但没有收到可信的服务端终态。'
+              : '流在可信终态之前结束。',
           },
         }
         this.view.entries.push({
           id: `unconfirmed_${Date.now()}`,
           kind: 'note',
           text: stopped
-            ? 'Stop was requested; the outcome is unconfirmed. The request was not resent.'
-            : 'The stream ended before a trusted terminal state arrived. No request was resent.',
+            ? '已请求停止；结果未确认，未重新发送请求。'
+            : '流在可信终态到达前结束，未重新发送请求。',
           tone: 'warning',
           ts: Date.now(),
         })
@@ -362,17 +362,17 @@ export class DifyController implements WorkbenchController {
         if (!this.view.terminal) {
           this.view.terminal = {
             status: 'unknown',
-            answer: 'Stop was requested, but the server did not confirm a terminal state.',
+            answer: '已请求停止，但服务器没有确认终态。',
             error: {
               code: 'stopped_unconfirmed',
               stage: 'transport',
-              message: 'Stop was requested, but no trusted server terminal state was received.',
+              message: '已请求停止，但没有收到可信的服务端终态。',
             },
           }
           this.view.entries.push({
             id: `stop_${Date.now()}`,
             kind: 'note',
-            text: 'Stop was requested; the outcome is unconfirmed. The request was not resent.',
+            text: '已请求停止；结果未确认，未重新发送请求。',
             tone: 'warning',
             ts: Date.now(),
           })
@@ -382,7 +382,7 @@ export class DifyController implements WorkbenchController {
         if (!this.view.terminal) {
           this.view.terminal = {
             status: 'failed',
-            answer: 'The Dify request failed before a trusted terminal state arrived.',
+            answer: 'Dify 请求失败，未收到可信终态。',
             error: { code: 'transport_failed', stage: 'transport', message: safeError(error) },
           }
         }
@@ -405,13 +405,13 @@ export class DifyController implements WorkbenchController {
       if (!this.ui.conversations.some((item) => item.id === this.ui.conversationId)) {
         this.ui.conversations.push({
           id: this.ui.conversationId,
-          name: 'Current conversation',
+          name: '当前会话',
           updatedAt: Date.now(),
         })
       }
     }
     if (eventName === 'error') {
-      const message = safeText(payload?.message || 'The Dify stream reported an error.')
+      const message = safeText(payload?.message || 'Dify 流返回了错误。')
       this.ui.error = message
       if (!this.view.terminal) {
         this.view.terminal = {
@@ -441,7 +441,7 @@ export class DifyController implements WorkbenchController {
     const found = findPiEvent(payload)
     if (found?.problem === 'unsupported-version' && !this._warnedVersion) {
       this._warnedVersion = true
-      this.view.warnings.push('This workbench ignored events with an unsupported display schema version.')
+      this.view.warnings.push('工作台忽略了不受支持的显示契约版本事件。')
     }
     if (found?.event) {
       applyEvent(this.view, found.event)
@@ -462,7 +462,7 @@ function isWaiting(status: string): boolean {
 
 function safeError(error: unknown): string {
   if (error instanceof Error) return error.message.slice(0, 500)
-  return String(error || 'Unknown error').slice(0, 500)
+  return String(error || '未知错误').slice(0, 500)
 }
 
 function safeText(value: unknown): string {

@@ -25,7 +25,7 @@ providers, real remote MCP services or an arm64 host remain partially verified.
 | --- | --- |
 | `python -m unittest discover -s pi_dify/tests` | **75 passed** |
 | `npm run test` (workbench) | **28 passed** |
-| `npm run build` | success, 4 static files, ~399 KB |
+| `npm run build` | success, 4 static files, ~400 KB |
 | `npm run check:static` | **0 violations** (no external runtime assets / Pi SDK/Node backend markers) |
 | Static replay browser render | process, questionnaire and approval screenshots |
 | amd64 offline package | built, `--no-index` install, fake-Dify smoke **completed** |
@@ -53,8 +53,8 @@ python3 scripts/verify_offline_package.py dist/pi_dify-0.1.0-offline-linux-arm64
 
 | Architecture | File | Bytes | SHA-256 |
 | --- | --- | ---: | --- |
-| amd64 | `pi_dify-0.1.0-offline-linux-amd64.difypkg` | 26,463,201 | `e5f9a1f9eb32bc10a60808d3031fc8f7a87d5f64775ba74b04d959125a99a4d5` |
-| arm64 | `pi_dify-0.1.0-offline-linux-arm64.difypkg` | 25,480,930 | `912fe2563d35f5416509e0c1d3b28c8c044779e9cd8a0acc98d2a58061cd6731` |
+| amd64 | `pi_dify-0.1.0-offline-linux-amd64.difypkg` | 26,463,201 | `3e2a09929d24a0280b7de4ea1e7f7cea6170f41291c8af80f765db9765d81250` |
+| arm64 | `pi_dify-0.1.0-offline-linux-arm64.difypkg` | 25,480,931 | `dd9e3ae6b39f5db8c37fb18cc26661a1c02ccfc4f9ef1512cc57d21940233b4d` |
 
 Both packages contain 72 architecture-appropriate wheels, `VERSION_MANIFEST.json`,
 third-party notices/license texts, the plugin source, `requirements.lock.txt` and

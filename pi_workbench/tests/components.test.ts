@@ -38,7 +38,7 @@ describe('AskUserForm', () => {
     const wrapper = mount(AskUserForm, {
       props: { questionnaire, status: 'waiting' },
     })
-    await wrapper.findAll('button').find((button) => button.text().includes('Submit answers'))!.trigger('click')
+    await wrapper.findAll('button').find((button) => button.text().includes('提交答案'))!.trigger('click')
     expect(wrapper.find('[role="alert"]').text()).toContain('Pick a color')
     expect(wrapper.emitted('submit')).toBeFalsy()
   })
@@ -53,7 +53,7 @@ describe('AskUserForm', () => {
     await checkboxes[0].setValue(true)
     await checkboxes[1].setValue(true)
     await wrapper.find('textarea').setValue('note text')
-    await wrapper.findAll('button').find((button) => button.text().includes('Submit answers'))!.trigger('click')
+    await wrapper.findAll('button').find((button) => button.text().includes('提交答案'))!.trigger('click')
     const emitted = wrapper.emitted('submit')
     expect(emitted).toBeTruthy()
     expect(emitted![0][0]).toEqual({ color: 'blue', tags: ['a', 'b'], notes: 'note text' })
@@ -63,7 +63,7 @@ describe('AskUserForm', () => {
     const wrapper = mount(AskUserForm, {
       props: { questionnaire, status: 'waiting', submitting: true },
     })
-    const submit = wrapper.findAll('button').find((button) => button.text().includes('Submitting'))!
+    const submit = wrapper.findAll('button').find((button) => button.text().includes('提交中'))!
     expect(submit.attributes('disabled')).toBeDefined()
   })
 
@@ -97,15 +97,15 @@ describe('ApprovalCard', () => {
   it('requires a separate decision and carries scope', async () => {
     const wrapper = mount(ApprovalCard, { props: { entry } })
     await wrapper.find('select').setValue('session')
-    await wrapper.findAll('button').find((button) => button.text().includes('Approve'))!.trigger('click')
+    await wrapper.findAll('button').find((button) => button.text().includes('批准'))!.trigger('click')
     expect(wrapper.emitted('decide')?.[0]).toEqual(['approve', 'session'])
-    expect(wrapper.text()).toContain('not a questionnaire answer')
+    expect(wrapper.text()).toContain('不是问卷作答')
   })
 
   it('shows rejection as a resolved non-executed state', () => {
     const wrapper = mount(ApprovalCard, {
       props: { entry: { ...entry, status: 'rejected' } },
     })
-    expect(wrapper.text()).toContain('was not executed')
+    expect(wrapper.text()).toContain('未执行')
   })
 })

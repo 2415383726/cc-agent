@@ -17,11 +17,11 @@ const error = ref('')
 function save() {
   error.value = ''
   if (!baseUrl.value.trim()) {
-    error.value = 'Dify API base URL is required.'
+    error.value = '请填写 Dify API 地址。'
     return
   }
   if (!apiKey.value.trim()) {
-    error.value = 'A Dify app API key is required.'
+    error.value = '请填写 Dify 应用 API Key。'
     return
   }
   let inputs: Record<string, unknown> = {}
@@ -41,40 +41,39 @@ function save() {
 </script>
 
 <template>
-  <section class="pi-config-panel" aria-label="Dify connection">
+  <section class="pi-config-panel" aria-label="Dify 连接">
     <header class="pi-config-header">
       <div>
-        <h2>Dify connection</h2>
+        <h2>Dify 连接</h2>
         <p class="pi-muted pi-small">
-          The key is kept in session storage for this tab only. Prefer a same-origin proxy in production.
+          API Key 只保存在当前标签页的 sessionStorage 中。生产环境建议使用同源代理，避免把密钥暴露在浏览器里。
         </p>
       </div>
-      <button type="button" class="pi-icon-button" aria-label="Close connection settings" @click="emit('close')">×</button>
+      <button type="button" class="pi-icon-button" aria-label="关闭连接设置" @click="emit('close')">×</button>
     </header>
     <label class="pi-field">
-      <span>API base URL</span>
+      <span>API 地址</span>
       <input v-model="baseUrl" type="text" placeholder="/v1" autocomplete="off" />
     </label>
     <label class="pi-field">
-      <span>App API key</span>
+      <span>应用 API Key</span>
       <input v-model="apiKey" type="password" placeholder="app-..." autocomplete="off" />
     </label>
     <label class="pi-field">
-      <span>End user</span>
+      <span>终端用户</span>
       <input v-model="user" type="text" autocomplete="off" />
     </label>
     <label class="pi-field">
-      <span>App inputs (JSON)</span>
+      <span>应用输入（JSON）</span>
       <textarea v-model="inputsText" rows="4" spellcheck="false"></textarea>
     </label>
     <p v-if="error" class="pi-form-error" role="alert">{{ error }}</p>
     <div class="pi-form-actions">
-      <button type="button" class="pi-button pi-button-ghost" @click="emit('close')">Cancel</button>
-      <button type="button" class="pi-button pi-button-primary" @click="save">Save connection</button>
+      <button type="button" class="pi-button pi-button-ghost" @click="emit('close')">取消</button>
+      <button type="button" class="pi-button pi-button-primary" @click="save">保存连接</button>
     </div>
     <p class="pi-muted pi-small">
-      The Dify app node must map query, model, tools, files, interaction, agent_state and conversation
-      variables. The workbench never assumes arbitrary web inputs reach the plugin.
+      Dify 应用节点必须显式映射 query、model、tools、files、interaction、agent_state 和会话变量。工作台不会假定任意网页输入会自动到达插件。
     </p>
   </section>
 </template>

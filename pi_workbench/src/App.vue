@@ -12,6 +12,7 @@ import {
 import { DifyController, type WorkbenchController } from './dify/controller'
 import { ReplayController } from './replay/controller'
 import { REPLAY_SCENARIOS } from './replay/scenarios'
+import { statusText } from './projection/labels'
 import type {
   ApprovalEntry,
   FileRef,
@@ -28,7 +29,7 @@ const showConfig = ref(!config.value.apiKey && !initialScenario)
 if (initialScenario) replay.loadScenario(initialScenario)
 const showReplayPanel = ref(false)
 const transcriptEl = ref<HTMLElement | null>(null)
-const appTitle = ref('Pi Agent Workbench')
+const appTitle = ref('Pi Agent 工作台')
 
 const active = computed<WorkbenchController>(() =>
   mode.value === 'dify' ? (controller as WorkbenchController) : (replay as WorkbenchController),
@@ -47,25 +48,25 @@ const pending = computed(() => {
   return null
 })
 const statusLabel = computed(() => {
-  if (ui.value.stopping) return 'stopping'
-  if (ui.value.running) return 'running'
-  if (view.value.terminal) return view.value.terminal.status.replace(/_/g, ' ')
-  return 'idle'
+  if (ui.value.stopping) return '停止中'
+  if (ui.value.running) return '运行中'
+  if (view.value.terminal) return statusText(view.value.terminal.status)
+  return '空闲'
 })
 const statusTone = computed(() => {
   const status = statusLabel.value
-  if (['running', 'stopping'].includes(status)) return 'running'
-  if (['completed', 'awaiting user', 'awaiting approval'].includes(status)) return 'ok'
-  if (['failed', 'state save failed', 'context overflow', 'context too large'].includes(status)) return 'error'
-  if (['stopped', 'cancelled', 'unknown', 'budget exhausted'].includes(status)) return 'warning'
+  if (['运行中', '停止中'].includes(status)) return 'running'
+  if (['已完成', '等待回答', '等待审批'].includes(status)) return 'ok'
+  if (['失败', '状态保存失败', '上下文溢出', '上下文过大'].includes(status)) return 'error'
+  if (['已停止', '已取消', '未确认', '预算耗尽'].includes(status)) return 'warning'
   return 'idle'
 })
 const connectionLabel = computed(() =>
   mode.value === 'replay'
-    ? 'Static replay'
+    ? '静态回放'
     : controller.ui.connected
-      ? 'Dify connected'
-      : 'Dify not configured',
+      ? 'Dify 已连接'
+      : 'Dify 未配置',
 )
 const conversationValue = computed(() =>
   mode.value === 'replay' ? 'replay' : controller.ui.conversationId,
@@ -187,16 +188,16 @@ function entryKey(entry: WorkbenchEntry): string {
           <select
             class="pi-conversation-select"
             :value="conversationValue"
-            aria-label="Conversation"
+            aria-label="会话"
             @change="onSelectConversation"
           >
-            <option value="">New conversation</option>
+            <option value="">新建会话</option>
             <option v-for="conversation in controller.ui.conversations" :key="conversation.id" :value="conversation.id">
               {{ conversation.name }}
             </option>
           </select>
-          <button type="button" class="pi-button pi-button-ghost" @click="onNewConversation">New</button>
-          <button type="button" class="pi-button pi-button-ghost" @click="controller.refreshConversations()">Refresh</button>
+          <button type="button" class="pi-button pi-button-ghost" @click="onNewConversation">新会话</button>
+          <button type="button" class="pi-button pi-button-ghost" @click="controller.refreshConversations()">刷新</button>
           <button
             v-if="controller.ui.hasMore"
             type="button"
@@ -204,12 +205,12 @@ function entryKey(entry: WorkbenchEntry): string {
             :disabled="controller.ui.loadingHistory"
             @click="controller.loadMore()"
           >
-            Older
+            更早
           </button>
         </template>
         <span class="pi-status-pill" :class="`pi-status-${statusTone}`">{{ statusLabel }}</span>
         <button type="button" class="pi-button pi-button-ghost" @click="showReplayPanel = !showReplayPanel">
-          Replay
+          回放
         </button>
         <button
           v-if="mode === 'dify'"
@@ -217,22 +218,21 @@ function entryKey(entry: WorkbenchEntry): string {
           class="pi-button pi-button-ghost"
           @click="showConfig = !showConfig"
         >
-          Connection
+          连接
         </button>
-        <button v-else type="button" class="pi-button pi-button-ghost" @click="backToDify">Connect Dify</button>
+        <button v-else type="button" class="pi-button pi-button-ghost" @click="backToDify">连接 Dify</button>
       </div>
     </header>
 
     <div v-if="showReplayPanel" class="pi-replay-panel">
       <div class="pi-replay-head">
         <div>
-          <h2>Static event replay</h2>
+          <h2>静态事件回放</h2>
           <p class="pi-muted pi-small">
-            These scenarios render the display contract without the community backend. They exercise the
-            same projection and components used by the live Dify stream.
+            这些场景不启动社区后台，直接回放显示契约；使用的投影和组件与真实 Dify 流一致。
           </p>
         </div>
-        <button type="button" class="pi-icon-button" aria-label="Close replay panel" @click="showReplayPanel = false">×</button>
+        <button type="button" class="pi-icon-button" aria-label="关闭回放面板" @click="showReplayPanel = false">×</button>
       </div>
       <div class="pi-replay-grid">
         <button
@@ -262,17 +262,15 @@ function entryKey(entry: WorkbenchEntry): string {
     <main ref="transcriptEl" class="pi-transcript" aria-live="polite">
       <div v-if="!view.entries.length" class="pi-empty-state">
         <span class="pi-brand-mark pi-brand-mark-large" aria-hidden="true">π</span>
-        <h2>Agent workbench</h2>
+        <h2>Agent 工作台</h2>
         <p>
-          Send a request to see real reasoning, tool calls, skill activity, compaction and the final
-          answer. Events come from the Pi display contract carried by Dify logs.
+          发送请求即可看到真实的思考、工具调用、技能活动、上下文压缩和最终回答。事件来自 Dify 日志承载的 Pi 显示契约。
         </p>
         <p v-if="mode === 'replay'" class="pi-muted">
-          Replay mode is local. Choose a scenario above or open the Replay panel.
+          当前是本地回放模式。可选择上方场景，或打开“回放”面板。
         </p>
         <p v-else-if="!controller.ui.connected" class="pi-muted">
-          Configure the Dify connection first. The app node must expose query, model, tools, files,
-          interaction, agent_state and conversation variables.
+          请先配置 Dify 连接。应用节点必须显式映射 query、model、tools、files、interaction、agent_state 和会话变量。
         </p>
       </div>
 
@@ -285,13 +283,13 @@ function entryKey(entry: WorkbenchEntry): string {
           @cancel-question="cancelQuestion"
           @approval-decision="approvalDecision"
         />
-        <div v-if="ui.loadingHistory" class="pi-muted pi-history-loading">Loading history…</div>
+        <div v-if="ui.loadingHistory" class="pi-muted pi-history-loading">正在加载历史…</div>
       </div>
     </main>
 
     <footer class="pi-workbench-footer">
       <div v-if="view.outputs.length" class="pi-outputs">
-        <strong>Outputs</strong>
+        <strong>产物</strong>
         <a
           v-for="file in view.outputs"
           :key="file.id || file.url"
@@ -299,12 +297,12 @@ function entryKey(entry: WorkbenchEntry): string {
           target="_blank"
           rel="noopener noreferrer"
         >
-          {{ file.name || 'output file' }}
+          {{ file.name || '产物文件' }}
         </a>
       </div>
       <p v-if="pending" class="pi-composer-hint">
-        <template v-if="pending.kind === 'question'">Answer the questionnaire above to continue.</template>
-        <template v-else>Approve or reject the operation above to continue.</template>
+        <template v-if="pending.kind === 'question'">请先回答上方问卷以继续。</template>
+        <template v-else>请先批准或拒绝上方操作以继续。</template>
       </p>
       <WorkbenchComposer
         :running="ui.running"

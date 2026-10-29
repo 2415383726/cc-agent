@@ -4,6 +4,7 @@
  * Modified for the Pi display contract: statuses are the finite Pi tool states.
  */
 import type { ToolStatus } from './transcript'
+import { toolStatusText } from './labels'
 
 export type ToolTone = 'running' | 'completed' | 'error' | 'stopped' | 'unknown'
 
@@ -19,15 +20,5 @@ export function toolStatusTone(status: ToolStatus): ToolTone {
 }
 
 export function toolStatusLabel(status: ToolStatus): string {
-  const labels: Record<ToolStatus, string> = {
-    running: 'running',
-    ok: 'completed',
-    error: 'failed',
-    unknown: 'outcome unknown',
-    not_executed: 'not executed',
-    awaiting_user: 'waiting for you',
-    awaiting_approval: 'waiting for approval',
-    stopped: 'stopped',
-  }
-  return labels[status] || status
+  return toolStatusText(status)
 }
