@@ -1,0 +1,50 @@
+{
+  "app_id": "f5871660-d302-45c4-8c1c-4fb566d240f0",
+  "conversation_id": "11be6258-9c26-4253-b567-6a38fd1a82ee",
+  "user": "pi-visualize-platform-experiment",
+  "runs": [
+    {
+      "round": 1,
+      "chars": 18674,
+      "bytes": 42752,
+      "sha256": "3ebc84bae6d47a28f546a524cf522944f35ef288f836f4be9793e1be832333ee",
+      "stream_exact": true,
+      "message_id": "6cb4dc60-2ca8-4f95-9be1-f7adebd6350d",
+      "events": [
+        "message",
+        "message_end",
+        "node_finished",
+        "node_started",
+        "workflow_finished",
+        "workflow_started"
+      ],
+      "history_exact": true,
+      "history_chars": 18674,
+      "history_sha256": "3ebc84bae6d47a28f546a524cf522944f35ef288f836f4be9793e1be832333ee",
+      "history_thought_count": 0,
+      "fresh_history_exact": true
+    },
+    {
+      "round": 2,
+      "chars": 4054,
+      "bytes": 8352,
+      "sha256": "1a62ab7f8fdace569ce128820267676845cb861ac68f0e87fb5c1a1eb3801322",
+      "stream_exact": true,
+      "message_id": "0e16e574-9b36-42a7-8de9-b853b47f7c04",
+      "events": [
+        "message",
+        "message_end",
+        "node_finished",
+        "node_started",
+        "workflow_finished",
+        "workflow_started"
+      ],
+      "history_exact": true,
+      "history_chars": 4054,
+      "history_sha256": "1a62ab7f8fdace569ce128820267676845cb861ac68f0e87fb5c1a1eb3801322",
+      "history_thought_count": 0,
+      "fresh_history_exact": true
+    }
+  ],
+  "scope": "Dify 1.15 native Answer persistence only; code fixture, no Pi, model, UI, or process logs."
+}

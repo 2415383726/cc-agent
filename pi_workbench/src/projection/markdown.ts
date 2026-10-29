@@ -64,3 +64,8 @@ export function renderJson(value: unknown): string {
     return escapeHtml(String(value))
   }
 }
+
+/** Shared Markdown parser for assistant content; HTML stays disabled. */
+export function markdownTokens(source: string) {
+  return md.parse(source, {})
+}

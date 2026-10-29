@@ -1,5 +1,5 @@
-import { DisplayEvent, findPiEvent, normalizeAnswer } from '../contract/display'
-import { eventsFromHistory, HistoryRecord } from '../projection/history'
+import { DisplayEvent, findPiEvent } from '../contract/display'
+import { eventsFromHistory, restoreHistory, HistoryRecord } from '../projection/history'
 import { eventsFromSavedState } from '../projection/savedState'
 import {
   ApprovalEntry,
@@ -75,6 +75,8 @@ export class DifyController implements WorkbenchController {
   private _abort: AbortController | null = null
   private _taskId = ''
   private _platformText = ''
+  private _platformMessageId = ''
+  private _runId = ''
   private _records: HistoryRecord[] = []
   private _warnedVersion = false
 
@@ -265,8 +267,7 @@ export class DifyController implements WorkbenchController {
 
   private _applyHistory(): void {
     const { events } = eventsFromHistory(this._records)
-    resetView(this.view)
-    for (const event of events) applyEvent(this.view, event)
+    restoreHistory(this.view, this._records)
     for (const record of this._records) {
       const files = Array.isArray((record as any).message_files) ? (record as any).message_files : []
       for (const file of files) {
@@ -281,8 +282,6 @@ export class DifyController implements WorkbenchController {
         }
       }
     }
-    const last = this._records[this._records.length - 1]
-    if (last?.answer) mergeFinalAnswer(this.view, String(last.answer))
     if (!events.some((event) => !event.run_id.startsWith('history:')) && this._records.length) {
       this.view.warnings.push('该会话历史中没有保存 Pi 过程事件。')
     }
@@ -305,7 +304,12 @@ export class DifyController implements WorkbenchController {
       if (!value || ticket !== this._ticket) return
       const events = await eventsFromSavedState(value, conversationId)
       if (ticket !== this._ticket) return
-      for (const event of events) applyEvent(this.view, event)
+      for (const event of events) {
+        // Native platform messages already own historical answer content. A latest-state
+        // display snapshot can restore status/pending, but cannot insert another answer.
+        applyEvent(this.view, this._records.length && (event.type === 'run.state' || event.type === 'run.done')
+          ? { ...event, answer: '' } : event)
+      }
     } catch {
       if (ticket === this._ticket) this.view.warnings.push('无法读取当前 Pi 状态；未自动重发请求，请稍后刷新。')
     }
@@ -334,6 +338,9 @@ export class DifyController implements WorkbenchController {
     this.ui.stoppedNote = ''
     this._taskId = ''
     this._platformText = ''
+    this._platformMessageId = ''
+    this._runId = ''
+    this.view.activeRunId = ''
     this._abort = new AbortController()
     try {
       const stream = await streamChat({
@@ -418,6 +425,7 @@ export class DifyController implements WorkbenchController {
 
   private _handleDifyEvent(payload: Record<string, any>): void {
     const eventName = String(payload?.event || '')
+    if (payload?.message_id) this._platformMessageId = String(payload.message_id)
     if (payload?.task_id) this._taskId = String(payload.task_id)
     if (payload?.conversation_id) {
       this.ui.conversationId = String(payload.conversation_id)
@@ -463,20 +471,17 @@ export class DifyController implements WorkbenchController {
       this.view.warnings.push('工作台忽略了不受支持的显示契约版本事件。')
     }
     if (found?.event) {
+      this._runId = found.event.run_id
       applyEvent(this.view, found.event)
-      if (this.view.terminal && !isWaiting(this.view.terminal.status)) {
-        this.ui.running = false
-      }
     }
     if (eventName === 'message_end') {
-      const finalText = normalizeAnswer(this._platformText || String(payload?.answer || ''))
-      if (finalText) mergeFinalAnswer(this.view, finalText)
+      const finalText = this._platformText || String(payload?.answer || '')
+      if (finalText) mergeFinalAnswer(this.view, finalText, {
+        runId: this._runId || `platform:${this._platformMessageId || this._ticket}`,
+        platformMessageId: this._platformMessageId || undefined,
+      })
     }
   }
-}
-
-function isWaiting(status: string): boolean {
-  return status === 'awaiting_user' || status === 'awaiting_approval'
 }
 
 function safeError(error: unknown): string {

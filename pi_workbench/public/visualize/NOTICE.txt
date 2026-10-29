@@ -1,0 +1,24 @@
+Pi visualization kit 1.0.0
+
+The kit CSS, controls, theme integration and sandbox adapter are authored for
+this project. They do not copy the ZCode React/Electron host, widgets or CSS.
+No separate license grant is made for project-authored code by this notice.
+
+The unchanged browser distributions of D3 7.9.0 and Lucide 1.17.0 were obtained
+from the ZCode visualize vendor directory at commit:
+3c5b227649371507ddc4eb46ac5133afe6db1cab
+https://github.com/zai-org/ZCode
+apps/zcode-cli/packages/visualize-plugin/skills/visualize/assets/vendor
+
+Their script and license SHA-256 values match that fixed upstream manifest.
+This project adapts the manifest format, file layout and local loading only;
+it does not modify the vendor scripts or their license texts.
+
+ZCode's own visualize resources use Apache-2.0. Its vendor resources retain
+their separate licenses: D3 uses ISC; Lucide uses ISC with the MIT-derived
+Feather icon notice. These complete notices are stored beside the scripts.
+Floating UI is not shipped; tooltip positioning is project-authored.
+
+The published visualize/manifest.json records exact versions, paths, source
+provenance, byte lengths and script/license checksums. No resource is fetched
+from the source repository at runtime.

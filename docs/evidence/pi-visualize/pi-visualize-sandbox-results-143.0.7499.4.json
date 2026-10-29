@@ -1,0 +1,776 @@
+{
+  "browser": "143.0.7499.4",
+  "date": "2026-10-29T11:06:17.109Z",
+  "base": "http://127.0.0.1:45483",
+  "sink": "http://localhost:45483/sink",
+  "childPolicy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src 'none'; connect-src 'none'; media-src 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
+  "results": [
+    {
+      "name": "rtc-csp-alone",
+      "parentPolicy": "frame-src blob:",
+      "srcdoc": false,
+      "reports": [
+        {
+          "name": "rtc",
+          "value": "function"
+        },
+        {
+          "name": "ran",
+          "value": true
+        }
+      ],
+      "serverHits": [],
+      "udpHits": [
+        {
+          "bytes": 20,
+          "peer": "127.0.0.1"
+        },
+        {
+          "bytes": 20,
+          "peer": "127.0.0.1"
+        },
+        {
+          "bytes": 20,
+          "peer": "127.0.0.1"
+        },
+        {
+          "bytes": 20,
+          "peer": "127.0.0.1"
+        }
+      ],
+      "requests": [],
+      "failures": [],
+      "frameUrls": [
+        "http://127.0.0.1:45483/?rtc-csp-alone",
+        "blob:http://127.0.0.1:45483/dd874d3f-bf3a-4411-aea3-1de9255f165b"
+      ],
+      "errors": []
+    },
+    {
+      "name": "rtc-csp-webrtc-block",
+      "parentPolicy": "frame-src blob:",
+      "srcdoc": false,
+      "reports": [
+        {
+          "name": "rtc",
+          "value": "function"
+        },
+        {
+          "name": "ran",
+          "value": true
+        }
+      ],
+      "serverHits": [],
+      "udpHits": [
+        {
+          "bytes": 20,
+          "peer": "127.0.0.1"
+        },
+        {
+          "bytes": 20,
+          "peer": "127.0.0.1"
+        },
+        {
+          "bytes": 20,
+          "peer": "127.0.0.1"
+        },
+        {
+          "bytes": 20,
+          "peer": "127.0.0.1"
+        }
+      ],
+      "requests": [],
+      "failures": [],
+      "frameUrls": [
+        "http://127.0.0.1:45483/?rtc-csp-webrtc-block",
+        "blob:http://127.0.0.1:45483/804c3ecb-32dc-496f-bbc0-26c6bd1688fe"
+      ],
+      "errors": [
+        "Unrecognized Content-Security-Policy directive 'webrtc'."
+      ]
+    },
+    {
+      "name": "rtc-connection-allowlist",
+      "parentPolicy": "frame-src blob:",
+      "srcdoc": false,
+      "reports": [
+        {
+          "name": "rtc",
+          "value": "function"
+        },
+        {
+          "name": "ran",
+          "value": true
+        }
+      ],
+      "serverHits": [],
+      "udpHits": [
+        {
+          "bytes": 20,
+          "peer": "127.0.0.1"
+        },
+        {
+          "bytes": 20,
+          "peer": "127.0.0.1"
+        },
+        {
+          "bytes": 20,
+          "peer": "127.0.0.1"
+        },
+        {
+          "bytes": 20,
+          "peer": "127.0.0.1"
+        }
+      ],
+      "requests": [],
+      "failures": [],
+      "frameUrls": [
+        "http://127.0.0.1:45483/?rtc-connection-allowlist",
+        "blob:http://127.0.0.1:45483/bc743d30-27be-47e9-ae3f-92c1a54247e2"
+      ],
+      "errors": []
+    },
+    {
+      "name": "nested-srcdoc-rtc",
+      "parentPolicy": "frame-src blob:",
+      "srcdoc": false,
+      "reports": [
+        {
+          "name": "ran",
+          "value": true
+        }
+      ],
+      "serverHits": [],
+      "udpHits": [
+        {
+          "bytes": 20,
+          "peer": "127.0.0.1"
+        },
+        {
+          "bytes": 20,
+          "peer": "127.0.0.1"
+        },
+        {
+          "bytes": 20,
+          "peer": "127.0.0.1"
+        },
+        {
+          "bytes": 20,
+          "peer": "127.0.0.1"
+        }
+      ],
+      "requests": [],
+      "failures": [],
+      "frameUrls": [
+        "http://127.0.0.1:45483/?nested-srcdoc-rtc",
+        "blob:http://127.0.0.1:45483/0252b074-a2b2-41ab-bc27-216a28a2c973",
+        "about:srcdoc"
+      ],
+      "errors": []
+    },
+    {
+      "name": "nested-blank-clean-realm",
+      "parentPolicy": "frame-src blob:",
+      "srcdoc": false,
+      "reports": [
+        {
+          "name": "cleanRealm",
+          "value": "SecurityError"
+        },
+        {
+          "name": "ran",
+          "value": true
+        }
+      ],
+      "serverHits": [],
+      "udpHits": [],
+      "requests": [],
+      "failures": [],
+      "frameUrls": [
+        "http://127.0.0.1:45483/?nested-blank-clean-realm",
+        "blob:http://127.0.0.1:45483/73879de2-cf2a-4b3f-bd01-19cd36294a24",
+        "about:blank"
+      ],
+      "errors": []
+    },
+    {
+      "name": "baseline-direct-self-navigation",
+      "parentPolicy": null,
+      "srcdoc": false,
+      "reports": [
+        {
+          "name": "ran",
+          "value": true
+        },
+        {
+          "kind": "navigated"
+        }
+      ],
+      "serverHits": [
+        "/sink?baseline"
+      ],
+      "udpHits": [],
+      "requests": [
+        {
+          "url": "http://localhost:45483/sink?baseline",
+          "type": "document",
+          "navigation": true
+        }
+      ],
+      "failures": [],
+      "frameUrls": [
+        "http://127.0.0.1:45483/?baseline-direct-self-navigation",
+        "http://localhost:45483/sink?baseline"
+      ],
+      "errors": []
+    },
+    {
+      "name": "baseline-connect-fetch",
+      "parentPolicy": null,
+      "srcdoc": false,
+      "reports": [
+        {
+          "name": "ran",
+          "value": true
+        }
+      ],
+      "serverHits": [
+        "/sink?baseline-fetch"
+      ],
+      "udpHits": [],
+      "requests": [
+        {
+          "url": "http://localhost:45483/sink?baseline-fetch",
+          "type": "fetch",
+          "navigation": false
+        }
+      ],
+      "failures": [],
+      "frameUrls": [
+        "http://127.0.0.1:45483/?baseline-connect-fetch",
+        "blob:http://127.0.0.1:45483/0092273a-5a5b-459d-abe1-9ed3d0cb5793"
+      ],
+      "errors": []
+    },
+    {
+      "name": "blocked-direct-self-navigation",
+      "parentPolicy": "frame-src blob:",
+      "srcdoc": false,
+      "reports": [
+        {
+          "name": "ran",
+          "value": true
+        }
+      ],
+      "serverHits": [],
+      "udpHits": [],
+      "requests": [],
+      "failures": [],
+      "frameUrls": [
+        "http://127.0.0.1:45483/?blocked-direct-self-navigation",
+        "chrome-error://chromewebdata/"
+      ],
+      "errors": [
+        "Framing 'http://localhost:45483/' violates the following Content Security Policy directive: \"frame-src blob:\". The request has been blocked.\n"
+      ]
+    },
+    {
+      "name": "blocked-location-replace",
+      "parentPolicy": "frame-src blob:",
+      "srcdoc": false,
+      "reports": [
+        {
+          "name": "ran",
+          "value": true
+        }
+      ],
+      "serverHits": [],
+      "udpHits": [],
+      "requests": [],
+      "failures": [],
+      "frameUrls": [
+        "http://127.0.0.1:45483/?blocked-location-replace",
+        "chrome-error://chromewebdata/"
+      ],
+      "errors": [
+        "Framing 'http://localhost:45483/' violates the following Content Security Policy directive: \"frame-src blob:\". The request has been blocked.\n"
+      ]
+    },
+    {
+      "name": "blocked-meta-refresh",
+      "parentPolicy": "frame-src blob:",
+      "srcdoc": false,
+      "reports": [
+        {
+          "name": "ran",
+          "value": true
+        }
+      ],
+      "serverHits": [],
+      "udpHits": [],
+      "requests": [],
+      "failures": [],
+      "frameUrls": [
+        "http://127.0.0.1:45483/?blocked-meta-refresh",
+        "chrome-error://chromewebdata/"
+      ],
+      "errors": [
+        "Framing 'http://localhost:45483/' violates the following Content Security Policy directive: \"frame-src blob:\". The request has been blocked.\n"
+      ]
+    },
+    {
+      "name": "blocked-anchor-self",
+      "parentPolicy": "frame-src blob:",
+      "srcdoc": false,
+      "reports": [
+        {
+          "name": "ran",
+          "value": true
+        }
+      ],
+      "serverHits": [],
+      "udpHits": [],
+      "requests": [],
+      "failures": [],
+      "frameUrls": [
+        "http://127.0.0.1:45483/?blocked-anchor-self",
+        "chrome-error://chromewebdata/"
+      ],
+      "errors": [
+        "Framing 'http://localhost:45483/' violates the following Content Security Policy directive: \"frame-src blob:\". The request has been blocked.\n"
+      ]
+    },
+    {
+      "name": "blocked-top-nav-and-open",
+      "parentPolicy": "frame-src blob:",
+      "srcdoc": false,
+      "reports": [
+        {
+          "name": "top",
+          "value": "SecurityError"
+        },
+        {
+          "name": "popup",
+          "value": true
+        },
+        {
+          "name": "ran",
+          "value": true
+        }
+      ],
+      "serverHits": [],
+      "udpHits": [],
+      "requests": [],
+      "failures": [],
+      "frameUrls": [
+        "http://127.0.0.1:45483/?blocked-top-nav-and-open",
+        "blob:http://127.0.0.1:45483/e4f840df-2119-4284-91b2-f7cb23664850"
+      ],
+      "errors": [
+        "Unsafe attempt to initiate navigation for frame with origin 'http://127.0.0.1:45483' from frame with URL 'blob:http://127.0.0.1:45483/e4f840df-2119-4284-91b2-f7cb23664850'. The frame attempting navigation of the top-level window is sandboxed, but the flag of 'allow-top-navigation' or 'allow-top-navigation-by-user-activation' is not set.\n",
+        "Blocked opening 'http://localhost:45483/sink?popup' in a new window because the request was made in a sandboxed frame whose 'allow-popups' permission is not set."
+      ]
+    },
+    {
+      "name": "blocked-forms",
+      "parentPolicy": "frame-src blob:",
+      "srcdoc": false,
+      "reports": [
+        {
+          "name": "ran",
+          "value": true
+        }
+      ],
+      "serverHits": [],
+      "udpHits": [],
+      "requests": [],
+      "failures": [],
+      "frameUrls": [
+        "http://127.0.0.1:45483/?blocked-forms",
+        "blob:http://127.0.0.1:45483/1426cc4c-108c-4832-86bd-b083c7ec0313"
+      ],
+      "errors": [
+        "Blocked form submission to 'http://localhost:45483/sink?' because the form's frame is sandboxed and the 'allow-forms' permission is not set."
+      ]
+    },
+    {
+      "name": "blocked-network-elements",
+      "parentPolicy": "frame-src blob:",
+      "srcdoc": false,
+      "reports": [
+        {
+          "name": "ran",
+          "value": true
+        }
+      ],
+      "serverHits": [],
+      "udpHits": [],
+      "requests": [
+        {
+          "url": "http://localhost:45483/sink?script",
+          "type": "script",
+          "navigation": false
+        },
+        {
+          "url": "http://localhost:45483/sink?style",
+          "type": "stylesheet",
+          "navigation": false
+        },
+        {
+          "url": "http://localhost:45483/sink?import",
+          "type": "stylesheet",
+          "navigation": false
+        },
+        {
+          "url": "http://localhost:45483/sink?image",
+          "type": "image",
+          "navigation": false
+        },
+        {
+          "url": "http://localhost:45483/sink?font",
+          "type": "font",
+          "navigation": false
+        },
+        {
+          "url": "http://localhost:45483/sink?css-image",
+          "type": "image",
+          "navigation": false
+        }
+      ],
+      "failures": [
+        {
+          "url": "http://localhost:45483/sink?script",
+          "error": "csp"
+        },
+        {
+          "url": "http://localhost:45483/sink?style",
+          "error": "csp"
+        },
+        {
+          "url": "http://localhost:45483/sink?import",
+          "error": "csp"
+        },
+        {
+          "url": "http://localhost:45483/sink?image",
+          "error": "csp"
+        },
+        {
+          "url": "http://localhost:45483/sink?font",
+          "error": "csp"
+        },
+        {
+          "url": "http://localhost:45483/sink?css-image",
+          "error": "csp"
+        }
+      ],
+      "frameUrls": [
+        "http://127.0.0.1:45483/?blocked-network-elements",
+        "blob:http://127.0.0.1:45483/4a8ec9a8-1c14-4d63-96c3-dead34d88ed0",
+        "chrome-error://chromewebdata/"
+      ],
+      "errors": [
+        "Loading the script 'http://localhost:45483/sink?script' violates the following Content Security Policy directive: \"script-src 'unsafe-inline'\". Note that 'script-src-elem' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocked.",
+        "Loading the stylesheet 'http://localhost:45483/sink?style' violates the following Content Security Policy directive: \"style-src 'unsafe-inline'\". Note that 'style-src-elem' was not explicitly set, so 'style-src' is used as a fallback. The action has been blocked.",
+        "Loading plugin data from 'http://localhost:45483/sink?object' violates the following Content Security Policy directive: \"object-src 'none'\". The action has been blocked.",
+        "Loading the stylesheet 'http://localhost:45483/sink?import' violates the following Content Security Policy directive: \"style-src 'unsafe-inline'\". Note that 'style-src-elem' was not explicitly set, so 'style-src' is used as a fallback. The action has been blocked.",
+        "Loading the image 'http://localhost:45483/sink?image' violates the following Content Security Policy directive: \"img-src data: blob:\". The action has been blocked.",
+        "Loading the font 'http://localhost:45483/sink?font' violates the following Content Security Policy directive: \"font-src 'none'\". The action has been blocked.",
+        "Loading the image 'http://localhost:45483/sink?css-image' violates the following Content Security Policy directive: \"img-src data: blob:\". The action has been blocked.",
+        "Loading media from  'http://localhost:45483/sink?audio' violates the following Content Security Policy directive: \"media-src 'none'\". The action has been blocked.",
+        "Loading media from  'http://localhost:45483/sink?video' violates the following Content Security Policy directive: \"media-src 'none'\". The action has been blocked.",
+        "Framing 'http://localhost:45483/' violates the following Content Security Policy directive: \"frame-src blob:\". The request has been blocked.\n",
+        "Framing 'http://localhost:45483/' violates the following Content Security Policy directive: \"frame-src 'none'\". The request has been blocked.\n",
+        "Loading plugin data from 'http://localhost:45483/sink?embed' violates the following Content Security Policy directive: \"object-src 'none'\". The action has been blocked."
+      ]
+    },
+    {
+      "name": "blocked-script-network",
+      "parentPolicy": "frame-src blob:",
+      "srcdoc": false,
+      "reports": [
+        {
+          "name": "beacon",
+          "value": true
+        },
+        {
+          "name": "ran",
+          "value": true
+        },
+        {
+          "name": "fetch",
+          "value": "TypeError"
+        },
+        {
+          "name": "xhr",
+          "value": "blocked"
+        }
+      ],
+      "serverHits": [],
+      "udpHits": [],
+      "requests": [
+        {
+          "url": "http://localhost:45483/sink?xhr",
+          "type": "xhr",
+          "navigation": false
+        }
+      ],
+      "failures": [
+        {
+          "url": "http://localhost:45483/sink?xhr",
+          "error": "csp"
+        }
+      ],
+      "frameUrls": [
+        "http://127.0.0.1:45483/?blocked-script-network",
+        "blob:http://127.0.0.1:45483/8116596c-f0fa-42aa-bddc-24fdd04dfa99"
+      ],
+      "errors": [
+        "Connecting to 'http://localhost:45483/sink?fetch' violates the following Content Security Policy directive: \"connect-src 'none'\". The action has been blocked.",
+        "Fetch API cannot load http://localhost:45483/sink?fetch. Refused to connect because it violates the document's Content Security Policy.",
+        "Connecting to 'http://localhost:45483/sink?xhr' violates the following Content Security Policy directive: \"connect-src 'none'\". The action has been blocked.",
+        "Connecting to 'ws://localhost:45483/sink' violates the following Content Security Policy directive: \"connect-src 'none'\". The action has been blocked.",
+        "Connecting to 'http://localhost:45483/sink?beacon' violates the following Content Security Policy directive: \"connect-src 'none'\". The action has been blocked.",
+        "Creating a worker from 'blob:null/9a76ad72-cb95-4b91-adec-b9efef8d6aa6' violates the following Content Security Policy directive: \"worker-src 'none'\". The action has been blocked."
+      ]
+    },
+    {
+      "name": "blocked-parent-access",
+      "parentPolicy": "frame-src blob:",
+      "srcdoc": false,
+      "reports": [
+        {
+          "name": "dom",
+          "value": "SecurityError"
+        },
+        {
+          "name": "storage",
+          "value": "SecurityError"
+        },
+        {
+          "name": "cookie",
+          "value": "SecurityError"
+        },
+        {
+          "name": "frameElement",
+          "value": null
+        },
+        {
+          "name": "ran",
+          "value": true
+        }
+      ],
+      "serverHits": [],
+      "udpHits": [],
+      "requests": [],
+      "failures": [],
+      "frameUrls": [
+        "http://127.0.0.1:45483/?blocked-parent-access",
+        "blob:http://127.0.0.1:45483/f20d9642-a813-4f5f-abf2-429d71b60317"
+      ],
+      "errors": []
+    },
+    {
+      "name": "blob-self-navigation-inherits-policy",
+      "parentPolicy": "frame-src blob:",
+      "srcdoc": false,
+      "reports": [
+        {
+          "name": "ran",
+          "value": true
+        }
+      ],
+      "serverHits": [],
+      "udpHits": [],
+      "requests": [
+        {
+          "url": "http://localhost:45483/sink?blob-image",
+          "type": "image",
+          "navigation": false
+        }
+      ],
+      "failures": [
+        {
+          "url": "http://localhost:45483/sink?blob-image",
+          "error": "csp"
+        }
+      ],
+      "frameUrls": [
+        "http://127.0.0.1:45483/?blob-self-navigation-inherits-policy",
+        "chrome-error://chromewebdata/"
+      ],
+      "errors": [
+        "Loading the image 'http://localhost:45483/sink?blob-image' violates the following Content Security Policy directive: \"img-src data: blob:\". The action has been blocked.",
+        "Connecting to 'http://localhost:45483/sink?blob-fetch' violates the following Content Security Policy directive: \"connect-src 'none'\". The action has been blocked.",
+        "Fetch API cannot load http://localhost:45483/sink?blob-fetch. Refused to connect because it violates the document's Content Security Policy.",
+        "Framing 'http://localhost:45483/' violates the following Content Security Policy directive: \"frame-src blob:\". The request has been blocked.\n"
+      ]
+    },
+    {
+      "name": "data-self-navigation",
+      "parentPolicy": "frame-src blob:",
+      "srcdoc": false,
+      "reports": [
+        {
+          "name": "ran",
+          "value": true
+        }
+      ],
+      "serverHits": [],
+      "udpHits": [],
+      "requests": [],
+      "failures": [],
+      "frameUrls": [
+        "http://127.0.0.1:45483/?data-self-navigation",
+        "chrome-error://chromewebdata/"
+      ],
+      "errors": [
+        "Framing '' violates the following Content Security Policy directive: \"frame-src blob:\". The request has been blocked.\n"
+      ]
+    },
+    {
+      "name": "remove-meta-still-blocked",
+      "parentPolicy": "frame-src blob:",
+      "srcdoc": false,
+      "reports": [
+        {
+          "name": "ran",
+          "value": true
+        }
+      ],
+      "serverHits": [],
+      "udpHits": [],
+      "requests": [],
+      "failures": [],
+      "frameUrls": [
+        "http://127.0.0.1:45483/?remove-meta-still-blocked",
+        "chrome-error://chromewebdata/"
+      ],
+      "errors": [
+        "Connecting to 'http://localhost:45483/sink?meta-removed' violates the following Content Security Policy directive: \"connect-src 'none'\". The action has been blocked.",
+        "Fetch API cannot load http://localhost:45483/sink?meta-removed. Refused to connect because it violates the document's Content Security Policy.",
+        "Framing 'http://localhost:45483/' violates the following Content Security Policy directive: \"frame-src blob:\". The request has been blocked.\n"
+      ]
+    },
+    {
+      "name": "document-open-still-blocked",
+      "parentPolicy": "frame-src blob:",
+      "srcdoc": false,
+      "reports": [
+        {
+          "name": "ran",
+          "value": true
+        }
+      ],
+      "serverHits": [],
+      "udpHits": [],
+      "requests": [
+        {
+          "url": "http://localhost:45483/sink?open-image",
+          "type": "image",
+          "navigation": false
+        }
+      ],
+      "failures": [
+        {
+          "url": "http://localhost:45483/sink?open-image",
+          "error": "csp"
+        }
+      ],
+      "frameUrls": [
+        "http://127.0.0.1:45483/?document-open-still-blocked",
+        "blob:http://127.0.0.1:45483/3d33f1bf-2280-4e4a-b6d7-e63827f892b2"
+      ],
+      "errors": [
+        "Connecting to 'http://localhost:45483/sink?open-fetch' violates the following Content Security Policy directive: \"connect-src 'none'\". The action has been blocked.",
+        "Fetch API cannot load http://localhost:45483/sink?open-fetch. Refused to connect because it violates the document's Content Security Policy.",
+        "Loading the image 'http://localhost:45483/sink?open-image' violates the following Content Security Policy directive: \"img-src data: blob:\". The action has been blocked."
+      ]
+    },
+    {
+      "name": "javascript-url-policy",
+      "parentPolicy": "frame-src blob:",
+      "srcdoc": false,
+      "reports": [
+        {
+          "name": "ran",
+          "value": true
+        }
+      ],
+      "serverHits": [],
+      "udpHits": [],
+      "requests": [],
+      "failures": [],
+      "frameUrls": [
+        "http://127.0.0.1:45483/?javascript-url-policy",
+        "blob:http://127.0.0.1:45483/5264723b-9886-448c-b9a7-71a8f8eb7c60"
+      ],
+      "errors": []
+    },
+    {
+      "name": "srcdoc-none-direct-nav",
+      "parentPolicy": "frame-src 'none'",
+      "srcdoc": true,
+      "reports": [
+        {
+          "name": "ran",
+          "value": true
+        }
+      ],
+      "serverHits": [],
+      "udpHits": [],
+      "requests": [],
+      "failures": [],
+      "frameUrls": [
+        "http://127.0.0.1:45483/?srcdoc-none-direct-nav",
+        "chrome-error://chromewebdata/"
+      ],
+      "errors": [
+        "Framing 'http://localhost:45483/' violates the following Content Security Policy directive: \"frame-src 'none'\". The request has been blocked.\n"
+      ]
+    },
+    {
+      "name": "srcdoc-none-blob-nav",
+      "parentPolicy": "frame-src 'none'",
+      "srcdoc": true,
+      "reports": [
+        {
+          "name": "ran",
+          "value": true
+        }
+      ],
+      "serverHits": [],
+      "udpHits": [],
+      "requests": [],
+      "failures": [],
+      "frameUrls": [
+        "http://127.0.0.1:45483/?srcdoc-none-blob-nav",
+        "chrome-error://chromewebdata/"
+      ],
+      "errors": [
+        "Framing '' violates the following Content Security Policy directive: \"frame-src 'none'\". The request has been blocked.\n"
+      ]
+    },
+    {
+      "name": "parent-meta-direct-nav",
+      "parentPolicy": "frame-src blob:",
+      "srcdoc": false,
+      "reports": [
+        {
+          "name": "ran",
+          "value": true
+        }
+      ],
+      "serverHits": [],
+      "udpHits": [],
+      "requests": [],
+      "failures": [],
+      "frameUrls": [
+        "http://127.0.0.1:45483/?parent-meta-direct-nav",
+        "chrome-error://chromewebdata/"
+      ],
+      "errors": [
+        "Framing 'http://localhost:45483/' violates the following Content Security Policy directive: \"frame-src blob:\". The request has been blocked.\n"
+      ]
+    }
+  ]
+}

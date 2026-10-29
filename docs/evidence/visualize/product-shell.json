@@ -1,0 +1,159 @@
+{
+  "browser": "154.0.8037.57",
+  "shell_sha256": "e7a41f0a661a853695c98413ee70cab2d5aa83a0ec4288fb73045a24a710bc7f",
+  "results": [
+    {
+      "name": "data-image",
+      "reports": [
+        {
+          "type": "pi-visualize:shell-ready",
+          "id": ""
+        },
+        {
+          "type": "pi-visualize:ready",
+          "id": "test-channel"
+        },
+        {
+          "type": "pi-visualize:resize",
+          "id": "test-channel",
+          "height": 200
+        }
+      ],
+      "http_hits": [],
+      "udp_hits": [],
+      "errors": []
+    },
+    {
+      "name": "valid-svg-and-local-script",
+      "reports": [
+        {
+          "type": "pi-visualize:shell-ready",
+          "id": ""
+        },
+        {
+          "type": "pi-visualize:ready",
+          "id": "test-channel"
+        },
+        {
+          "type": "pi-visualize:resize",
+          "id": "test-channel",
+          "height": 200
+        }
+      ],
+      "http_hits": [],
+      "udp_hits": [],
+      "errors": []
+    },
+    {
+      "name": "parent-access",
+      "reports": [
+        {
+          "type": "pi-visualize:shell-ready",
+          "id": ""
+        },
+        {
+          "test": "access",
+          "value": "SecurityError"
+        },
+        {
+          "test": "access",
+          "value": "SecurityError"
+        },
+        {
+          "test": "access",
+          "value": "SecurityError"
+        },
+        {
+          "type": "pi-visualize:ready",
+          "id": "test-channel"
+        },
+        {
+          "type": "pi-visualize:resize",
+          "id": "test-channel",
+          "height": 200
+        }
+      ],
+      "http_hits": [],
+      "udp_hits": [],
+      "errors": []
+    },
+    {
+      "name": "http-network",
+      "reports": [
+        {
+          "type": "pi-visualize:shell-ready",
+          "id": ""
+        },
+        {
+          "type": "pi-visualize:ready",
+          "id": "test-channel"
+        },
+        {
+          "type": "pi-visualize:resize",
+          "id": "test-channel",
+          "height": 200
+        }
+      ],
+      "http_hits": [],
+      "udp_hits": [],
+      "errors": [
+        "Connecting to 'http://localhost:42377/sink?fetch' violates the following Content Security Policy directive: \"connect-src 'none'\". The action has been blocked.",
+        "Connecting to 'http://localhost:42377/sink?fetch' violates the following Content Security Policy directive: \"connect-src 'none'\". The action has been blocked.",
+        "Fetch API cannot load http://localhost:42377/sink?fetch. Refused to connect because it violates the document's Content Security Policy.",
+        "Loading the image 'http://localhost:42377/sink?image' violates the following Content Security Policy directive: \"img-src data:\". The action has been blocked.",
+        "Loading the image 'http://localhost:42377/sink?image' violates the following Content Security Policy directive: \"img-src data:\". The action has been blocked."
+      ]
+    },
+    {
+      "name": "rtc",
+      "reports": [
+        {
+          "type": "pi-visualize:shell-ready",
+          "id": ""
+        },
+        {
+          "type": "pi-visualize:ready",
+          "id": "test-channel"
+        },
+        {
+          "type": "pi-visualize:resize",
+          "id": "test-channel",
+          "height": 200
+        }
+      ],
+      "http_hits": [],
+      "udp_hits": [],
+      "errors": []
+    },
+    {
+      "name": "navigation",
+      "reports": [
+        {
+          "type": "pi-visualize:shell-ready",
+          "id": ""
+        }
+      ],
+      "http_hits": [],
+      "udp_hits": [],
+      "errors": [
+        "Framing 'http://localhost:42377/' violates the following Content Security Policy directive: \"frame-src blob:\". The request has been blocked.\n"
+      ]
+    },
+    {
+      "name": "nested-rtc",
+      "reports": [
+        {
+          "type": "pi-visualize:shell-ready",
+          "id": ""
+        },
+        {
+          "type": "pi-visualize:ready",
+          "id": "test-channel"
+        }
+      ],
+      "http_hits": [],
+      "udp_hits": [],
+      "errors": []
+    }
+  ]
+}

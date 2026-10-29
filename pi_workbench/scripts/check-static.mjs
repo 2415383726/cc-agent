@@ -51,6 +51,21 @@ for (const file of files) {
   }
 }
 
+const publishedKit = JSON.parse(await readFile(join(DIST, 'visualize/manifest.json'), 'utf8'))
+const expectedKit = JSON.parse(await readFile(join(ROOT, 'src/visualize/manifest.json'), 'utf8'))
+if (JSON.stringify(publishedKit) !== JSON.stringify(expectedKit)) {
+  violations.push({ file: 'visualize/manifest.json', reason: 'Published kit differs from the supported source manifest' })
+}
+for (const resource of publishedKit.resources) {
+  for (const [field, hashField] of [['file', 'sha256'], ['licenseFile', 'licenseSha256']]) {
+    if (!resource[field]) continue
+    const entry = report.find((item) => item.file === resource[field])
+    if (!entry || entry.sha256 !== resource[hashField] || (field === 'file' && entry.bytes !== resource.bytes)) {
+      violations.push({ file: resource[field], reason: 'Published visualization resource failed manifest verification' })
+    }
+  }
+}
+
 const output = {
   generatedAt: new Date().toISOString(),
   fileCount: files.length,
