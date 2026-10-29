@@ -16,9 +16,11 @@ native answer and that run's trusted `completed` Pi event have arrived.
 
 The enclosing `text` fence above is documentation only. Each artwork is limited
 to 64 KiB UTF-8, and each answer to two artworks / 128 KiB. Titles permit 120
-Unicode characters and descriptions 500. Version 1 currently provides native
-HTML/CSS/JavaScript/SVG/canvas only; undeclared libraries are not loaded. Shared
-kit assets and the built-in skill are separate follow-up tickets.
+Unicode characters and descriptions 500. Kit 1.0.0 supplies shared theme/styles,
+native controls, tabs, tooltips and icon initialization. `data-libraries="d3
+lucide"` declares the optional local D3 7.9.0 and Lucide 1.17.0 globals. See
+[the exact author API and examples](docs-visualize-kit.md). Undeclared libraries
+are not loaded. The built-in generation skill is a separate follow-up ticket.
 
 ## Required response policy
 
@@ -26,6 +28,7 @@ Deploy `dist/visualize/sandbox.html` with **its own** HTTP response header:
 
 ```http
 Connection-Allowlist: ()
+Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; script-src-attr 'none'; style-src 'unsafe-inline'; img-src data:; font-src 'none'; connect-src 'none'; media-src 'none'; frame-src blob:; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'
 Cache-Control: no-store
 Referrer-Policy: no-referrer
 ```
@@ -46,10 +49,15 @@ execution in a production build. Normal chat remains usable without this rule;
 artworks show their title, text alternative and deployment explanation.
 
 The parent checks a same-origin, uncached, non-redirected shell response for the
-exact empty allowlist before creating a frame. Runtime scripts and assets are
-self-contained: Connection-Allowlist prevents the shell from loading even local
-external scripts. Future bundled libraries must be supplied as inline code by
-the trusted host, not fetched by the artwork.
+exact empty allowlist and matching CSP value above before creating a frame.
+Preserve the exact directive value/order from the Nginx example; missing or
+different policies fail closed. The CSP meta is defense in depth, not a response
+header replacement. Runtime scripts and assets are self-contained:
+Connection-Allowlist prevents the shell from loading even local external scripts.
+The trusted parent fetches fixed local CSS/runtime and declared libraries with
+Fetch integrity and byte checks, then supplies inline code. The artwork never
+fetches dependencies. Deploy the whole `dist/visualize/` directory, including
+the manifest, NOTICE, vendor scripts and adjacent licenses.
 
 ## Browser support and isolation
 
@@ -70,7 +78,8 @@ base changes. Neither frame grants same-origin, popups, downloads, forms or top
 navigation permissions. No credential, model/tool or file-access bridge exists.
 
 Only ready, bounded size and error messages are accepted from the actual frame
-and current instance channel. Model-provided IDs and titles do not identify
+and current instance channel; host theme updates travel down the same restricted
+display channel. There is no author follow-up API. Model-provided IDs and titles do not identify
 persistent content. The view uses conversation, platform message, block position
 and a content fingerprint; the fingerprint is not an authorization token.
 
@@ -101,5 +110,7 @@ and the full abnormal-history/transport acceptance matrix.
 
 Use `/?replay=visualize` for the fixed queue demonstration. Replay uses the same
 projection, parser, validation and host as live/history; it never calls a model.
+`/?replay=visualize-kit` demonstrates shared controls, D3, Lucide, SVG and canvas.
 Real Dify and network evidence is recorded in
-`../docs/evidence/pi-visualize-ticket01.md`.
+`../docs/evidence/pi-visualize-ticket01.md` and
+`../docs/evidence/pi-visualize-ticket02.md`.

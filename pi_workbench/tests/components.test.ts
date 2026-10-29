@@ -4,6 +4,14 @@ import AskUserForm from '../src/components/AskUserForm.vue'
 import ApprovalCard from '../src/components/ApprovalCard.vue'
 import TranscriptEntry from '../src/components/TranscriptEntry.vue'
 import type { Questionnaire } from '../src/projection/transcript'
+import { readFile } from 'node:fs/promises'
+import { sandboxPolicy } from '../src/visualize/kit'
+
+async function localResourceResponse(url: URL | string) {
+  const path = new URL(String(url)).pathname
+  if (path.endsWith('/sandbox.html')) return new Response('', { headers: { 'Connection-Allowlist': '()', 'Content-Security-Policy': sandboxPolicy } })
+  return new Response(await readFile(new URL('../public' + path, import.meta.url)))
+}
 
 const questionnaire: Questionnaire = {
   id: 'q1',
@@ -162,7 +170,7 @@ it('preserves a single frame while expanding and ignores messages from other fra
   const { vi } = await import('vitest')
   const { flushPromises } = await import('@vue/test-utils')
   vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 Chrome/154.0.0.0')
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, headers: new Headers({ 'Connection-Allowlist': '()' }) }))
+  vi.stubGlobal('fetch', vi.fn(localResourceResponse))
   try {
     const wrapper = mount(TranscriptEntry, { props: { conversationId: 'conv-one', entry: {
       id: 'a1', kind: 'message', role: 'assistant', ts: 1, streaming: false,
@@ -170,6 +178,7 @@ it('preserves a single frame while expanding and ignores messages from other fra
       text: '```pi-visualize\n<section data-pi-visualize="1" data-kit-version="1" data-title="排队演示" data-description="调参观察变化"></section>\n```',
     } as any } })
     await flushPromises()
+    await vi.waitFor(() => expect(wrapper.find('iframe').exists()).toBe(true))
     const frame = wrapper.find('iframe').element as HTMLIFrameElement
     const contentIdentity = wrapper.find('.pi-visualize').attributes('data-content-id')
     expect(contentIdentity).toMatch(/^conv-one:platform-a1:0:[a-f0-9]+$/)
@@ -179,6 +188,9 @@ it('preserves a single frame while expanding and ignores messages from other fra
     expect(wrapper.find('iframe').element).toBe(frame)
     expect(frame.getAttribute('sandbox')).toBe('allow-scripts')
     await wrapper.get('button[aria-expanded]').trigger('click')
+    expect(wrapper.find('iframe').element).toBe(frame)
+    await wrapper.setProps({ entry: { ...wrapper.props('entry') } as any })
+    await flushPromises()
     expect(wrapper.find('iframe').element).toBe(frame)
     await wrapper.get('.pi-visualize-actions button:last-child').trigger('click')
     expect(wrapper.find('iframe').exists()).toBe(false)
@@ -190,7 +202,7 @@ it('opens a valid unconfirmed native artwork only after an explicit click, witho
   const { vi } = await import('vitest')
   const { flushPromises } = await import('@vue/test-utils')
   vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 Chrome/154.0.0.0')
-  const fetchMock = vi.fn().mockResolvedValue({ ok: true, headers: new Headers({ 'Connection-Allowlist': '()' }) })
+  const fetchMock = vi.fn(localResourceResponse)
   vi.stubGlobal('fetch', fetchMock)
   try {
     const entry = { id: 'history-a', kind: 'message', role: 'assistant', ts: 1, streaming: false,
@@ -203,7 +215,8 @@ it('opens a valid unconfirmed native artwork only after an explicit click, witho
     expect(wrapper.find('iframe').exists()).toBe(false)
     await wrapper.get('button').trigger('click')
     await flushPromises()
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(wrapper.find('iframe').exists()).toBe(true))
+    expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(wrapper.find('iframe').exists()).toBe(true)
     expect(entry.runStatus).toBe('unknown')
     expect(wrapper.text()).toContain('运行状态未确认')

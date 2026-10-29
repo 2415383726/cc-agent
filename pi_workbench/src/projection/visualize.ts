@@ -1,4 +1,5 @@
 import { markdownTokens, renderMarkdown } from './markdown'
+import { supportedLibraries } from '../visualize/kit'
 
 export interface VisualizeBlock {
   index: number
@@ -65,7 +66,8 @@ function validateFragment(source: string, content: DocumentFragment, root: Eleme
   const description = root.getAttribute('data-description') || ''
   if (!title.trim() || !description.trim()) return '作品缺少标题或文字说明。'
   if ([...title].length > 120 || [...description].length > 500) return '作品的标题或文字说明过长。'
-  if ((root.getAttribute('data-libraries') || '').trim()) return '此版本尚不支持声明的本地库。'
+  if ((root.getAttribute('data-libraries') || '').split(/[ ,]+/).filter(Boolean)
+    .some((name) => !supportedLibraries.includes(name))) return '此作品声明了不支持的本地库。'
   for (const element of fragmentElements(root)) {
     if (['BASE', 'META', 'LINK', 'IFRAME', 'OBJECT', 'EMBED'].includes(element.tagName.toUpperCase())) {
       return '作品包含不支持的文档或资源元素。'

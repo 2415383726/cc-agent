@@ -3,6 +3,8 @@
   color-scheme: dark;
   background: #0d0d0d;
   --bg: #0d0d0d;
+  --header-bg: rgb(13 13 13 / 82%);
+  --footer-bg: rgb(13 13 13 / 92%);
   --sidebar: #161616;
   --panel: #191919;
   --panel-soft: #1f1f1f;
@@ -14,6 +16,18 @@
   --muted: #7a7a7a;
   --muted-strong: #afafaf;
   --accent: #8a78ff;
+  --viz-on-primary: #0d0d0d;
+  --viz-control-border: #70707a;
+  --viz-danger: #fca5a5;
+  --status-ok: #78bd8b;
+  --status-error: #d88a96;
+  --status-warning: #c6ad83;
+  --viz-series-1: #a99aff;
+  --viz-series-2: #73c9e8;
+  --viz-series-3: #83d7ae;
+  --viz-series-4: #f3bf70;
+  --viz-series-5: #ed97bd;
+  --viz-series-6: #c5b5e8;
   --accent-soft: rgb(138 120 255 / 10%);
   --accent-border: rgb(138 120 255 / 28%);
   --syntax-comment: #6b7280;
@@ -61,6 +75,50 @@
   text-rendering: optimizeLegibility;
 }
 
+:root[data-theme="light"] {
+  color: #25252c;
+  color-scheme: light;
+  background: #fafafa;
+  --bg: #fafafa;
+  --header-bg: rgb(250 250 250 / 94%);
+  --footer-bg: rgb(250 250 250 / 92%);
+  --sidebar: #f1f1f3;
+  --panel: #ffffff;
+  --panel-soft: #f2f2f5;
+  --panel-strong: #e8e8ee;
+  --surface: #ffffff;
+  --border: #d1d1da;
+  --border-soft: #e2e2e8;
+  --text: #25252c;
+  --muted: #686875;
+  --muted-strong: #5d5d6c;
+  --accent: #6248c4;
+  --accent-soft: rgb(98 72 196 / 8%);
+  --accent-border: rgb(98 72 196 / 30%);
+  --blue-accent: #6248c4;
+  --viz-on-primary: #ffffff;
+  --viz-control-border: #858590;
+  --viz-danger: #b52339;
+  --status-ok: #216b3b;
+  --status-error: #a82b43;
+  --status-warning: #865b18;
+  --viz-series-1: #6d50bd;
+  --viz-series-2: #007898;
+  --viz-series-3: #16764e;
+  --viz-series-4: #9d6400;
+  --viz-series-5: #b6417a;
+  --viz-series-6: #805d99;
+  --syntax-comment: #686875;
+  --syntax-keyword: #7e22ce;
+  --syntax-number: #945a00;
+  --syntax-string: #166534;
+  --syntax-function: #1d4ed8;
+  --syntax-type: #0e7490;
+  --syntax-variable: #a51d3a;
+  --syntax-operator: #454550;
+  --syntax-punctuation: #686875;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -87,4 +145,3 @@ textarea {
 button {
   cursor: default;
 }
-

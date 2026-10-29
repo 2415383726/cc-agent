@@ -1,0 +1,52 @@
+{
+  "protocolVersion": "1",
+  "kitVersion": "1.0.0",
+  "kitMajor": "1",
+  "upstreamReference": "https://github.com/zai-org/ZCode/tree/3c5b227649371507ddc4eb46ac5133afe6db1cab/apps/zcode-cli/packages/visualize-plugin/skills/visualize/assets/vendor",
+  "resources": [
+    {
+      "id": "kit-style",
+      "kind": "style",
+      "version": "1.0.0",
+      "file": "visualize/kit-1.css",
+      "bytes": 5541,
+      "sha256": "e54c0eae6210615195b6183aeb25cfeca3f7ea6dbc9282ba62af288c26ae8a0d",
+      "license": "project",
+      "source": "Project-authored"
+    },
+    {
+      "id": "kit-runtime",
+      "kind": "runtime",
+      "version": "1.0.0",
+      "file": "visualize/kit-1.js",
+      "bytes": 5478,
+      "sha256": "860461179d4737345f28305f0c474f3353fca281ce70e3e62c4a014844b936e2",
+      "license": "project",
+      "source": "Project-authored"
+    },
+    {
+      "id": "d3",
+      "kind": "library",
+      "version": "7.9.0",
+      "file": "visualize/vendor/d3-7.9.0.min.js",
+      "bytes": 279706,
+      "sha256": "f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539",
+      "license": "ISC",
+      "licenseFile": "visualize/vendor/d3-7.9.0.min.js.LICENSE",
+      "licenseSha256": "3e6849627f74ff73c257a3ae1efb574015d94fc1035c05ec3c15805165efcbc4",
+      "source": "d3@7.9.0/dist/d3.min.js"
+    },
+    {
+      "id": "lucide",
+      "kind": "library",
+      "version": "1.17.0",
+      "file": "visualize/vendor/lucide-1.17.0.js",
+      "bytes": 601680,
+      "sha256": "fde878a4f7aebe548b071eaaf343d898f66d275e93970abe95d8ca5fda290b51",
+      "license": "ISC (with MIT-derived icons)",
+      "licenseFile": "visualize/vendor/lucide-1.17.0.js.LICENSE",
+      "licenseSha256": "b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57",
+      "source": "lucide@1.17.0/dist/umd/lucide.js"
+    }
+  ]
+}

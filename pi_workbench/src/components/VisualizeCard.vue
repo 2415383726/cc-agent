@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { VisualizeBlock } from '../projection/visualize'
+import { hasSandboxPolicy, loadKit, readHostTheme, type KitAssets } from '../visualize/kit'
 
 const props = defineProps<{ block: VisualizeBlock; complete: boolean; status?: string; contentId: string }>()
 const frame = ref<HTMLIFrameElement | null>(null)
@@ -22,6 +23,8 @@ let channel = ''
 let initialized = false
 let messages = 0
 let windowStart = 0
+let assets: KitAssets | null = null
+let themeObserver: MutationObserver | null = null
 
 const message = computed(() => {
   if (!props.complete) return props.status && props.status !== 'completed'
@@ -44,6 +47,9 @@ function dispose() {
   ready.value = false
   initialized = false
   channel = ''
+  assets = null
+  themeObserver?.disconnect()
+  themeObserver = null
   window.removeEventListener('message', onMessage)
 }
 
@@ -67,15 +73,28 @@ async function start() {
     const url = new URL(`${import.meta.env.BASE_URL}visualize/sandbox.html`, window.location.href)
     const response = await fetch(url, { signal: abort.signal, credentials: 'omit', cache: 'no-store', redirect: 'error' })
     if (current !== ticket) return
-    if (!response.ok || response.headers.get('Connection-Allowlist')?.trim() !== '()') {
+    if (!response.ok || !hasSandboxPolicy(response.headers)) {
       fail('部署尚未启用作品网络隔离；请联系维护者配置后再查看。')
       return
     }
+    let prepared: KitAssets
+    try { prepared = await loadKit(props.block.libraries) }
+    catch (cause) {
+      if (current !== ticket) return
+      fail(cause instanceof Error ? cause.message : '本地可视化资源无法加载。')
+      return
+    }
+    if (current !== ticket) return
+    assets = prepared
     channel = [...crypto.getRandomValues(new Uint32Array(4))].map((part) => part.toString(16).padStart(8, '0')).join('')
     initialized = false
     messages = 0
     windowStart = Date.now()
     window.addEventListener('message', onMessage)
+    themeObserver = new MutationObserver(() => {
+      if (initialized && frame.value?.contentWindow) frame.value.contentWindow.postMessage({ type: 'pi-visualize:theme', id: channel, theme: readHostTheme() }, '*')
+    })
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] })
     frameUrl.value = url.href
   } catch (cause) {
     if (current !== ticket || abort?.signal.aborted) return
@@ -88,11 +107,6 @@ function fail(text: string) {
   error.value = text
 }
 
-function theme() {
-  const style = getComputedStyle(document.documentElement)
-  return { background: style.getPropertyValue('--bg').trim() || '#0d0d0d', text: style.getPropertyValue('--text').trim() || '#ececec' }
-}
-
 function onMessage(event: MessageEvent) {
   if (!frame.value || !frameUrl.value || event.source !== frame.value.contentWindow) return
   const data = event.data
@@ -101,7 +115,7 @@ function onMessage(event: MessageEvent) {
   if (++messages > 40) return
   if (data.type === 'pi-visualize:shell-ready' && !initialized) {
     initialized = true
-    frame.value.contentWindow?.postMessage({ type: 'pi-visualize:init', id: channel, source: props.block.source, theme: theme() }, '*')
+    frame.value.contentWindow?.postMessage({ type: 'pi-visualize:init', id: channel, source: props.block.source, theme: readHostTheme(), assets }, '*')
     return
   }
   if (data.id !== channel) return
@@ -126,7 +140,7 @@ function viewSavedArtwork() {
   void start()
 }
 
-watch(() => [props.contentId, props.block.source, props.complete, props.status], () => {
+watch([() => props.contentId, () => props.block.source, () => props.complete, () => props.status], () => {
   manuallyRequested.value = false
   void start()
 }, { immediate: true })

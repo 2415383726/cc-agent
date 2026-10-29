@@ -1,4 +1,5 @@
 import queueSource from '../../fixtures/queue-visualize.html?raw'
+import kitSource from '../../fixtures/kit-visualize.html?raw'
 import { DisplayEvent, SCHEMA } from '../contract/display'
 import type { Questionnaire } from '../projection/transcript'
 
@@ -67,8 +68,19 @@ const questionnaire: Questionnaire = {
 }
 
 const queueRun = makeRun('replay_visualize')
+const kitRun = makeRun('replay_visualize_kit')
 
 export const REPLAY_SCENARIOS: ReplayScenario[] = [
+  {
+    id: 'visualize-kit', title: '本地可视化套件', description: '统一主题、表单、tabs、tooltip、D3、Lucide 与 canvas；固定回放。',
+    events: [
+      kitRun('message.user', { text: '比较到达速度、处理速度与窗口数对排队的影响。', message_id: 'kit-user' }),
+      kitRun('message.start', { message_id: 'kit-answer' }),
+      kitRun('message.end', { message_id: 'kit-answer', text: '使用模拟采样比较排队变化。' }),
+      kitRun('run.state', { status: 'completed', answer: '使用模拟采样比较排队变化。' }),
+    ],
+    answers: [{ runId: 'replay_visualize_kit', platformMessageId: 'replay-kit-platform', text: '使用模拟采样比较排队变化。\n\n```pi-visualize\n' + kitSource.trim() + '\n```' }],
+  },
   {
     id: 'visualize', title: '交互排队演示', description: '固定原生 SVG 作品；本地回放不代表真实 Dify 验收。',
     events: [
