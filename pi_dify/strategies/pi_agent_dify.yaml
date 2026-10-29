@@ -1,0 +1,96 @@
+identity:
+  name: pi_agent_dify
+  author: pi_agent
+  label:
+    en_US: Pi Agent (Dify)
+    zh_Hans: Pi Agent（Dify）
+  description:
+    en_US: Pi harness execution with Dify models, tools, skills, approvals and recovery.
+    zh_Hans: 复用 Pi Harness 执行，使用 Dify 模型、工具、技能、审批与恢复。
+features:
+  - history-messages
+parameters:
+  - name: model
+    type: model-selector
+    scope: tool-call&llm
+    required: true
+    label: {en_US: Model, zh_Hans: 模型}
+  - name: query
+    type: string
+    required: true
+    label: {en_US: Query, zh_Hans: 用户输入}
+  - name: tools
+    type: array[tools]
+    required: false
+    label: {en_US: Dify tools, zh_Hans: Dify 工具}
+  - name: files
+    type: string
+    required: false
+    label: {en_US: Files JSON, zh_Hans: 文件 JSON}
+    template:
+      enabled: true
+  - name: instruction
+    type: string
+    required: false
+    label: {en_US: Instruction, zh_Hans: 助手指令}
+    auto_generate:
+      type: prompt_instruction
+    template:
+      enabled: true
+  - name: app_skills_yaml
+    type: string
+    required: false
+    label: {en_US: App skills YAML, zh_Hans: 应用技能 YAML}
+    template:
+      enabled: true
+  - name: mcp_servers_config
+    type: string
+    required: false
+    label: {en_US: Remote MCP servers JSON, zh_Hans: 远程 MCP 服务 JSON}
+    help:
+      en_US: Remote sse or streamable_http MCP servers. Headers must already be resolved by Dify variables.
+      zh_Hans: 仅支持远程 sse 或 streamable_http MCP；headers 必须由 Dify 变量解析完成。
+    template:
+      enabled: true
+  - name: runtime_config
+    type: string
+    required: false
+    label: {en_US: Runtime config JSON, zh_Hans: 运行配置 JSON}
+    template:
+      enabled: true
+  - name: interaction
+    type: string
+    required: false
+    label: {en_US: Interaction JSON, zh_Hans: 交互答复 JSON}
+    help:
+      en_US: A structured answer or approval decision for the waiting interaction.
+      zh_Hans: 针对等待中的问卷或审批提交的结构化答复。
+    template:
+      enabled: true
+  - name: agent_state
+    type: string
+    required: false
+    label: {en_US: Agent state, zh_Hans: Agent 状态}
+    template:
+      enabled: true
+  - name: conversation_id
+    type: string
+    required: false
+    label: {en_US: Conversation ID, zh_Hans: 会话 ID}
+    template:
+      enabled: true
+  - name: user_id
+    type: string
+    required: false
+    label: {en_US: User ID, zh_Hans: 用户 ID}
+    template:
+      enabled: true
+  - name: app_id
+    type: string
+    required: false
+    label: {en_US: App ID, zh_Hans: 应用 ID}
+    template:
+      enabled: true
+extra:
+  python:
+    source: strategies/pi_agent_dify.py

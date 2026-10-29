@@ -1,0 +1,15 @@
+identity:
+  author: pi_agent
+  name: pi_agent
+  label:
+    en_US: Pi Agent
+    zh_Hans: Pi Agent
+  description:
+    en_US: Pi harness agent with a Dify-hosted model, tools, skills and state.
+    zh_Hans: 使用 Pi Harness、由 Dify 提供模型、工具、技能与状态的 Agent。
+  icon: icon.svg
+strategies:
+  - strategies/pi_agent_dify.yaml
+extra:
+  python:
+    source: provider/pi_agent.py

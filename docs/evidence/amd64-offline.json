@@ -1,0 +1,611 @@
+{
+  "package": "/home/ygao/Desktop/work/cadre-system/cc_agent/pi_dify/dist/pi_dify-0.1.0-offline-linux-amd64.difypkg",
+  "package_sha256": "89f373f35094943c0d58be31aa21dfa50c5572f55e340f65e6c9420650e0f973",
+  "package_bytes": 26283527,
+  "arch": "amd64",
+  "wheel_count": 72,
+  "version_manifest": {
+    "architecture": "amd64",
+    "locked_requirements": {
+      "annotated-types": "0.8.0",
+      "anyio": "4.15.1",
+      "attrs": "26.1.0",
+      "blinker": "1.9.0",
+      "certifi": "2026.10.23",
+      "cffi": "2.1.1",
+      "charset-normalizer": "3.5.2",
+      "click": "8.5.0",
+      "cryptography": "50.0.2",
+      "dify-plugin": "0.7.4",
+      "distro": "1.9.0",
+      "dpkt": "1.9.8",
+      "flask": "3.0.3",
+      "gevent": "25.5.1",
+      "greenlet": "3.5.6",
+      "h11": "0.16.0",
+      "httpcore": "1.0.9",
+      "httpcore2": "2.16.0",
+      "httpx": "0.28.1",
+      "httpx-sse": "0.4.3",
+      "httpx2": "2.16.0",
+      "idna": "3.20",
+      "itsdangerous": "2.2.0",
+      "jinja2": "3.1.6",
+      "jsonpatch": "1.38",
+      "jsonpointer": "3.6",
+      "jsonschema": "4.26.0",
+      "jsonschema-specifications": "2025.9.1",
+      "langchain-core": "1.7.1",
+      "langchain-protocol": "0.0.20",
+      "langsmith": "0.14.14",
+      "markupsafe": "3.0.4",
+      "mcp": "1.26.0",
+      "multidict": "7.2.1",
+      "orjson": "3.13.0",
+      "packaging": "26.3",
+      "pathspec": "1.1.1",
+      "pi-agent-core-lc": "0.6.0",
+      "pi-agent-harness-lc": "0.6.0",
+      "propcache": "0.5.4",
+      "pycparser": "3.12",
+      "pydantic": "2.14.1",
+      "pydantic-core": "2.50.1",
+      "pydantic-settings": "2.16.2",
+      "pyjwt": "2.15.1",
+      "python-dotenv": "1.2.4",
+      "python-multipart": "0.0.32",
+      "pyyaml": "6.0.3",
+      "referencing": "0.37.0",
+      "regex": "2026.9.29",
+      "requests": "2.32.5",
+      "requests-toolbelt": "1.0.0",
+      "rpds-py": "2026.9.1",
+      "sniffio": "1.3.1",
+      "socksio": "1.0.0",
+      "sse-starlette": "3.6.0",
+      "starlette": "1.10.0",
+      "tenacity": "9.2.1",
+      "tiktoken": "0.8.0",
+      "truststore": "0.10.5",
+      "typing-extensions": "4.16.0",
+      "typing-inspection": "0.4.4",
+      "urllib3": "2.8.0",
+      "uuid-utils": "0.19.0",
+      "uvicorn": "0.54.0",
+      "websockets": "17.3",
+      "werkzeug": "3.1.9",
+      "xxhash": "4.0.2",
+      "yarl": "1.25.1",
+      "zope-event": "6.2",
+      "zope-interface": "8.7",
+      "zstandard": "0.25.0"
+    },
+    "plugin": "pi_dify",
+    "plugin_version": "0.1.0",
+    "python": "3.12",
+    "static_frontend": {
+      "file_count": 3,
+      "report_sha256": "bb3505a61a4c3f8030d262582fbd2dce71160d8cd6a38714f28b15e11c879483",
+      "total_bytes": 396258,
+      "violations": []
+    },
+    "wheel_count": 72,
+    "wheels": [
+      {
+        "file": "annotated_types-0.8.0-py3-none-any.whl",
+        "license": "MIT",
+        "name": "annotated-types",
+        "sha256": "f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0",
+        "version": "0.8.0"
+      },
+      {
+        "file": "anyio-4.15.1-py3-none-any.whl",
+        "license": "MIT",
+        "name": "anyio",
+        "sha256": "6152fdbbf9a77fdec97731721bebf7c4c44f7c29b424b0065826173efc7ed101",
+        "version": "4.15.1"
+      },
+      {
+        "file": "attrs-26.1.0-py3-none-any.whl",
+        "license": "MIT",
+        "name": "attrs",
+        "sha256": "c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309",
+        "version": "26.1.0"
+      },
+      {
+        "file": "blinker-1.9.0-py3-none-any.whl",
+        "license": "",
+        "name": "blinker",
+        "sha256": "ba0efaa9080b619ff2f3459d1d500c57bddea4a6b424b60a91141db6fd2f08bc",
+        "version": "1.9.0"
+      },
+      {
+        "file": "certifi-2026.10.23-py3-none-any.whl",
+        "license": "MPL-2.0",
+        "name": "certifi",
+        "sha256": "e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1",
+        "version": "2026.10.23"
+      },
+      {
+        "file": "cffi-2.1.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        "license": "MIT-0",
+        "name": "cffi",
+        "sha256": "c1453022f490d2459a11819d83ad1d586e9ff65a12ac3e705ffebd46d3685dcf",
+        "version": "2.1.1"
+      },
+      {
+        "file": "charset_normalizer-3.5.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        "license": "MIT",
+        "name": "charset-normalizer",
+        "sha256": "3d31298449090ab8d47b7b1b2a555ff73cac7ed438a08b7ac160980c7ebed649",
+        "version": "3.5.2"
+      },
+      {
+        "file": "click-8.5.0-py3-none-any.whl",
+        "license": "BSD-3-Clause",
+        "name": "click",
+        "sha256": "255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360",
+        "version": "8.5.0"
+      },
+      {
+        "file": "cryptography-50.0.2-cp311-abi3-manylinux_2_28_x86_64.whl",
+        "license": "Apache-2.0 OR BSD-3-Clause",
+        "name": "cryptography",
+        "sha256": "4061c0079120205fb760c58acab6443e217307dcf05e3702cf970e0689972856",
+        "version": "50.0.2"
+      },
+      {
+        "file": "dify_plugin-0.7.4-py3-none-any.whl",
+        "license": "Apache2.0",
+        "name": "dify_plugin",
+        "sha256": "55855320a4093bbcad6f19014fe0f13277b9c2d8b3331fec27bc3498467a81be",
+        "version": "0.7.4"
+      },
+      {
+        "file": "distro-1.9.0-py3-none-any.whl",
+        "license": "Apache License, Version 2.0",
+        "name": "distro",
+        "sha256": "7bffd925d65168f85027d8da9af6bddab658135b840670a223589bc0c8ef02b2",
+        "version": "1.9.0"
+      },
+      {
+        "file": "dpkt-1.9.8-py3-none-any.whl",
+        "license": "BSD",
+        "name": "dpkt",
+        "sha256": "4da4d111d7bf67575b571f5c678c71bddd2d8a01a3d57d489faf0a92c748fbfd",
+        "version": "1.9.8"
+      },
+      {
+        "file": "flask-3.0.3-py3-none-any.whl",
+        "license": "",
+        "name": "Flask",
+        "sha256": "34e815dfaa43340d1d15a5c3a02b8476004037eb4840b34910c6e21679d288f3",
+        "version": "3.0.3"
+      },
+      {
+        "file": "gevent-25.5.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        "license": "MIT",
+        "name": "gevent",
+        "sha256": "c1325ed44225c8309c0dd188bdbbbee79e1df8c11ceccac226b861c7d52e4837",
+        "version": "25.5.1"
+      },
+      {
+        "file": "greenlet-3.5.6-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+        "license": "MIT AND PSF-2.0",
+        "name": "greenlet",
+        "sha256": "975736b002ed080d124cf81a79cb7e05cb26d6b3f5c7a7b651c0fcce70353aa1",
+        "version": "3.5.6"
+      },
+      {
+        "file": "h11-0.16.0-py3-none-any.whl",
+        "license": "MIT",
+        "name": "h11",
+        "sha256": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86",
+        "version": "0.16.0"
+      },
+      {
+        "file": "httpcore-1.0.9-py3-none-any.whl",
+        "license": "BSD-3-Clause",
+        "name": "httpcore",
+        "sha256": "2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55",
+        "version": "1.0.9"
+      },
+      {
+        "file": "httpcore2-2.16.0-py3-none-any.whl",
+        "license": "BSD-3-Clause",
+        "name": "httpcore2",
+        "sha256": "5c4358319f2602d984ad93182c9fee5160f22e9da7babdda870a5e7c4e2dc34f",
+        "version": "2.16.0"
+      },
+      {
+        "file": "httpx-0.28.1-py3-none-any.whl",
+        "license": "BSD-3-Clause",
+        "name": "httpx",
+        "sha256": "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad",
+        "version": "0.28.1"
+      },
+      {
+        "file": "httpx2-2.16.0-py3-none-any.whl",
+        "license": "BSD-3-Clause",
+        "name": "httpx2",
+        "sha256": "fd2c5d7909e8d86fe92d53020c310ca0e4e431b838c207c5754b9bbf0308d49a",
+        "version": "2.16.0"
+      },
+      {
+        "file": "httpx_sse-0.4.3-py3-none-any.whl",
+        "license": "MIT",
+        "name": "httpx-sse",
+        "sha256": "0ac1c9fe3c0afad2e0ebb25a934a59f4c7823b60792691f779fad2c5568830fc",
+        "version": "0.4.3"
+      },
+      {
+        "file": "idna-3.20-py3-none-any.whl",
+        "license": "BSD-3-Clause",
+        "name": "idna",
+        "sha256": "ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c",
+        "version": "3.20"
+      },
+      {
+        "file": "itsdangerous-2.2.0-py3-none-any.whl",
+        "license": "",
+        "name": "itsdangerous",
+        "sha256": "c6242fc49e35958c8b15141343aa660db5fc54d4f13a1db01a3f5891b98700ef",
+        "version": "2.2.0"
+      },
+      {
+        "file": "jinja2-3.1.6-py3-none-any.whl",
+        "license": "",
+        "name": "Jinja2",
+        "sha256": "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67",
+        "version": "3.1.6"
+      },
+      {
+        "file": "jsonpatch-1.38-py3-none-any.whl",
+        "license": "BSD-3-Clause",
+        "name": "jsonpatch",
+        "sha256": "46260c5df952abd4734a098f94512dc00bc38539152ac3ef069ed0475e4f5695",
+        "version": "1.38"
+      },
+      {
+        "file": "jsonpointer-3.6-py3-none-any.whl",
+        "license": "Modified BSD License",
+        "name": "jsonpointer",
+        "sha256": "a45c858f8a9e171f6b3790ed9446c9382782f6c4cb4589176813c5a553f4cfcd",
+        "version": "3.6"
+      },
+      {
+        "file": "jsonschema-4.26.0-py3-none-any.whl",
+        "license": "MIT",
+        "name": "jsonschema",
+        "sha256": "d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce",
+        "version": "4.26.0"
+      },
+      {
+        "file": "jsonschema_specifications-2025.9.1-py3-none-any.whl",
+        "license": "MIT",
+        "name": "jsonschema-specifications",
+        "sha256": "98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe",
+        "version": "2025.9.1"
+      },
+      {
+        "file": "langchain_core-1.7.1-py3-none-any.whl",
+        "license": "MIT",
+        "name": "langchain-core",
+        "sha256": "2d668788945e824832e19bca05788a25dbb864197d63ec48b583057cf8d975fa",
+        "version": "1.7.1"
+      },
+      {
+        "file": "langchain_protocol-0.0.20-py3-none-any.whl",
+        "license": "MIT",
+        "name": "langchain-protocol",
+        "sha256": "3c935e5e46b0f6f9cb52f45ba7cfa53d1b9fa80c82c4a277d47f03e07f7385b1",
+        "version": "0.0.20"
+      },
+      {
+        "file": "langsmith-0.14.14-py3-none-any.whl",
+        "license": "MIT",
+        "name": "langsmith",
+        "sha256": "9265529ed9a592110cc75fa21f088ed34eb5f56ae680f6e9490e7f65e177386c",
+        "version": "0.14.14"
+      },
+      {
+        "file": "markupsafe-3.0.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        "license": "BSD-3-Clause",
+        "name": "MarkupSafe",
+        "sha256": "8e124f974786f831d6043728e38296969d3579db8896fe004682f5758e613581",
+        "version": "3.0.4"
+      },
+      {
+        "file": "mcp-1.26.0-py3-none-any.whl",
+        "license": "MIT",
+        "name": "mcp",
+        "sha256": "904a21c33c25aa98ddbeb47273033c435e595bbacfdb177f4bd87f6dceebe1ca",
+        "version": "1.26.0"
+      },
+      {
+        "file": "multidict-7.2.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        "license": "Apache-2.0",
+        "name": "multidict",
+        "sha256": "1fb8c1a3480c130c3a6422d5f16f3cad6552bf08c2089dd288ba7134649183b5",
+        "version": "7.2.1"
+      },
+      {
+        "file": "orjson-3.13.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        "license": "MPL-2.0 AND (Apache-2.0 OR MIT)",
+        "name": "orjson",
+        "sha256": "bceadfd314bd238f584fc229a4bbaf0e573597e7a026dec5429fbf29fd66c641",
+        "version": "3.13.0"
+      },
+      {
+        "file": "packaging-26.3-py3-none-any.whl",
+        "license": "Apache-2.0 OR BSD-2-Clause",
+        "name": "packaging",
+        "sha256": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c",
+        "version": "26.3"
+      },
+      {
+        "file": "pathspec-1.1.1-py3-none-any.whl",
+        "license": "",
+        "name": "pathspec",
+        "sha256": "a00ce642f577bf7f473932318056212bc4f8bfdf53128c78bbd5af0b9b20b189",
+        "version": "1.1.1"
+      },
+      {
+        "file": "pi_agent_core_lc-0.6.0-py3-none-any.whl",
+        "license": "MIT",
+        "name": "pi-agent-core-lc",
+        "sha256": "5179cf34e0f0dd454d6fbc6350662ea4a51296619ffa4aae6bfa960b3e52b537",
+        "version": "0.6.0"
+      },
+      {
+        "file": "pi_agent_harness_lc-0.6.0-py3-none-any.whl",
+        "license": "MIT",
+        "name": "pi-agent-harness-lc",
+        "sha256": "429c54d1a7f4d4df94940e4a59ecd12dbaad283ef413609e033db1db9af7fd65",
+        "version": "0.6.0"
+      },
+      {
+        "file": "propcache-0.5.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        "license": "Apache-2.0",
+        "name": "propcache",
+        "sha256": "2814ecd8e818f487bee4b0f921bc4d1c176cc5fc71ac0f072d0fa67eda4ac14b",
+        "version": "0.5.4"
+      },
+      {
+        "file": "pycparser-3.12-py3-none-any.whl",
+        "license": "BSD-3-Clause",
+        "name": "pycparser",
+        "sha256": "a076f3f489b39b43ed13563a1dafe42447445bec2e294154ec5c57fcdda4c85e",
+        "version": "3.12"
+      },
+      {
+        "file": "pydantic-2.14.1-py3-none-any.whl",
+        "license": "MIT",
+        "name": "pydantic",
+        "sha256": "9195d967ec791692a04438115466764fb8b9a27b31f14a760437694f40d6b454",
+        "version": "2.14.1"
+      },
+      {
+        "file": "pydantic_core-2.50.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        "license": "MIT",
+        "name": "pydantic_core",
+        "sha256": "93ba4e9d8210d941c200431a56b2c0400b131865947903937ed3ec5404307d2e",
+        "version": "2.50.1"
+      },
+      {
+        "file": "pydantic_settings-2.16.2-py3-none-any.whl",
+        "license": "MIT",
+        "name": "pydantic-settings",
+        "sha256": "8d523e5c129b097686bde019bd6109bff53f4c8c3f63f1ddf9933ffa42e5ab4f",
+        "version": "2.16.2"
+      },
+      {
+        "file": "pyjwt-2.15.1-py3-none-any.whl",
+        "license": "MIT",
+        "name": "PyJWT",
+        "sha256": "42d59d631f7768a1028a64c7ff581a9bf7519804daf91fc5b6c56e30eec5e193",
+        "version": "2.15.1"
+      },
+      {
+        "file": "python_dotenv-1.2.4-py3-none-any.whl",
+        "license": "BSD-3-Clause",
+        "name": "python-dotenv",
+        "sha256": "42269a8a5b3fd54ffa6f3d84b18abed50064717576b4ecf03dc4a55d8aa04fdc",
+        "version": "1.2.4"
+      },
+      {
+        "file": "python_multipart-0.0.32-py3-none-any.whl",
+        "license": "Apache-2.0",
+        "name": "python-multipart",
+        "sha256": "ff6d3f776f16878c894e52e107296ffc890e913c611b1a4ec6c44e2821fe2e23",
+        "version": "0.0.32"
+      },
+      {
+        "file": "pyyaml-6.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        "license": "MIT",
+        "name": "PyYAML",
+        "sha256": "ba1cc08a7ccde2d2ec775841541641e4548226580ab850948cbfda66a1befcdc",
+        "version": "6.0.3"
+      },
+      {
+        "file": "referencing-0.37.0-py3-none-any.whl",
+        "license": "MIT",
+        "name": "referencing",
+        "sha256": "381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231",
+        "version": "0.37.0"
+      },
+      {
+        "file": "regex-2026.9.29-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        "license": "Apache-2.0 AND CNRI-Python",
+        "name": "regex",
+        "sha256": "39ab5894d971f9ac68baa6eca5c50387db579cfcacf36ae8df3feceb1815e6d0",
+        "version": "2026.9.29"
+      },
+      {
+        "file": "requests-2.32.5-py3-none-any.whl",
+        "license": "Apache-2.0",
+        "name": "requests",
+        "sha256": "2462f94637a34fd532264295e186976db0f5d453d1cdd31473c85a6a161affb6",
+        "version": "2.32.5"
+      },
+      {
+        "file": "requests_toolbelt-1.0.0-py2.py3-none-any.whl",
+        "license": "Apache 2.0",
+        "name": "requests-toolbelt",
+        "sha256": "cccfdd665f0a24fcf4726e690f65639d272bb0637b9b92dfd91a5568ccf6bd06",
+        "version": "1.0.0"
+      },
+      {
+        "file": "rpds_py-2026.9.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        "license": "MIT",
+        "name": "rpds-py",
+        "sha256": "addeda51556dac7c1a2f14cda62db8b621cd12afba3091d03a96c72932387eab",
+        "version": "2026.9.1"
+      },
+      {
+        "file": "sniffio-1.3.1-py3-none-any.whl",
+        "license": "MIT OR Apache-2.0",
+        "name": "sniffio",
+        "sha256": "2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2",
+        "version": "1.3.1"
+      },
+      {
+        "file": "socksio-1.0.0-py3-none-any.whl",
+        "license": "UNKNOWN",
+        "name": "socksio",
+        "sha256": "95dc1f15f9b34e8d7b16f06d74b8ccf48f609af32ab33c608d08761c5dcbb1f3",
+        "version": "1.0.0"
+      },
+      {
+        "file": "sse_starlette-3.6.0-py3-none-any.whl",
+        "license": "BSD-3-Clause",
+        "name": "sse-starlette",
+        "sha256": "e4dfa4d237d2712cb2b4d4918eda9b457cd6b44bbecdc838af75de836565bafd",
+        "version": "3.6.0"
+      },
+      {
+        "file": "starlette-1.10.0-py3-none-any.whl",
+        "license": "BSD-3-Clause",
+        "name": "starlette",
+        "sha256": "478c0ab3b4ced6e82719849c118fa406f0278a3499c1a898cd15cd31bdc38ce4",
+        "version": "1.10.0"
+      },
+      {
+        "file": "tenacity-9.2.1-py3-none-any.whl",
+        "license": "Apache-2.0",
+        "name": "tenacity",
+        "sha256": "9e56f17539296baab7beabb08b92f6ee3d7be92d8be72d763360677c2ad6580e",
+        "version": "9.2.1"
+      },
+      {
+        "file": "tiktoken-0.8.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        "license": "MIT License\n        \n        Copyright (c) 2022 OpenAI, Shantanu Jain\n        \n        Permission is hereby granted, free of charge, to any person obtaining a copy\n        of this software and associated documentation files (the \"Software\"), to deal\n        in the Software without restriction, including without limitation the rights\n        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell\n        copies of the Software, and to permit persons to whom the Software is\n        furnished to do so, subject to the following conditions:\n        \n        The above copyright notice and this permission notice shall be included in all\n        copies or substantial portions of the Software.\n        \n        THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\n        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\n        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\n        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\n        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\n        SOFTWARE.\n        ",
+        "name": "tiktoken",
+        "sha256": "d2908c0d043a7d03ebd80347266b0e58440bdef5564f84f4d29fb235b5df3b04",
+        "version": "0.8.0"
+      },
+      {
+        "file": "truststore-0.10.5-py3-none-any.whl",
+        "license": "MIT",
+        "name": "truststore",
+        "sha256": "9aaaedaefaf06d8b206278cf8b5012bc897f485a874503501e12d776df78951c",
+        "version": "0.10.5"
+      },
+      {
+        "file": "typing_extensions-4.16.0-py3-none-any.whl",
+        "license": "PSF-2.0",
+        "name": "typing_extensions",
+        "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+        "version": "4.16.0"
+      },
+      {
+        "file": "typing_inspection-0.4.4-py3-none-any.whl",
+        "license": "MIT",
+        "name": "typing-inspection",
+        "sha256": "65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147",
+        "version": "0.4.4"
+      },
+      {
+        "file": "urllib3-2.8.0-py3-none-any.whl",
+        "license": "MIT",
+        "name": "urllib3",
+        "sha256": "0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3",
+        "version": "2.8.0"
+      },
+      {
+        "file": "uuid_utils-0.19.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        "license": "BSD-3-Clause",
+        "name": "uuid_utils",
+        "sha256": "b8060530a8fa27f11947489c79bc36e6ebb465b2d714945364dc397283309417",
+        "version": "0.19.0"
+      },
+      {
+        "file": "uvicorn-0.54.0-py3-none-any.whl",
+        "license": "BSD-3-Clause",
+        "name": "uvicorn",
+        "sha256": "505bdb0f318731d45f1f712071fc781a8981f6847a31c902c9f5e652d4f67faf",
+        "version": "0.54.0"
+      },
+      {
+        "file": "websockets-17.3-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl",
+        "license": "BSD-3-Clause",
+        "name": "websockets",
+        "sha256": "a7f391838e8adcf1f2fe71561d9e5a9f74ea7ffa5052eb2db329aac677383136",
+        "version": "17.3"
+      },
+      {
+        "file": "werkzeug-3.1.9-py3-none-any.whl",
+        "license": "BSD-3-Clause",
+        "name": "Werkzeug",
+        "sha256": "6392e50c78460ba618e5b21f08a71f59c99ce99cdc6cf6e3dd7e6ccca8754fab",
+        "version": "3.1.9"
+      },
+      {
+        "file": "xxhash-4.0.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        "license": "BSD-2-Clause",
+        "name": "xxhash",
+        "sha256": "7c7c95dba490be3b4e5a2fa5595b4d4f088fe7b8726e5998b8c1d83b1f9eb3e4",
+        "version": "4.0.2"
+      },
+      {
+        "file": "yarl-1.25.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
+        "license": "Apache-2.0",
+        "name": "yarl",
+        "sha256": "c6f117789d22dce188e5754e8bc65b7e6ebf8cb73963b9fa761f672a5883769d",
+        "version": "1.25.1"
+      },
+      {
+        "file": "zope_event-6.2-py3-none-any.whl",
+        "license": "ZPL-2.1",
+        "name": "zope.event",
+        "sha256": "5e755153ac4faf64c10a4b6dd3307680166a3edf65b38df22df592610f8fa874",
+        "version": "6.2"
+      },
+      {
+        "file": "zope_interface-8.7-cp312-cp312-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl",
+        "license": "ZPL-2.1",
+        "name": "zope.interface",
+        "sha256": "90aef6e0a9924af18f60528895f2fc50cb634191939d65b10a96d9ced05030b5",
+        "version": "8.7"
+      },
+      {
+        "file": "zstandard-0.25.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        "license": "BSD-3-Clause",
+        "name": "zstandard",
+        "sha256": "5a56ba0db2d244117ed744dfa8f6f5b366e14148e00de44723413b2f3938a902",
+        "version": "0.25.0"
+      }
+    ]
+  },
+  "install_seconds": 0.24,
+  "smoke": {
+    "answer": "offline ok",
+    "state_prefix": "piagent-state:v1:gzip-ba",
+    "state_bytes": 841,
+    "terminal_status": "completed",
+    "model_requests": 1
+  },
+  "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
+  "offline": true,
+  "elapsed_seconds": 3.13
+}

@@ -1,0 +1,23 @@
+{
+  "generatedAt": "2026-10-29T01:35:07.230Z",
+  "fileCount": 3,
+  "totalBytes": 396258,
+  "files": [
+    {
+      "file": "assets/index-BkeELx-Q.js",
+      "bytes": 278752,
+      "sha256": "3c194bdd2b80f2cdab60d14d908aff218c9e76ff78911a157893f87564443723"
+    },
+    {
+      "file": "assets/index-CLJFP2j6.css",
+      "bytes": 117051,
+      "sha256": "ca8dc16f7810004dbce17a4f60fb106bc7dd0dc2b9ec0d0f8486cbaf4f9165f6"
+    },
+    {
+      "file": "index.html",
+      "bytes": 455,
+      "sha256": "54383dcc0b343a1d459e7ced4e6686d6961ec5528d0e6217dc60559990c7c4ed"
+    }
+  ],
+  "violations": []
+}

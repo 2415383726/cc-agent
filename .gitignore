@@ -16,3 +16,10 @@ cc_agent.difypkg
 
 # Per-checkout Claude settings
 **/.claude/settings.local.json
+
+# Pi Agent v2 build outputs
+pi_dify/wheels/
+pi_dify/dist/
+pi_workbench/node_modules/
+pi_workbench/dist/
+.ruff_cache/

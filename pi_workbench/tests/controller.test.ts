@@ -1,0 +1,145 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('../src/dify/transport', () => ({
+  streamChat: vi.fn(),
+  stopChat: vi.fn(),
+  listMessages: vi.fn(),
+  listConversations: vi.fn(),
+  uploadFile: vi.fn(),
+}))
+
+import * as transport from '../src/dify/transport'
+import { DifyController } from '../src/dify/controller'
+import { SCHEMA } from '../src/contract/display'
+
+const config = {
+  baseUrl: '/v1',
+  apiKey: 'app-test',
+  user: 'u1',
+  inputs: {},
+}
+
+function piEvent(type: string, seq: number, fields: Record<string, unknown> = {}) {
+  return {
+    schema: SCHEMA,
+    schema_version: 1,
+    type,
+    run_id: 'run_1',
+    seq,
+    ts: seq,
+    ...fields,
+  }
+}
+
+async function* streamOf(items: unknown[]) {
+  for (const item of items) yield item
+}
+
+function mockStream(items: unknown[]) {
+  ;(transport.streamChat as any).mockResolvedValue({ events: streamOf(items) })
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+})
+
+describe('DifyController', () => {
+  it('projects agent logs, merges the Dify final answer and keeps one assistant message', async () => {
+    mockStream([
+      { event: 'message', answer: 'Hello', task_id: 'task_1', conversation_id: 'conv_1' },
+      { event: 'agent_log', data: { piagent: piEvent('message.user', 0, { text: 'hi', message_id: 'u1' }) } },
+      { event: 'agent_log', data: { piagent: piEvent('message.start', 1, { message_id: 'a1' }) } },
+      { event: 'agent_log', data: { piagent: piEvent('message.delta', 2, { message_id: 'a1', delta: 'Hello' }) } },
+      { event: 'agent_log', data: { piagent: piEvent('message.end', 3, { message_id: 'a1', text: 'Hello' }) } },
+      { event: 'agent_log', data: { piagent: piEvent('run.state', 4, { status: 'completed', answer: 'Hello' }) } },
+      { event: 'agent_log', data: { piagent: piEvent('run.done', 5, { status: 'completed' }) } },
+      { event: 'message_end', conversation_id: 'conv_1' },
+    ])
+    const controller = new DifyController(config)
+    await controller.send('hi')
+    const assistants = controller.view.entries.filter(
+      (entry) => entry.kind === 'message' && entry.role === 'assistant',
+    )
+    expect(assistants).toHaveLength(1)
+    expect((assistants[0] as any).text).toBe('Hello')
+    expect((assistants[0] as any).platformConfirmed).toBe(true)
+    expect(controller.view.terminal?.status).toBe('completed')
+    expect(controller.ui.running).toBe(false)
+    expect(controller.ui.conversationId).toBe('conv_1')
+  })
+
+  it('discards stale history responses after switching conversations', async () => {
+    let resolveA: (value: any) => void = () => {}
+    let resolveB: (value: any) => void = () => {}
+    const pageA = new Promise((resolve) => {
+      resolveA = resolve
+    })
+    const pageB = new Promise((resolve) => {
+      resolveB = resolve
+    })
+    ;(transport.listMessages as any).mockImplementation((_config: unknown, id: string) =>
+      id === 'a' ? pageA : pageB,
+    )
+    const controller = new DifyController(config)
+    const first = controller.loadConversation('a')
+    const second = controller.loadConversation('b')
+    resolveB({
+      records: [{ id: 'mb', query: 'from B', answer: 'answer B' }],
+      hasMore: false,
+      firstId: 'mb',
+    })
+    await second
+    resolveA({
+      records: [{ id: 'ma', query: 'from A', answer: 'answer A' }],
+      hasMore: false,
+      firstId: 'ma',
+    })
+    await first
+    const user = controller.view.entries.find(
+      (entry) => entry.kind === 'message' && entry.role === 'user',
+    ) as any
+    expect(user.text).toBe('from B')
+    expect(controller.ui.conversationId).toBe('b')
+  })
+
+  it('marks stop as best effort and calls the Dify stop endpoint', async () => {
+    ;(transport.stopChat as any).mockResolvedValue(undefined)
+    ;(transport.streamChat as any).mockResolvedValue({
+      events: (async function* () {
+        yield { event: 'message', task_id: 'task_9', answer: 'partial' }
+        await new Promise((resolve) => setTimeout(resolve, 30))
+      })(),
+    })
+    const controller = new DifyController(config)
+    const pending = controller.send('long request')
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    await controller.stop()
+    await pending
+    expect(transport.stopChat).toHaveBeenCalledWith(expect.anything(), 'task_9')
+    expect(controller.view.terminal?.status).toBe('stopped')
+  })
+
+  it('does not resend when the stream ends without a terminal state', async () => {
+    mockStream([{ event: 'message', answer: 'partial' }])
+    const controller = new DifyController(config)
+    await controller.send('hi')
+    expect(transport.streamChat).toHaveBeenCalledTimes(1)
+    expect(controller.view.terminal?.status).toBe('unknown')
+    expect(controller.view.entries.some((entry) => entry.kind === 'note')).toBe(true)
+  })
+
+  it('ignores unsupported display versions but keeps Dify text', async () => {
+    mockStream([
+      {
+        event: 'agent_log',
+        data: { piagent: { ...piEvent('message.delta', 0), schema_version: 99, delta: 'future' } },
+      },
+      { event: 'message', answer: 'Dify text', task_id: 't', conversation_id: 'c' },
+      { event: 'message_end' },
+    ])
+    const controller = new DifyController(config)
+    await controller.send('hi')
+    expect(controller.view.warnings.join(' ')).toContain('unsupported')
+    expect(controller.view.entries.some((entry) => entry.kind === 'message' && (entry as any).text === 'Dify text')).toBe(true)
+  })
+})
