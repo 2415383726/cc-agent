@@ -88,10 +88,16 @@ or inventing terminal facts. The latest Pi state is not an artwork store.
 
 The current local Dify 1.15 service API returns empty `agent_thoughts` for the
 advanced-chat validation app. Therefore a reopened artwork without retained Pi
-terminal logs remains unconfirmed and does not auto-run. Recorded real live
+terminal logs remains unconfirmed and does not auto-run. When the native answer
+is complete and the artwork is valid, the user can explicitly choose “查看作品”.
+This opens only the saved local artwork, through the same browser/header gates;
+it does not change the unknown run status or send an Agent request. Failed,
+stopped and other known non-completed runs do not get this action. Recorded real live
 Pi events plus native answers exercise the logged-history contract in tests;
-this is explicitly different from Dify retaining those events. Ticket 04 adds
-the specified explicit user action for valid, unconfirmed historical artworks.
+this is explicitly different from Dify retaining those events. The minimal
+unconfirmed-history view action was moved from ticket 04 into ticket 01 to make
+refresh/reopening usable on the actual platform. Ticket 04 retains pagination
+and the full abnormal-history/transport acceptance matrix.
 
 Use `/?replay=visualize` for the fixed queue demonstration. Replay uses the same
 projection, parser, validation and host as live/history; it never calls a model.

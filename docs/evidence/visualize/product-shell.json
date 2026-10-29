@@ -1,6 +1,6 @@
 {
   "browser": "154.0.8037.57",
-  "shell_sha256": "8510a9772d40c6b55224fe882fc9e5192f08dd8b63c32029e7a0ae2e796a10df",
+  "shell_sha256": "e7a41f0a661a853695c98413ee70cab2d5aa83a0ec4288fb73045a24a710bc7f",
   "results": [
     {
       "name": "data-image",
@@ -97,11 +97,11 @@
       "http_hits": [],
       "udp_hits": [],
       "errors": [
-        "Connecting to 'http://localhost:43949/sink?fetch' violates the following Content Security Policy directive: \"connect-src 'none'\". The action has been blocked.",
-        "Connecting to 'http://localhost:43949/sink?fetch' violates the following Content Security Policy directive: \"connect-src 'none'\". The action has been blocked.",
-        "Fetch API cannot load http://localhost:43949/sink?fetch. Refused to connect because it violates the document's Content Security Policy.",
-        "Loading the image 'http://localhost:43949/sink?image' violates the following Content Security Policy directive: \"img-src data:\". The action has been blocked.",
-        "Loading the image 'http://localhost:43949/sink?image' violates the following Content Security Policy directive: \"img-src data:\". The action has been blocked."
+        "Connecting to 'http://localhost:42377/sink?fetch' violates the following Content Security Policy directive: \"connect-src 'none'\". The action has been blocked.",
+        "Connecting to 'http://localhost:42377/sink?fetch' violates the following Content Security Policy directive: \"connect-src 'none'\". The action has been blocked.",
+        "Fetch API cannot load http://localhost:42377/sink?fetch. Refused to connect because it violates the document's Content Security Policy.",
+        "Loading the image 'http://localhost:42377/sink?image' violates the following Content Security Policy directive: \"img-src data:\". The action has been blocked.",
+        "Loading the image 'http://localhost:42377/sink?image' violates the following Content Security Policy directive: \"img-src data:\". The action has been blocked."
       ]
     },
     {
@@ -136,7 +136,7 @@
       "http_hits": [],
       "udp_hits": [],
       "errors": [
-        "Framing 'http://localhost:43949/' violates the following Content Security Policy directive: \"frame-src blob:\". The request has been blocked.\n"
+        "Framing 'http://localhost:42377/' violates the following Content Security Policy directive: \"frame-src blob:\". The request has been blocked.\n"
       ]
     },
     {
