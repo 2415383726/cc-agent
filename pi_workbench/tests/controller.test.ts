@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { Blob as NativeBlob } from 'node:buffer'
+import { gzipSync } from 'node:zlib'
 
 vi.mock('../src/dify/transport', () => ({
   streamChat: vi.fn(),
   stopChat: vi.fn(),
   listMessages: vi.fn(),
+  readAgentState: vi.fn(),
   listConversations: vi.fn(),
   uploadFile: vi.fn(),
 }))
@@ -41,9 +44,68 @@ function mockStream(items: unknown[]) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  ;(transport.readAgentState as any).mockResolvedValue(null)
 })
 
 describe('DifyController', () => {
+  it('restores a persisted questionnaire when Dify history omits agent logs', async () => {
+    const blob = globalThis.Blob
+    globalThis.Blob = NativeBlob as typeof Blob
+    try {
+      const state = {
+        schema_version: 1, session_id: 'conv', run_id: 'run_1', revision: 3,
+        last_status: 'awaiting_user', last_answer: 'waiting',
+        pending: { id: 'q1', kind: 'ask_user', questionnaire: {
+          id: 'q1', questions: [{ id: 'city', type: 'text', question: '城市？', options: [], required: true }],
+        } },
+      }
+      ;(transport.readAgentState as any).mockResolvedValue(
+        'piagent-state:v1:gzip-base64:' + gzipSync(JSON.stringify(state)).toString('base64'),
+      )
+      ;(transport.listMessages as any).mockResolvedValue({
+        records: [{ id: 'm1', query: 'ask me', answer: 'waiting', agent_thoughts: [] }],
+        hasMore: false, firstId: 'm1',
+      })
+      const controller = new DifyController(config)
+      await controller.loadConversation('conv')
+      expect(controller.view.terminal?.status).toBe('awaiting_user')
+      expect(controller.view.entries.find((entry) => entry.kind === 'question')).toMatchObject({
+        pendingId: 'q1', status: 'waiting',
+      })
+      expect(transport.streamChat).not.toHaveBeenCalled()
+    } finally {
+      globalThis.Blob = blob
+    }
+  })
+
+  it('restores every answer from text-only history', async () => {
+    ;(transport.listMessages as any).mockResolvedValue({
+      records: [
+        { id: 'm1', query: 'q1', answer: 'a1', created_at: 1 },
+        { id: 'm2', query: 'q2', answer: 'a2', created_at: 2 },
+      ],
+      hasMore: false,
+      firstId: 'm1',
+    })
+    const controller = new DifyController(config)
+    await controller.loadConversation('conv')
+    expect(controller.view.entries.filter(
+      (entry) => entry.kind === 'message' && entry.role === 'assistant',
+    ).map((entry: any) => entry.text)).toEqual(['a1', 'a2'])
+  })
+
+  it('does not reuse a previous terminal if a new request ends before run.start', async () => {
+    const controller = new DifyController(config)
+    mockStream([
+      { event: 'agent_log', data: { piagent: piEvent('run.state', 1, { status: 'completed', answer: 'old' }) } },
+    ])
+    await controller.send('old request')
+    mockStream([{ event: 'message', answer: 'new partial' }])
+    await controller.send('new request')
+    expect(controller.view.terminal?.status).toBe('unknown')
+    expect(controller.view.terminal?.answer).not.toBe('old')
+  })
+
   it('projects agent logs, merges the Dify final answer and keeps one assistant message', async () => {
     mockStream([
       { event: 'message', answer: 'Hello', task_id: 'task_1', conversation_id: 'conv_1' },

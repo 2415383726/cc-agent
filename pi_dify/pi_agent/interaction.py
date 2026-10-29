@@ -248,6 +248,8 @@ def approval_required(
     annotations: dict[str, Any] | None,
     config: RuntimeConfig,
     grants: list[dict[str, Any]],
+    *,
+    tool_identity: str = "",
 ) -> bool:
     if config.approval_mode == "off":
         return False
@@ -256,6 +258,7 @@ def approval_required(
             grant.get("tool") == tool_name
             and grant.get("scope") == "session"
             and (not grant.get("source") or grant.get("source") == source)
+            and (not tool_identity or grant.get("tool_identity") == tool_identity)
         ):
             return False
     if tool_name in config.approval_tools:
@@ -275,10 +278,12 @@ def create_approval_pending(
     annotations: dict[str, Any] | None,
     run_id: str,
     timeout_seconds: float = 0.0,
+    tool_identity: str = "",
 ) -> dict[str, Any]:
     created = time.time()
     pending = {
         "kind": "approval",
+        "tool_identity": tool_identity,
         "id": _new_id("apv"),
         "action_id": _new_id("act"),
         "tool_call_id": tool_call_id,
@@ -360,6 +365,7 @@ def _approval_fingerprint(pending: dict[str, Any]) -> str:
             "tool_call_id": pending.get("tool_call_id"),
             "tool_name": pending.get("tool_name"),
             "source": pending.get("source"),
+            "tool_identity": pending.get("tool_identity"),
             "arguments": pending.get("arguments"),
         },
         sort_keys=True,

@@ -39,7 +39,9 @@ export function eventsFromHistory(records: HistoryRecord[]): HistoryProjection {
     for (const event of collected) push(event)
     if (!collected.some((event) => event.type === 'run.state' || event.type === 'run.done')) {
       if (record.answer) {
-        push(syntheticAssistant(id, record))
+        const answer = syntheticAssistant(id, record)
+        push({ ...answer, type: 'message.start', text: undefined, seq: 1 })
+        push({ ...answer, seq: 2 })
       }
     }
   }

@@ -1,5 +1,6 @@
 import { DisplayEvent, findPiEvent, normalizeAnswer } from '../contract/display'
 import { eventsFromHistory, HistoryRecord } from '../projection/history'
+import { eventsFromSavedState } from '../projection/savedState'
 import {
   ApprovalEntry,
   FileRef,
@@ -18,6 +19,7 @@ import {
   UploadedFile,
   listConversations,
   listMessages,
+  readAgentState,
   stopChat,
   streamChat,
   uploadFile,
@@ -212,6 +214,7 @@ export class DifyController implements WorkbenchController {
       this.ui.firstId = page.firstId
       this.ui.hasMore = page.hasMore
       this._applyHistory()
+      await this._restoreSavedState(epoch, id)
     } catch (error) {
       if (epoch !== this._ticket) return
       this.ui.error = safeError(error)
@@ -236,6 +239,7 @@ export class DifyController implements WorkbenchController {
       this.ui.firstId = page.firstId || this.ui.firstId
       this.ui.hasMore = page.hasMore
       this._applyHistory()
+      await this._restoreSavedState(epoch, this.ui.conversationId)
     } catch (error) {
       if (epoch === this._ticket) this.ui.error = safeError(error)
     } finally {
@@ -279,7 +283,7 @@ export class DifyController implements WorkbenchController {
     }
     const last = this._records[this._records.length - 1]
     if (last?.answer) mergeFinalAnswer(this.view, String(last.answer))
-    if (!events.length && this._records.length) {
+    if (!events.some((event) => !event.run_id.startsWith('history:')) && this._records.length) {
       this.view.warnings.push('该会话历史中没有保存 Pi 过程事件。')
     }
     if (!this.view.terminal && this._records.length) {
@@ -295,6 +299,18 @@ export class DifyController implements WorkbenchController {
     }
   }
 
+  private async _restoreSavedState(ticket: number, conversationId: string): Promise<void> {
+    try {
+      const value = await readAgentState(this.config, conversationId)
+      if (!value || ticket !== this._ticket) return
+      const events = await eventsFromSavedState(value, conversationId)
+      if (ticket !== this._ticket) return
+      for (const event of events) applyEvent(this.view, event)
+    } catch {
+      if (ticket === this._ticket) this.view.warnings.push('无法读取当前 Pi 状态；未自动重发请求，请稍后刷新。')
+    }
+  }
+
   private async _interaction(payload: Record<string, unknown>): Promise<void> {
     const inputs = { ...this.config.inputs, interaction: JSON.stringify(payload) }
     await this._stream('提交交互', inputs, [])
@@ -306,6 +322,9 @@ export class DifyController implements WorkbenchController {
     files: FileRef[],
   ): Promise<void> {
     if (this.ui.running) return
+    this.view.terminal = null
+    this.view.platformAnswer = ''
+    this.view.running = true
     this._ticket += 1
     const ticket = this._ticket
     this.ui.running = true

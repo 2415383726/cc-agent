@@ -7,6 +7,8 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from typing import Any
 
+import httpx
+
 from .config import RuntimeConfig
 from .errors import PiError
 
@@ -75,12 +77,17 @@ class McpRuntime:
                 )
             )
         else:
+            http_client = await self._stack.enter_async_context(
+                httpx.AsyncClient(
+                    headers=server.headers,
+                    timeout=httpx.Timeout(server.timeout, read=server.sse_read_timeout),
+                    follow_redirects=True,
+                )
+            )
             read, write, _get_session_id = await self._stack.enter_async_context(
                 streamable_http_client(
                     server.url,
-                    headers=server.headers,
-                    timeout=server.timeout,
-                    sse_read_timeout=server.sse_read_timeout,
+                    http_client=http_client,
                 )
             )
         session = await self._stack.enter_async_context(ClientSession(read, write))

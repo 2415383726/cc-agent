@@ -161,9 +161,10 @@ def wheel_metadata(wheel_path: Path) -> dict[str, object]:
             if not name.startswith(prefix):
                 continue
             tail = name[len(prefix) :]
-            if tail.startswith("licenses/") or tail.upper().startswith("LICENSE"):
-                if not tail.endswith("/"):
-                    licenses.append((tail, archive.read(name)))
+            if (
+                tail.startswith("licenses/") or tail.upper().startswith("LICENSE")
+            ) and not tail.endswith("/"):
+                licenses.append((tail, archive.read(name)))
         return {
             "name": metadata["Name"],
             "version": metadata["Version"],
@@ -254,7 +255,10 @@ def build_package(output_path: Path, arch: str) -> Path:
             if relative_path == Path("requirements.txt"):
                 # Pin the packaged requirements to the verified lock; the target
                 # must install exactly these versions from the bundled wheels.
-                archive.writestr("requirements.txt", LOCK_FILE.read_text(encoding="utf-8"))
+                archive.writestr(
+                    "requirements.txt",
+                    "--no-index\n--find-links ./wheels\n" + LOCK_FILE.read_text(encoding="utf-8"),
+                )
                 continue
             archive.write(file_path, arcname=relative_path.as_posix())
         archive.writestr("VERSION_MANIFEST.json", json.dumps(evidence, indent=2, sort_keys=True))

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from typing import Any
@@ -98,6 +99,7 @@ class ToolSpec:
     entity: Any = None
     annotations: dict[str, Any] = field(default_factory=dict)
     server: str = ""
+    identity: str = ""
 
 
 @dataclass(slots=True)
@@ -130,6 +132,11 @@ class PiTool:
         signal: Any | None = None,
         on_update: AgentToolUpdateCallback | None = None,
     ) -> AgentToolResult:
+        if signal is not None and getattr(signal, "aborted", False):
+            return AgentToolResult(
+                content=[{"type": "text", "text": "Not executed: the run was stopped."}],
+                details={"status": "not_executed", "execution_outcome": "not_executed"},
+            )
         outcome = await self.runtime.execute(self.spec, tool_call_id, params or {})
         details = dict(outcome.details)
         details["is_error"] = outcome.is_error
@@ -152,6 +159,7 @@ class ToolRuntime:
         artifact_sink: Any = None,
         activity_sink: Any = None,
         dify_tools: list[Any] | None = None,
+        stop_requested: Any = None,
     ) -> None:
         self.session = session
         self.config = config
@@ -162,6 +170,7 @@ class ToolRuntime:
         self.grants = approvals or []
         self.artifact_sink = artifact_sink
         self.activity_sink = activity_sink
+        self.stop_requested = stop_requested or (lambda: False)
         self.pending: dict[str, Any] | None = None
         self.activated_skills: list[dict[str, Any]] = []
         self.specs = build_specs(dify_tools or [], mcp)
@@ -184,13 +193,20 @@ class ToolRuntime:
         *,
         approved: bool = False,
     ) -> ToolOutcome:
+        if self.stop_requested():
+            return _not_executed("The run was stopped; no tool was executed.")
         if self.pending is not None:
             return _not_executed("The run is waiting for the user; no tool was executed.")
         if (
             not approved
             and spec.source in {"dify", "mcp"}
             and approval_required(
-                spec.name, spec.source, spec.annotations, self.config, self.grants
+                spec.name,
+                spec.source,
+                spec.annotations,
+                self.config,
+                self.grants,
+                tool_identity=spec.identity,
             )
         ):
             pending = create_approval_pending(
@@ -201,6 +217,7 @@ class ToolRuntime:
                 annotations=spec.annotations,
                 run_id=self.run_id,
                 timeout_seconds=self.config.approval_timeout_seconds,
+                tool_identity=spec.identity,
             )
             self.pending = pending
             return ToolOutcome(
@@ -457,21 +474,23 @@ class ToolRuntime:
                 public_artifacts.append(self.artifact_sink(artifact))
             else:
                 public_artifacts.append(artifact.public())
+        is_error = bool(_get(raw, "isError", False) or _get(raw, "is_error", False))
         details = {
             "kind": "tool",
             "source": "mcp",
             "server": spec.server,
-            "status": "ok",
+            "status": "error" if is_error else "ok",
             "execution_outcome": "executed",
             "artifacts": public_artifacts,
             "display_text": clip(normalized.text, self.config.display_result_chars),
             "model_chars": len(normalized.text),
             "truncated": len(normalized.text) > self.config.max_result_chars,
         }
-        self.ledger.record_tool(False, len(normalized.text))
+        self.ledger.record_tool(is_error, len(normalized.text))
         return ToolOutcome(
             text=clip(normalized.text, self.config.max_result_chars),
             details=details,
+            is_error=is_error,
             artifacts=normalized.artifacts,
         )
 
@@ -528,6 +547,21 @@ def build_specs(dify_tools: list[Any], mcp: McpRuntime | None) -> list[ToolSpec]
                 original_name=name,
                 entity=entity,
                 annotations=extracted.get("annotations") or {},
+                identity=_identity_hash(
+                    {
+                        "source": "dify",
+                        "name": name,
+                        "provider": _tool_provider(entity),
+                        "provider_type": str(
+                            getattr(
+                                _tool_provider_type(entity), "value", _tool_provider_type(entity)
+                            )
+                        ),
+                        "configuration": _get(entity, "runtime_parameters")
+                        or _get(entity, "tool_configuration")
+                        or {},
+                    }
+                ),
             )
         )
     for tool in (mcp.tools() if mcp is not None else []):
@@ -544,9 +578,32 @@ def build_specs(dify_tools: list[Any], mcp: McpRuntime | None) -> list[ToolSpec]
                 original_name=tool.exposed_name,
                 annotations=tool.annotations,
                 server=tool.server,
+                identity=_identity_hash(
+                    {
+                        "source": "mcp",
+                        "server": tool.server,
+                        "name": tool.name,
+                        "endpoint": next(
+                            (
+                                {"url": server.url, "transport": server.transport}
+                                for server in getattr(mcp, "servers", [])
+                                if server.name == tool.server
+                            ),
+                            {},
+                        ),
+                    }
+                ),
             )
         )
     return specs
+
+
+def _identity_hash(payload: dict[str, Any]) -> str:
+    # Store only a digest: configuration may contain secret runtime values.
+    raw = json.dumps(
+        payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str
+    )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def extract_dify_tool(tool: Any) -> dict[str, Any] | None:

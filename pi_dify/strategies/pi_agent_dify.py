@@ -32,7 +32,7 @@ if plugin_logger_handler is not None and plugin_logger_handler not in logger.han
 class PiAgentStrategy(AgentStrategy):
     def _invoke(self, parameters: dict[str, Any]) -> Generator[AgentInvokeMessage, None, None]:
         logger.info("pi_dify strategy invoke entered: %s", _parameter_summary(parameters))
-        runtime = PiAgentRuntime(self)
+        runtime = PiAgentRuntime(self.session)
         stream = runtime.run(parameters)
         try:
             for message in stream:

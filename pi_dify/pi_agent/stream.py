@@ -7,6 +7,7 @@ non-stream fallback into Pi ``AssistantMessageEventStream`` values.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass, field
 from typing import Any
@@ -214,6 +215,7 @@ class DifyModelStream:
         model: Model | None = None,
         thinking_tags: bool = True,
         preserve_reasoning_content: bool = False,
+        stop_requested: Any = None,
     ) -> None:
         self.session = session
         self.model_config = model_config
@@ -222,6 +224,8 @@ class DifyModelStream:
         self.model = model
         self.thinking_tags = thinking_tags
         self.preserve_reasoning_content = preserve_reasoning_content
+        self.stop_requested = stop_requested or (lambda: False)
+        self._producers: set[asyncio.Task] = set()
 
     async def __call__(
         self, model: Model, context: LlmContext, options: StreamOptions | None = None
@@ -242,32 +246,73 @@ class DifyModelStream:
             return _error_stream(model, "context_too_large", options, usage=None)
         if total_estimate >= self.config.context_window:
             return _error_stream(model, "context_overflow", options, usage=None)
+        stream = AssistantMessageEventStream()
+        producer = asyncio.create_task(
+            self._produce(stream, model, prompt_messages, prompt_tools, options, total_estimate)
+        )
+        self._producers.add(producer)
+        producer.add_done_callback(self._producers.discard)
+        return stream
+
+    def _check_stop(self, options: StreamOptions | None) -> None:
+        if self.stop_requested() or (
+            options is not None
+            and options.signal is not None
+            and getattr(options.signal, "aborted", False)
+        ):
+            raise _AbortedError()
+
+    async def close(self) -> None:
+        tasks = list(self._producers)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _produce(
+        self,
+        stream: AssistantMessageEventStream,
+        model: Model,
+        prompt_messages: list[Any],
+        prompt_tools: list[Any],
+        options: StreamOptions | None,
+        total_estimate: int,
+    ) -> None:
         try:
+            self._check_stop(options)
             self.ledger.before_model(total_estimate)
+            if self.config.stream_mode == "nonstream":
+                await self._nonstream(
+                    model, prompt_messages, prompt_tools, options, total_estimate, output=stream
+                )
+                return
+            try:
+                response = self._invoke(prompt_messages, prompt_tools, stream=True)
+            except Exception as exc:
+                self.ledger.record_model(None, total_estimate, source="stream_failed")
+                if self.config.stream_fallback and not _is_overflow(exc):
+                    self._check_stop(options)
+                    self.ledger.before_model(total_estimate)
+                    await self._nonstream(
+                        model,
+                        prompt_messages,
+                        prompt_tools,
+                        options,
+                        total_estimate,
+                        fallback=True,
+                        output=stream,
+                    )
+                else:
+                    _error_stream(model, _marker_for(exc), options, usage=None, stream=stream)
+                return
+            await self._consume(stream, response, model, options, total_estimate)
         except BudgetExceeded as exc:
             self.ledger.mark(exc.reason)
-            return _error_stream(model, "budget_exhausted", options, usage=None)
-
-        if self.config.stream_mode == "nonstream":
-            return await self._nonstream(
-                model, prompt_messages, prompt_tools, options, total_estimate
-            )
-
-        stream = AssistantMessageEventStream()
-        try:
-            response = self._invoke(prompt_messages, prompt_tools, stream=True)
-        except Exception as exc:
-            self.ledger.record_model(None, total_estimate, source="stream_failed")
-            if self.config.stream_fallback and not _is_overflow(exc):
-                try:
-                    return await self._nonstream(
-                        model, prompt_messages, prompt_tools, options, total_estimate, fallback=True
-                    )
-                except Exception:
-                    pass
-            return _error_stream(model, _marker_for(exc), options, usage=None)
-        await self._consume(stream, response, model, options, total_estimate)
-        return stream
+            _error_stream(model, "budget_exhausted", options, usage=None, stream=stream)
+        except (_AbortedError, asyncio.CancelledError):
+            _error_stream(model, "aborted", options, usage=None, stream=stream)
+        except Exception:
+            _error_stream(model, "provider_failed", options, usage=None, stream=stream)
 
     async def _nonstream(
         self,
@@ -278,21 +323,24 @@ class DifyModelStream:
         estimated_tokens: int,
         *,
         fallback: bool = False,
+        output: AssistantMessageEventStream | None = None,
     ) -> AssistantMessageEventStream:
-        stream = AssistantMessageEventStream()
+        stream = output if output is not None else AssistantMessageEventStream()
         try:
             response = self._invoke(prompt_messages, prompt_tools, stream=False)
-            self.ledger.record_model(
-                None, estimated_tokens, source="nonstream_fallback" if fallback else "nonstream"
-            )
             final = _message_from_nonstream(response, model)
+            self.ledger.record_model(
+                final.usage,
+                estimated_tokens,
+                source="nonstream_fallback" if fallback else "nonstream",
+            )
             _emit_start(stream, final)
             stream.set_final_message(final)
             stream.push(DoneEvent(partial=final, reason="toolUse" if _has_calls(final) else "stop"))
             return stream
         except Exception as exc:
             self.ledger.record_model(None, estimated_tokens, source="nonstream_failed")
-            return _error_stream(model, _marker_for(exc), options, usage=None)
+            return _error_stream(model, _marker_for(exc), options, usage=None, stream=stream)
 
     def _invoke(self, prompt_messages: list[Any], prompt_tools: list[Any], *, stream: bool) -> Any:
         return self.session.model.llm.invoke(
@@ -371,12 +419,7 @@ class DifyModelStream:
         tool_started: dict[str, int] = {}
         try:
             for chunk in response:
-                if (
-                    options is not None
-                    and options.signal is not None
-                    and getattr(options.signal, "aborted", False)
-                ):
-                    raise _AbortedError()
+                self._check_stop(options)
                 delta = _get(chunk, "delta", chunk)
                 message = _get(delta, "message", delta) or delta
                 reasoning = _get(message, "reasoning_content")
@@ -415,6 +458,10 @@ class DifyModelStream:
                             )
                         )
                 usage = _merge_usage(usage, _get(delta, "usage") or _get(chunk, "usage"))
+                # Let the harness consume queued deltas and the stop watcher run
+                # before asking a synchronous provider for its next chunk.
+                await asyncio.sleep(0)
+            self._check_stop(options)
             if splitter is not None:
                 for kind, piece in splitter.flush():
                     if kind == "thinking":
@@ -485,20 +532,27 @@ def _emit_start(stream: AssistantMessageEventStream, partial: AssistantMessage) 
 
 
 def _error_stream(
-    model: Model, marker: str, options: StreamOptions | None, *, usage: Usage | None
+    model: Model,
+    marker: str,
+    options: StreamOptions | None,
+    *,
+    usage: Usage | None,
+    stream: AssistantMessageEventStream | None = None,
 ) -> AssistantMessageEventStream:
-    stream = AssistantMessageEventStream()
+    stream = stream if stream is not None else AssistantMessageEventStream()
     final = AssistantMessage(
         content=[{"type": "text", "text": ""}],
         api=model.api,
         provider=model.provider,
         model=model.model_id,
         usage=usage or Usage(),
-        stopReason="error",
+        stopReason="aborted" if marker == "aborted" else "error",
         errorMessage=f"{ERROR_MARKER}{marker}",
     )
     stream.set_final_message(final)
-    stream.push(ErrorEvent(partial=final, reason="error", error_message=final.errorMessage))
+    stream.push(
+        ErrorEvent(partial=final, reason=final.stopReason, error_message=final.errorMessage)
+    )
     return stream
 
 

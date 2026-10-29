@@ -94,5 +94,12 @@ service is included.
 - History reconstruction depends on Dify retaining agent log data; if only
   query/answer are retained it shows the text history and warns that process
   events are missing.
+- When Dify exposes conversation variables, the workbench also reads the saved
+  `agent_state` to restore the latest questionnaire, approval and terminal state
+  after a refresh. It does not reconstruct missing historical tool traces or
+  grant authorization; submitted interactions are validated by the plugin.
+  The Dify graph must save the plugin's `agent_state` output back to the
+  conversation variable. An unavailable variable endpoint leaves text history
+  usable and never triggers an automatic resubmission.
 - Stop is best effort and the UI distinguishes requested stop from a trusted
   server terminal state.

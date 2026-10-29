@@ -181,6 +181,30 @@ export interface DifyConversation {
   updatedAt: number
 }
 
+/** Read a display projection source, never a browser-owned recovery snapshot. */
+export async function readAgentState(config: DifyConfig, conversationId: string): Promise<string | null> {
+  let lastId = ''
+  for (let page = 0; page < 10; page += 1) {
+    const params = new URLSearchParams({ user: config.user, limit: '100' })
+    if (lastId) params.set('last_id', lastId)
+    // Avoid variable_name: Dify 1.15's PostgreSQL name filter can fail on its text column.
+    const response = await fetch(`${base(config.baseUrl)}/conversations/${encodeURIComponent(conversationId)}/variables?${params}`, {
+      headers: auth(config),
+    })
+    if (response.status === 404) return null // Older Dify versions may lack this endpoint.
+    await assertOk(response, 'Dify 会话状态读取失败')
+    const payload = await response.json()
+    const items = Array.isArray(payload.data) ? payload.data : []
+    const state = items.find((item: any) => item.name === 'agent_state')
+    if (state) return typeof state.value === 'string' ? state.value : null
+    if (!payload.has_more || !items.length) return null
+    const nextId = String(items[items.length - 1]?.id || '')
+    if (!nextId || nextId === lastId) return null
+    lastId = nextId
+  }
+  return null
+}
+
 export async function listConversations(
   config: DifyConfig,
   options: { limit?: number } = {},

@@ -4,9 +4,9 @@ identity:
   label:
     en_US: Pi Agent (Dify)
     zh_Hans: Pi Agent（Dify）
-  description:
-    en_US: Pi harness execution with Dify models, tools, skills, approvals and recovery.
-    zh_Hans: 复用 Pi Harness 执行，使用 Dify 模型、工具、技能、审批与恢复。
+description:
+  en_US: Pi harness execution with Dify models, tools, skills, approvals and recovery.
+  zh_Hans: 复用 Pi Harness 执行，使用 Dify 模型、工具、技能、审批与恢复。
 features:
   - history-messages
 parameters:

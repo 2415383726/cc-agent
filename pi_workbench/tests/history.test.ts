@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SCHEMA } from '../src/contract/display'
 import { eventsFromHistory } from '../src/projection/history'
+import { applyEvent, newView } from '../src/projection/transcript'
 
 function event(type: string, fields: Record<string, unknown> = {}) {
   return {
@@ -33,20 +34,18 @@ describe('history reconstruction', () => {
         agent_thoughts: [],
       },
     ])
-    expect(result.events.map((item) => item.type)).toEqual([
-      'message.user',
-      'message.end',
-      'message.user',
-      'message.end',
-    ])
-    expect(result.events[3].text).toBe('answer two')
+    const view = newView()
+    result.events.forEach((item) => applyEvent(view, item))
+    expect(view.entries.filter((item) => item.kind === 'message')
+      .map((item: any) => item.text)).toEqual(['first', 'answer one', 'second', 'answer two'])
   })
 
   it('falls back to query/answer when no Pi events were stored', () => {
     const result = eventsFromHistory([{ id: 'm1', query: 'hello', answer: 'hi' }])
-    expect(result.events).toHaveLength(2)
-    expect(result.events[0].type).toBe('message.user')
-    expect(result.events[1].type).toBe('message.end')
+    const view = newView()
+    result.events.forEach((item) => applyEvent(view, item))
+    expect(view.entries.filter((item) => item.kind === 'message')
+      .map((item: any) => item.text)).toEqual(['hello', 'hi'])
   })
 
   it('deduplicates the same run and sequence', () => {

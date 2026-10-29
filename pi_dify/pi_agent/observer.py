@@ -237,10 +237,7 @@ def _content_text(content: Any) -> str:
     if isinstance(content, list):
         parts = []
         for block in content:
-            if isinstance(block, dict):
-                if block.get("type") == "text":
-                    parts.append(str(block.get("text") or ""))
-                elif block.get("type") == "thinking":
-                    parts.append(str(block.get("thinking") or ""))
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(str(block.get("text") or ""))
         return "\n".join(part for part in parts if part)
     return ""

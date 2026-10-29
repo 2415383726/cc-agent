@@ -242,6 +242,7 @@ class PiAgentRuntime:
         finally:
             watcher.cancel()
             if setup is not None:
+                await setup.stream.close()
                 try:
                     await setup.harness.close()
                 except Exception:
@@ -483,6 +484,7 @@ class PiAgentRuntime:
                 artifact_sink=artifact_sink,
                 activity_sink=observer.activity,
                 dify_tools=request.tools,
+                stop_requested=self._stop_requested,
             )
             # Re-check active skills against current eligibility.
             eligible = skills.eligible_names()
@@ -499,6 +501,7 @@ class PiAgentRuntime:
                 model=model,
                 thinking_tags=request.runtime.thinking_tags,
                 preserve_reasoning_content=request.runtime.preserve_reasoning_content,
+                stop_requested=self._stop_requested,
             )
             system_prompt = _system_prompt(request, skills)
             compaction = CompactionSettings(
@@ -548,7 +551,9 @@ class PiAgentRuntime:
             compaction=setup.compaction,
             max_turns=max(4, request.runtime.max_model_requests + 2),
             tool_timeout=request.runtime.tool_timeout_seconds,
-            stop_predicate=lambda: setup.tools.pending is not None or ledger.exhausted(),
+            stop_predicate=lambda: setup.tools.pending is not None
+            or ledger.exhausted()
+            or self._stop_requested(),
         )
         harness.subscribe(setup.observer)
         harness.on("tool_result", _tool_result_error_hook)
@@ -795,6 +800,7 @@ class PiAgentRuntime:
             or not identity_matches
             or spec.name != str(pending.get("tool_name") or "")
             or spec.source != str(pending.get("source") or "dify")
+            or spec.identity != pending.get("tool_identity")
         ):
             outcome_text = (
                 "The approved tool is no longer available in this application; "
@@ -851,12 +857,15 @@ class PiAgentRuntime:
             )
         # Approval is re-checked against the current tool set, policy and budget.
         if decision.get("scope") == "session" and not any(
-            grant.get("tool") == tool_name and grant.get("scope") == "session"
+            grant.get("tool") == tool_name
+            and grant.get("scope") == "session"
+            and grant.get("tool_identity") == spec.identity
             for grant in state.grants
         ):
             grant = {
                 "tool": tool_name,
                 "source": pending.get("source") or "dify",
+                "tool_identity": spec.identity,
                 "scope": "session",
                 "created_at": now_iso(),
             }
@@ -1126,6 +1135,9 @@ class PiAgentRuntime:
         emit(_log_event(events.make("run.state", **payload)))
         emit({"type": "text", "content": answer})
         emit(_log_event(events.make("run.done", **payload)))
+
+    def _stop_requested(self) -> bool:
+        return self._stopped or (self._stop is not None and self._stop.is_set())
 
     async def _watch_stop(self, stop: threading.Event) -> None:
         while not stop.is_set():

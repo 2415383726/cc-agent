@@ -240,25 +240,25 @@ def encode_state(
     _refresh_leaf(state)
     compacted = False
 
-    def build() -> bytes:
+    def build() -> tuple[bytes, int]:
         payload = _payload(state)
         raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str).encode(
             "utf-8"
         )
         compressed = gzip.compress(raw, mtime=0)
-        return base64.b64encode(compressed)
+        return base64.b64encode(compressed), len(raw)
 
-    encoded = build()
-    if len(encoded) > max_encoded_bytes:
+    encoded, payload_bytes = build()
+    if len(encoded) > max_encoded_bytes or payload_bytes > MAX_PAYLOAD_BYTES:
         state.entries = _trim_entries(state, target_encoded_bytes, max_encoded_bytes)
         compacted = True
-        encoded = build()
-    if len(encoded) > max_encoded_bytes:
+        encoded, payload_bytes = build()
+    if len(encoded) > max_encoded_bytes or payload_bytes > MAX_PAYLOAD_BYTES:
         # Last resort: drop old tool result bodies while preserving pairing/ids.
         state.entries = _shrink_entry_bodies(state.entries, target_encoded_bytes // 2)
         compacted = True
-        encoded = build()
-    if len(encoded) > max_encoded_bytes:
+        encoded, payload_bytes = build()
+    if len(encoded) > max_encoded_bytes or payload_bytes > MAX_PAYLOAD_BYTES:
         return StateSaveResult(
             revision=state.revision,
             persisted=False,
@@ -272,7 +272,7 @@ def encode_state(
         revision=state.revision,
         persisted=True,
         encoded_bytes=len(encoded),
-        payload_bytes=len(gzip.decompress(base64.b64decode(encoded))),
+        payload_bytes=payload_bytes,
         compacted=compacted,
         summary=state_summary(state),
     )
@@ -421,7 +421,10 @@ def _trim_entries(
             last_status=state.last_status,
         )
         raw = json.dumps(_payload(clone), ensure_ascii=False, separators=(",", ":"), default=str)
-        return len(base64.b64encode(gzip.compress(raw.encode("utf-8"), mtime=0)))
+        raw_bytes = raw.encode("utf-8")
+        if len(raw_bytes) > MAX_PAYLOAD_BYTES:
+            return max_encoded_bytes + 1
+        return len(base64.b64encode(gzip.compress(raw_bytes, mtime=0)))
 
     pending_group = -1
     if pending_call:
@@ -454,8 +457,8 @@ def _trim_entries(
         }
         first["parentId"] = compaction["id"]
         kept[0] = first
-        _repair_chain(kept)
         candidate = [compaction, *kept]
+        _repair_chain(candidate)
         built = candidate
         if candidate_size(candidate) <= target_encoded_bytes:
             return candidate
