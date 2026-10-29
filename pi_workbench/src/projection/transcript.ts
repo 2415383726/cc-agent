@@ -73,6 +73,10 @@ export interface MessageEntry extends BaseEntry {
   files?: FileRef[]
   optimistic?: boolean
   platformConfirmed?: boolean
+  runId?: string
+  platformMessageId?: string
+  answerComplete?: boolean
+  runStatus?: string
 }
 
 export interface ReasoningEntry extends BaseEntry {
@@ -179,6 +183,8 @@ export interface TranscriptView {
   warnings: string[]
   ignored: number
   seen: Set<string>
+  activeRunId: string
+  runTerminals: Record<string, TerminalInfo>
   activeAssistantId: string
   activeReasoningId: string
   optimisticUserId: string
@@ -196,6 +202,8 @@ export function newView(): TranscriptView {
     warnings: [],
     ignored: 0,
     seen: new Set(),
+    activeRunId: '',
+    runTerminals: {},
     activeAssistantId: '',
     activeReasoningId: '',
     optimisticUserId: '',
@@ -227,6 +235,7 @@ export function applyEvent(view: TranscriptView, event: DisplayEvent): void {
   const key = `${event.run_id}:${event.seq}`
   if (view.seen.has(key)) return
   view.seen.add(key)
+  view.activeRunId = event.run_id
   view.running = true
   switch (event.type) {
     case 'run.start':
@@ -269,6 +278,7 @@ export function applyEvent(view: TranscriptView, event: DisplayEvent): void {
           id,
           kind: 'message',
           role: 'assistant',
+          runId: event.run_id,
           text: '',
           streaming: true,
           ts: event.ts,
@@ -547,8 +557,12 @@ export function applyEvent(view: TranscriptView, event: DisplayEvent): void {
         pending: event.pending,
       }
       view.terminal = terminal
+      view.runTerminals[event.run_id] = terminal
+      for (const entry of view.entries) {
+        if (entry.kind === 'message' && entry.runId === event.run_id) entry.runStatus = terminal.status
+      }
       view.running = false
-      if (terminal.answer) mergeTerminalAnswer(view, terminal.answer)
+      if (terminal.answer) mergeTerminalAnswer(view, terminal.answer, event.run_id)
       if (terminal.status !== 'awaiting_user' && terminal.status !== 'awaiting_approval') {
         const terminalId = `terminal_${event.run_id}`
         const existing = view.entries.find(
@@ -578,6 +592,10 @@ export function applyEvent(view: TranscriptView, event: DisplayEvent): void {
         },
       }
       view.terminal = terminal
+      view.runTerminals[event.run_id] = terminal
+      for (const entry of view.entries) {
+        if (entry.kind === 'message' && entry.runId === event.run_id) entry.runStatus = 'failed'
+      }
       view.running = false
       view.entries.push({
         id: `terminal_${event.run_id}_failed`,
@@ -615,52 +633,47 @@ export function applyEvent(view: TranscriptView, event: DisplayEvent): void {
   }
 }
 
-export function mergeFinalAnswer(view: TranscriptView, text: string): void {
-  const answer = normalizeAnswer(text)
-  if (!answer) return
+export interface AnswerBinding {
+  runId?: string
+  platformMessageId?: string
+  ts?: number
+}
+
+/** Merge the complete native answer only into the final assistant message of its run. */
+export function mergeFinalAnswer(view: TranscriptView, text: string, binding: AnswerBinding = {}): void {
+  const answer = String(text || '')
+  if (!normalizeAnswer(answer)) return
   view.platformAnswer = answer
-  if (view.terminal?.answer && sameAnswer(view.terminal.answer, answer)) return
-  const assistant = [...view.entries]
-    .reverse()
-    .find(
-      (entry): entry is MessageEntry => entry.kind === 'message' && entry.role === 'assistant',
-    )
-  if (assistant && normalizeAnswer(assistant.text)) {
-    if (sameAnswer(assistant.text, answer)) assistant.platformConfirmed = true
-    return
-  }
-  if (assistant) {
-    assistant.text = answer
-    assistant.platformConfirmed = true
-    return
-  }
-  view.entries.push({
-    id: `platform_answer_${Date.now()}`,
-    kind: 'message',
-    role: 'assistant',
+  const runId = binding.runId || view.activeRunId || `platform:${binding.platformMessageId || 'answer'}`
+  const assistant = [...view.entries].reverse().find(
+    (entry): entry is MessageEntry => entry.kind === 'message' && entry.role === 'assistant' &&
+      (entry.runId === runId || (!entry.runId && !binding.runId)),
+  )
+  const fields = {
     text: answer,
     streaming: false,
     platformConfirmed: true,
-    ts: Date.now(),
+    answerComplete: true,
+    platformMessageId: binding.platformMessageId,
+    runId,
+    runStatus: view.runTerminals[runId]?.status,
+  }
+  if (assistant) Object.assign(assistant, fields)
+  else view.entries.push({
+    id: `platform_answer_${binding.platformMessageId || runId}`,
+    kind: 'message', role: 'assistant', ts: binding.ts || Date.now(), ...fields,
   })
 }
 
-function mergeTerminalAnswer(view: TranscriptView, answer: string): void {
-  const assistant = [...view.entries]
-    .reverse()
-    .find(
-      (entry): entry is MessageEntry => entry.kind === 'message' && entry.role === 'assistant',
-    )
-  if (!assistant) {
-    view.entries.push({
-      id: `terminal_answer_${Date.now()}`,
-      kind: 'message',
-      role: 'assistant',
-      text: answer,
-      streaming: false,
-      ts: Date.now(),
-    })
-  }
+function mergeTerminalAnswer(view: TranscriptView, answer: string, runId: string): void {
+  const assistant = [...view.entries].reverse().find(
+    (entry): entry is MessageEntry => entry.kind === 'message' && entry.role === 'assistant' && entry.runId === runId,
+  )
+  if (!assistant) view.entries.push({
+    id: `terminal_answer_${runId}`, kind: 'message', role: 'assistant',
+    text: answer, streaming: false, ts: Date.now(), runId,
+    runStatus: view.runTerminals[runId]?.status,
+  })
 }
 
 function findMessage(

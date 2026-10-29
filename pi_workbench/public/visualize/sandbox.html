@@ -1,0 +1,66 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="pi-visualize-shell" content="1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; ; style-src 'unsafe-inline'; img-src data:; frame-src blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pi 作品隔离环境</title>
+<style>html,body{margin:0;width:100%;height:100%;overflow:hidden}iframe{display:block;width:100%;height:100%;border:0}</style>
+</head><body><script>(() => {
+  'use strict';
+  let id = '', child = null, blob = '', initialized = false, count = 0, since = 0;
+  const send = (type, fields = {}) => parent.postMessage({ type: 'pi-visualize:' + type, id, ...fields }, '*');
+  const clear = () => { child?.remove(); child = null; if (blob) URL.revokeObjectURL(blob); blob = ''; };
+  const bridge = (identity) => {
+    const post = parent.postMessage.bind(parent);
+    let errored = false, scheduled = false, lastHeight = 0;
+    const tell = (type, fields = {}) => post({ type: 'pi-visualize:' + type, id: identity, ...fields }, '*');
+    const measure = () => {
+      if (scheduled) return;
+      scheduled = true;
+      setTimeout(() => {
+        scheduled = false;
+        const next = Math.min(1200, Math.max(200, Math.ceil(document.body.getBoundingClientRect().height)));
+        if (next !== lastHeight) { lastHeight = next; tell('resize', { height: next }); }
+      }, 100);
+    };
+    addEventListener('error', () => { errored = true; tell('error', { message: 'script_error' }); }, true);
+    addEventListener('unhandledrejection', () => { errored = true; tell('error', { message: 'unhandled_rejection' }); }, true);
+    addEventListener('DOMContentLoaded', () => {
+      if (errored) return;
+      tell('ready');
+      new ResizeObserver(measure).observe(document.body);
+      measure();
+    }, { once: true });
+  };
+  addEventListener('message', (event) => {
+    const data = event.data;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+    if (event.source === parent) {
+      if (data.type === 'pi-visualize:dispose' && data.id === id) { clear(); return; }
+      if (data.type !== 'pi-visualize:init' || initialized || typeof data.id !== 'string' || data.id.length > 100 ||
+          typeof data.source !== 'string' || new TextEncoder().encode(data.source).byteLength > 65536) return;
+      initialized = true; id = data.id;
+      const color = (value, fallback) => typeof value === 'string' && /^#[0-9a-f]{3,8}$/i.test(value) ? value : fallback;
+      const bg = color(data.theme?.background, '#0d0d0d'), fg = color(data.theme?.text, '#ececec');
+      const csp = "default-src 'none'; script-src 'unsafe-inline'; script-src-attr 'none'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
+      const html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="' + csp + '">' +
+        '<style>:root{--viz-bg:' + bg + ';--viz-text:' + fg + ';color-scheme:dark}*{box-sizing:border-box}body{margin:0;padding:8px;background:var(--viz-bg);color:var(--viz-text);font:14px/1.5 system-ui,sans-serif}button,input,select{font:inherit}svg,canvas{max-width:100%}:focus-visible{outline:2px solid #9b8cff;outline-offset:3px}@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}</style>' +
+        '<script>(' + bridge.toString() + ')(' + JSON.stringify(id) + ')<' + '/script></head><body>' + data.source + '</body></html>';
+      blob = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+      child = document.createElement('iframe');
+      child.setAttribute('sandbox', 'allow-scripts'); child.setAttribute('referrerpolicy', 'no-referrer');
+      child.title = '交互作品内容'; child.src = blob;
+      document.body.append(child);
+      return;
+    }
+    if (!child || event.source !== child.contentWindow || data.id !== id) return;
+    if (Date.now() - since > 1000) { since = Date.now(); count = 0; }
+    if (++count > 30) return;
+    if (data.type === 'pi-visualize:ready') send('ready');
+    else if (data.type === 'pi-visualize:resize' && Number.isFinite(data.height)) send('resize', { height: Math.min(1200, Math.max(200, Math.ceil(data.height))) });
+    else if (data.type === 'pi-visualize:error' && typeof data.message === 'string' && data.message.length <= 500) { send('error', { message: data.message }); clear(); }
+  });
+  addEventListener('pagehide', clear, { once: true });
+  send('shell-ready');
+})();
+</script></body></html>

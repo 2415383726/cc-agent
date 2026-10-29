@@ -1,0 +1,24 @@
+{
+  "dify": "1.15.0",
+  "app_id": "9cdedc0b-d8a6-4b73-a0b5-95bece069037",
+  "conversation_id": "fc2dd357-f5fb-4752-86f9-d571cb1d34e0",
+  "notes": "First native answer includes provider reasoning text because the temporary app had not enabled runtime thinking separation. It proves native answer length, not artwork source length. Second answer is the controlled queue fixture passed through the real Pi model.",
+  "rounds": [
+    {
+      "message_id": "6d6fa7d4-c528-4c87-9edd-ed88e09c4ae5",
+      "chars": 16751,
+      "utf8_bytes": 17293,
+      "sha256": "8ff8c90ff37ec039c0bfb56eb232d3ece92915a7c8331a70fe1e3e4383473dc5",
+      "fresh_history_equal": true,
+      "agent_thoughts_count": 0
+    },
+    {
+      "message_id": "33167c7b-8155-4980-b575-5f9da53926c6",
+      "chars": 3339,
+      "utf8_bytes": 3776,
+      "sha256": "5c25426c44a323b18e536af68993851464d84dd4da4eb8f44ba055c858667d70",
+      "fresh_history_equal": true,
+      "agent_thoughts_count": 0
+    }
+  ]
+}
