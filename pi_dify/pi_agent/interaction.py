@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import time
 from typing import Any
@@ -250,7 +252,11 @@ def approval_required(
     if config.approval_mode == "off":
         return False
     for grant in grants:
-        if grant.get("tool") == tool_name and grant.get("scope") == "session":
+        if (
+            grant.get("tool") == tool_name
+            and grant.get("scope") == "session"
+            and (not grant.get("source") or grant.get("source") == source)
+        ):
             return False
     if tool_name in config.approval_tools:
         return True
@@ -271,7 +277,7 @@ def create_approval_pending(
     timeout_seconds: float = 0.0,
 ) -> dict[str, Any]:
     created = time.time()
-    return {
+    pending = {
         "kind": "approval",
         "id": _new_id("apv"),
         "action_id": _new_id("act"),
@@ -285,6 +291,8 @@ def create_approval_pending(
         "expires_at": created + timeout_seconds if timeout_seconds else None,
         "scope_options": ["once", "session"],
     }
+    pending["call_fingerprint"] = _approval_fingerprint(pending)
+    return pending
 
 
 def validate_approval_decision(
@@ -292,6 +300,10 @@ def validate_approval_decision(
 ) -> dict[str, Any]:
     if str(interaction.get("type") or "") != "approval":
         raise PendingError("pending_invalid", "The interaction is not an approval decision.")
+    if pending.get("call_fingerprint") != _approval_fingerprint(pending):
+        raise PendingError(
+            "pending_invalid", "The pending approval no longer matches its original operation."
+        )
     if str(interaction.get("pending_id") or "") != str(pending.get("id") or ""):
         raise PendingError("pending_invalid", "The decision does not match the waiting action.")
     if _expired(pending):
@@ -340,6 +352,22 @@ def consumed_record(pending: dict[str, Any], action: str) -> dict[str, Any]:
 
 def is_consumed(consumed: list[dict[str, Any]], pending_id: str) -> bool:
     return any(str(item.get("id")) == pending_id for item in consumed)
+
+
+def _approval_fingerprint(pending: dict[str, Any]) -> str:
+    payload = json.dumps(
+        {
+            "tool_call_id": pending.get("tool_call_id"),
+            "tool_name": pending.get("tool_name"),
+            "source": pending.get("source"),
+            "arguments": pending.get("arguments"),
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _expired(pending: dict[str, Any]) -> bool:

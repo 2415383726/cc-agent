@@ -17,6 +17,7 @@ from .errors import BudgetExceeded
 
 @dataclass(slots=True)
 class BudgetSnapshot:
+    run_id: str
     model_requests: int
     tool_calls: int
     reported_input_tokens: int
@@ -32,6 +33,7 @@ class BudgetSnapshot:
 
     def as_dict(self) -> dict[str, Any]:
         return {
+            "run_id": self.run_id,
             "model_requests": self.model_requests,
             "tool_calls": self.tool_calls,
             "usage": {
@@ -153,6 +155,7 @@ class RunLedger:
 
     def snapshot(self) -> BudgetSnapshot:
         return BudgetSnapshot(
+            run_id=self.run_id,
             model_requests=self.model_requests,
             tool_calls=self.tool_calls,
             reported_input_tokens=self.reported_input_tokens,

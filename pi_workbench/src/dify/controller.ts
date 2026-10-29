@@ -220,6 +220,29 @@ export class DifyController implements WorkbenchController {
     }
   }
 
+  async loadMore(): Promise<void> {
+    if (this.ui.loadingHistory || !this.ui.hasMore || !this.ui.conversationId) return
+    const epoch = this._ticket
+    this.ui.loadingHistory = true
+    try {
+      const page = await listMessages(this.config, this.ui.conversationId, {
+        limit: 20,
+        firstId: this.ui.firstId,
+      })
+      if (epoch !== this._ticket) return
+      const seen = new Set(this._records.map((record) => record.id))
+      const older = page.records.filter((record) => !seen.has(record.id))
+      this._records = [...older, ...this._records]
+      this.ui.firstId = page.firstId || this.ui.firstId
+      this.ui.hasMore = page.hasMore
+      this._applyHistory()
+    } catch (error) {
+      if (epoch === this._ticket) this.ui.error = safeError(error)
+    } finally {
+      if (epoch === this._ticket) this.ui.loadingHistory = false
+    }
+  }
+
   newConversation(): void {
     this._ticket += 1
     this._abort?.abort()

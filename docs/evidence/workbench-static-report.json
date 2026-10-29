@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-10-29T01:52:33.603Z",
+  "generatedAt": "2026-10-29T01:57:07.494Z",
   "fileCount": 4,
-  "totalBytes": 398353,
+  "totalBytes": 399120,
   "files": [
     {
       "file": "assets/index-C8ryFKvb.css",
@@ -9,9 +9,9 @@
       "sha256": "3c81ef882b511afd64dad0176ba709ba1bcc406cfe414b79c75a9ab954961dec"
     },
     {
-      "file": "assets/index-DT2txwyE.js",
-      "bytes": 280398,
-      "sha256": "907cf805672063e034340dedece9c8a50b5a6f154ceb24b824ed54e01026147f"
+      "file": "assets/index-DFEMjVkh.js",
+      "bytes": 281165,
+      "sha256": "5669b1b9c42a656e315621e79e08ff846feb2bcf32aeb631d34bd295fe900885"
     },
     {
       "file": "config.example.json",
@@ -21,7 +21,7 @@
     {
       "file": "index.html",
       "bytes": 455,
-      "sha256": "d28b1024fe54212f6588c9f6e44f1d089cbda0c3a96487446fe42efdc3205024"
+      "sha256": "3920b0e1dbc8185f388d2b31e9cd07dad6c022fa2a4356b0487a990a568199ba"
     }
   ],
   "violations": []

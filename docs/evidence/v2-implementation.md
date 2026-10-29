@@ -23,9 +23,9 @@ providers, real remote MCP services or an arm64 host remain partially verified.
 
 | Check | Result |
 | --- | --- |
-| `python -m unittest discover -s pi_dify/tests` | **73 passed** |
+| `python -m unittest discover -s pi_dify/tests` | **75 passed** |
 | `npm run test` (workbench) | **28 passed** |
-| `npm run build` | success, 4 static files, ~398 KB |
+| `npm run build` | success, 4 static files, ~399 KB |
 | `npm run check:static` | **0 violations** (no external runtime assets / Pi SDK/Node backend markers) |
 | Static replay browser render | process, questionnaire and approval screenshots |
 | amd64 offline package | built, `--no-index` install, fake-Dify smoke **completed** |
@@ -53,8 +53,8 @@ python3 scripts/verify_offline_package.py dist/pi_dify-0.1.0-offline-linux-arm64
 
 | Architecture | File | Bytes | SHA-256 |
 | --- | --- | ---: | --- |
-| amd64 | `pi_dify-0.1.0-offline-linux-amd64.difypkg` | 26,462,105 | `91222ca130c852805fca58d19002934ff21bd2ac2eaae962873a68ebec879a04` |
-| arm64 | `pi_dify-0.1.0-offline-linux-arm64.difypkg` | 25,479,834 | `18f00a4a41b91e62b968879261e91bb520694040abc810fac6fcc3cf0544991c` |
+| amd64 | `pi_dify-0.1.0-offline-linux-amd64.difypkg` | 26,463,200 | `2bf55b9bca1e5dd5451e47fa05fd1001171e90426b75f86cec64518644e6e53b` |
+| arm64 | `pi_dify-0.1.0-offline-linux-arm64.difypkg` | 25,480,931 | `cfe89b68de59ac9a259620f0096572cdb732d0d2a6cdff7d2144611da37ddf97` |
 
 Both packages contain 72 architecture-appropriate wheels, `VERSION_MANIFEST.json`,
 third-party notices/license texts, the plugin source, `requirements.lock.txt` and
@@ -138,8 +138,11 @@ user-activated skill content was not withheld from the model projection;
 (6) the workbench labelled a requested stop as a trusted `stopped` terminal;
 (7) `state_summary` was produced but not delivered; (8) Dify output files had no
 view/download link; (9) `mcp_tools_exclude` was parsed as a string; (10) the
-Dify `TextPromptMessageContent.data` shape was not read. Regression tests cover
-each runtime/contract fix.
+Dify `TextPromptMessageContent.data` shape was not read. A follow-up audit also
+wired approval expiry, made session grants source-specific, bound pending
+approval fields with an integrity fingerprint, gave fallback failures unique run
+IDs, and shipped the opt-in `pi-agent-help` builtin skill. Regression tests
+cover each runtime/contract fix.
 
 ## Gaps and risks (explicit)
 

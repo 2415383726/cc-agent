@@ -66,6 +66,7 @@ class RunStream:
         self._runtime = runtime
         self._parameters = parameters
         self._queue: queue.Queue[Any] = queue.Queue()
+        self.run_id = f"run_{uuid4().hex[:20]}"
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._target, name="pi-dify-run", daemon=True)
         self._started = False
@@ -86,9 +87,15 @@ class RunStream:
 
     def _target(self) -> None:
         try:
-            asyncio.run(self._runtime.execute_async(self._parameters, self._queue.put, self._stop))
+            asyncio.run(
+                self._runtime.execute_async(
+                    self._parameters, self._queue.put, self._stop, run_id=self.run_id
+                )
+            )
         except BaseException:
-            self._queue.put(_safe_failure_message("agent_failed", "runtime"))
+            self._queue.put(
+                _safe_failure_message("agent_failed", "runtime", run_id=self.run_id, seq=10**9)
+            )
             self._queue.put({"type": "text", "content": "The Pi agent run failed."})
         finally:
             self._queue.put(_SENTINEL)
@@ -125,7 +132,7 @@ class PiAgentRuntime:
         return RunStream(self, parameters)
 
     async def execute_async(
-        self, parameters: dict[str, Any], emit: Any, stop: threading.Event
+        self, parameters: dict[str, Any], emit: Any, stop: threading.Event, *, run_id: str = ""
     ) -> None:
         self._stop = stop
         watcher = asyncio.create_task(self._watch_stop(stop))
@@ -207,7 +214,10 @@ class PiAgentRuntime:
             else:
                 emit(
                     _safe_failure_message(
-                        exc.code, exc.stage, run_id=events.run_id if events is not None else ""
+                        exc.code,
+                        exc.stage,
+                        run_id=events.run_id if events is not None else "",
+                        seq=10**9,
                     )
                 )
         except Exception:
@@ -226,6 +236,7 @@ class PiAgentRuntime:
                         "agent_failed",
                         "runtime",
                         run_id=events.run_id if events is not None else "",
+                        seq=10**9,
                     )
                 )
         finally:
@@ -596,6 +607,10 @@ class PiAgentRuntime:
             storage = prepared["storage"]
             resume_message = prepared["message"]
             retry_mode = "resume"
+            try:
+                await setup.harness.close()
+            except Exception:
+                pass
             setup.harness = self._make_harness(
                 setup, storage, request, events, emit, ledger, _system_prompt(request, setup.skills)
             )
@@ -637,6 +652,10 @@ class PiAgentRuntime:
                         "message": "The context overflow recovery failed.",
                     }
                     break
+                try:
+                    await setup.harness.close()
+                except Exception:
+                    pass
                 setup.harness = self._make_harness(
                     setup,
                     retry,
@@ -1082,12 +1101,17 @@ class PiAgentRuntime:
             answer = error["message"]
         summary: dict[str, Any] | None = None
         if state is not None:
-            summary = state_summary(state)
             if save_error is None and "save" in locals():
+                summary = state_summary(state)
                 summary["encoded_bytes"] = save.encoded_bytes
                 summary["delivery_status"] = "encoded"
             else:
-                summary["delivery_status"] = "failed"
+                summary = {
+                    "revision": state.revision,
+                    "run_id": events.run_id,
+                    "delivery_status": "failed",
+                    "error": save_error or "state_save_failed",
+                }
         payload = run_state_payload(
             status=status,
             stats=stats,

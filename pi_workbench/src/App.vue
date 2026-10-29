@@ -197,6 +197,15 @@ function entryKey(entry: WorkbenchEntry): string {
           </select>
           <button type="button" class="pi-button pi-button-ghost" @click="onNewConversation">New</button>
           <button type="button" class="pi-button pi-button-ghost" @click="controller.refreshConversations()">Refresh</button>
+          <button
+            v-if="controller.ui.hasMore"
+            type="button"
+            class="pi-button pi-button-ghost"
+            :disabled="controller.ui.loadingHistory"
+            @click="controller.loadMore()"
+          >
+            Older
+          </button>
         </template>
         <span class="pi-status-pill" :class="`pi-status-${statusTone}`">{{ statusLabel }}</span>
         <button type="button" class="pi-button pi-button-ghost" @click="showReplayPanel = !showReplayPanel">

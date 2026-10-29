@@ -402,6 +402,43 @@ class NoReplayOverflowTests(unittest.TestCase):
         self.assertTrue(any("context was compacted" in text for text in prompts))
 
 
+class ApprovalExpiryRuntimeTests(unittest.TestCase):
+    def test_configured_expiry_rejects_the_decision(self) -> None:
+        import time
+
+        tool = {
+            "name": "write",
+            "description": "Write",
+            "parameters": {"type": "object", "properties": {}},
+        }
+        session = FakeSession([tool_chunks([{"name": "write"}])])
+        config = {
+            "approval_mode": "configured",
+            "approval_tools": ["write"],
+            "approval_timeout_seconds": 0.001,
+        }
+        first = run_turn(session, base_parameters(query="write", tools=[tool], runtime=config))
+        pending = decode_state(last_state(first)).state.pending
+        time.sleep(0.01)
+        second = run_turn(
+            session,
+            base_parameters(
+                query="",
+                tools=[tool],
+                runtime=config,
+                state=last_state(first),
+                interaction={
+                    "type": "approval",
+                    "pending_id": pending["id"],
+                    "decision": "approve",
+                },
+            ),
+        )
+        self.assertEqual(last_terminal(second)["status"], "awaiting_approval")
+        self.assertEqual(last_terminal(second)["error"]["code"], "pending_expired")
+        self.assertEqual(len(session.tool.calls), 0)
+
+
 class NestedPendingTests(unittest.TestCase):
     def test_new_pending_created_during_approval_resume_is_persisted(self) -> None:
         write = {
@@ -485,7 +522,8 @@ class NestedPendingTests(unittest.TestCase):
                 },
             ),
         )
-        self.assertEqual(last_terminal(second)["status"], "failed")
+        self.assertEqual(last_terminal(second)["status"], "awaiting_approval")
+        self.assertEqual(last_terminal(second)["error"]["code"], "pending_invalid")
         self.assertEqual(len(session.tool.calls), 0)
 
 

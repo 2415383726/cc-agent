@@ -123,8 +123,9 @@ skills:
         Step one: verify the order date.
 ```
 
-Skills are discovered from `skills/*/SKILL.md` when builtin skills are shipped
-(no builtin skill is bundled by default) and from `app_skills_yaml`. They are
+Skills are discovered from `skills/*/SKILL.md` (this package ships the
+opt-in `pi-agent-help` builtin, hidden from the model) and from
+`app_skills_yaml`. They are
 checked for eligibility against the current tool set, activated by the user
 (`/skill:name ...`) or the model (`activate_skill`), and read through bounded,
 paged `read_skill_resource` calls. Paths outside the skill are rejected. On a

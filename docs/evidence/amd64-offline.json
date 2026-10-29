@@ -1,7 +1,7 @@
 {
-  "package": "/home/ygao/Desktop/work/cadre-system/cc_agent/pi_dify/dist/pi_dify-0.1.0-offline-linux-amd64.difypkg",
-  "package_sha256": "91222ca130c852805fca58d19002934ff21bd2ac2eaae962873a68ebec879a04",
-  "package_bytes": 26462105,
+  "package": "pi_dify-0.1.0-offline-linux-amd64.difypkg",
+  "package_sha256": "2bf55b9bca1e5dd5451e47fa05fd1001171e90426b75f86cec64518644e6e53b",
+  "package_bytes": 26463200,
   "arch": "amd64",
   "wheel_count": 72,
   "version_manifest": {
@@ -85,8 +85,8 @@
     "python": "3.12",
     "static_frontend": {
       "file_count": 4,
-      "report_sha256": "e69a49614ef22447219c35745eb9d00c11722a5614ab32b7d617576e3c81121d",
-      "total_bytes": 398353,
+      "report_sha256": "e1f2ac1232c06ef5dab3f7ae466beb215bd56a6152f57ba6758326b6f2201188",
+      "total_bytes": 399120,
       "violations": []
     },
     "wheel_count": 72,
@@ -607,5 +607,5 @@
   },
   "python": "3.12.14 (main, Sep  1 2026, 14:16:52) [Clang 22.1.3 ]",
   "offline": true,
-  "elapsed_seconds": 3.05
+  "elapsed_seconds": 3.09
 }

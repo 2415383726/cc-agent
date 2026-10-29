@@ -172,7 +172,7 @@ class SkillCatalog:
         )
 
     def system_section(self) -> str:
-        skills = self.eligible()
+        skills = [skill for skill in self.eligible() if not skill.disable_model_invocation]
         if not skills:
             return ""
         lines = [

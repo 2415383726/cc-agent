@@ -60,7 +60,7 @@ def main() -> int:
         version = json.loads((root / "VERSION_MANIFEST.json").read_text(encoding="utf-8"))
         wheel_count = len(list((root / "wheels").glob("*.whl")))
         evidence: dict[str, object] = {
-            "package": str(package),
+            "package": package.name,
             "package_sha256": sha256(package),
             "package_bytes": package.stat().st_size,
             "arch": args.arch,
@@ -91,7 +91,9 @@ def main() -> int:
             evidence["resolution_only"] = True
             output = f"{resolution.stdout}\n{resolution.stderr}"
             evidence["resolution_ok"] = bool(output.strip())
-            evidence["resolution_output_tail"] = output[-2_000:]
+            evidence["resolution_output_tail"] = output.replace(str(root), "<plugin>").replace(
+                temp, "<tmp>"
+            )[-2_000:]
         else:
             venv = Path(temp) / "venv"
             run(["uv", "venv", "--python", "3.12", str(venv)], cwd=root)

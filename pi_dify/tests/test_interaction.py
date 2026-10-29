@@ -102,8 +102,9 @@ class ApprovalPolicyTests(unittest.TestCase):
         )
         self.assertTrue(approval_required("write", "dify", {}, config, []))
         self.assertFalse(approval_required("read", "dify", {}, config, []))
-        grant = [{"tool": "write", "scope": "session"}]
+        grant = [{"tool": "write", "scope": "session", "source": "dify"}]
         self.assertFalse(approval_required("write", "dify", {}, config, grant))
+        self.assertTrue(approval_required("write", "mcp", {}, config, grant))
 
     def test_mcp_destructive_policy(self) -> None:
         config = RuntimeConfig.from_value({"approval_mode": "mcp"})

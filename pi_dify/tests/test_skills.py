@@ -62,6 +62,18 @@ class SkillCatalogTests(unittest.TestCase):
         with self.assertRaises(PiError):
             normalize_skill_path("a\\..\\b")
 
+    def test_builtin_help_skill_is_discovered_but_not_model_listed(self) -> None:
+        from pathlib import Path
+
+        builtin = Path(__file__).resolve().parent.parent / "skills"
+        catalog = SkillCatalog.load(builtin_dir=builtin, available_tools=set())
+        self.assertIn("pi-agent-help", catalog.eligible_names())
+        self.assertNotIn("pi-agent-help", catalog.system_section())
+        activation = catalog.activate("pi-agent-help", activated_by="user")
+        self.assertIn("Pi Agent help", activation.text)
+        with self.assertRaises(PiError):
+            catalog.activate("pi-agent-help", activated_by="model")
+
     def test_system_section_only_lists_eligible_skills(self) -> None:
         catalog = SkillCatalog.load(app_yaml=YAML, available_tools={"lookup_order"})
         section = catalog.system_section()

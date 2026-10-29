@@ -200,6 +200,7 @@ class ToolRuntime:
                 source=spec.source,
                 annotations=spec.annotations,
                 run_id=self.run_id,
+                timeout_seconds=self.config.approval_timeout_seconds,
             )
             self.pending = pending
             return ToolOutcome(

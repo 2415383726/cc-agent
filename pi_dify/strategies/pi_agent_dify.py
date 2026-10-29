@@ -7,6 +7,7 @@ import logging
 import time
 from collections.abc import Generator
 from typing import Any
+from uuid import uuid4
 
 from dify_plugin.entities.agent import AgentInvokeMessage
 from dify_plugin.entities.tool import ToolInvokeMessage
@@ -46,8 +47,8 @@ class PiAgentStrategy(AgentStrategy):
                         "schema": "piagent.display.v1",
                         "schema_version": 1,
                         "type": "agent_failed",
-                        "run_id": str(parameters.get("run_id") or "run_strategy_failed"),
-                        "seq": 0,
+                        "run_id": f"run_strategy_failed_{uuid4().hex[:12]}",
+                        "seq": 10**9,
                         "ts": int(time.time() * 1000),
                         "code": "agent_failed",
                         "stage": "strategy",
