@@ -1,0 +1,48 @@
+# NOTICE
+
+## Leyline (chat presentation layer)
+
+This workbench reuses and modifies parts of Leyline:
+
+- Upstream: https://github.com/spmurrayzzz/leyline
+- Pinned commit: `a368c8b7590b88bb138c024b7dd8414b3dcc2a73`
+- License: Apache-2.0 (`src/vendor/leyline/LICENSE`)
+
+Reused files and modifications:
+
+- `src/styles/tokens.css`, `transcript.css`, `tools.css`, `composer.css`:
+  copied from `src/styles/`. The Pi workbench adds `workbench.css` and overrides
+  message-row surfaces; unused Leyline application rules are harmless.
+- `src/projection/toolStatus.ts`: derived from `lib/tool-activity.js`
+  (`toolStatusTone`) and rewritten for the finite Pi tool status set.
+- `src/components/TranscriptEntry.vue`: rewritten and trimmed from
+  `src/components/TranscriptEntry.vue`; the tool/skill/thinking card structure
+  and class names are retained. Research, subagent inspector, terminal, Git,
+  fork/reset and other capabilities without a Pi host equivalent were removed.
+- `src/components/AskUserForm.vue` and `ApprovalCard.vue`: new Vue components for
+  this project; the AskUser interaction shape is informed by the community
+  comparison research, not copied from a Leyline runtime.
+
+Not reused: Leyline's Node server, Pi SDK runtime, WebSocket protocol, Electron
+shell, project/machine/workspace features, terminal, Git, memory, tracing
+services and extension confirm UI.
+
+Extraction boundary evidence: Leyline's chat assembly lives in a ~5,800-line
+`App.vue` and its session controller (`useSessionWorkspace.js`, ~2,000 lines)
+is directly coupled to REST/WS project and machine APIs. That is beyond the v2
+boundary (no community backend, no project/workspace model), so this workbench
+kept the reusable presentation primitives (card markup/classes, styles,
+status mapping, Markdown/scroll behavior) and wrote a contract-specific
+transcript/controller instead of forking the whole shell. This is a deliberate,
+recorded adaptation rather than a claim that the original container was moved
+unchanged.
+
+## Other frontend dependencies
+
+- Vue 3 — MIT
+- markdown-it — MIT
+- highlight.js — BSD-3-Clause
+
+Their license texts are available in `node_modules/<package>/LICENSE` after
+`npm install` and in the built `dist/` dependency graph metadata used by the
+release record.

@@ -1,0 +1,6 @@
+{
+  "title": "Pi Agent Workbench",
+  "baseUrl": "/v1",
+  "user": "pi-workbench-user",
+  "inputs": {}
+}

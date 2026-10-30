@@ -1,0 +1,28 @@
+{
+  "generatedAt": "2026-10-29T02:10:04.915Z",
+  "fileCount": 4,
+  "totalBytes": 400109,
+  "files": [
+    {
+      "file": "assets/index-aP9tWU5m.js",
+      "bytes": 282154,
+      "sha256": "25b77462435ef39e9d7676d9e807275085823129fb2ff75732855a6315a04433"
+    },
+    {
+      "file": "assets/index-C8ryFKvb.css",
+      "bytes": 117397,
+      "sha256": "3c81ef882b511afd64dad0176ba709ba1bcc406cfe414b79c75a9ab954961dec"
+    },
+    {
+      "file": "config.example.json",
+      "bytes": 103,
+      "sha256": "7008a60d7a76602a7713b401c510749728e77af423f7ec96c28eb8a79ae8c5ca"
+    },
+    {
+      "file": "index.html",
+      "bytes": 455,
+      "sha256": "0dba2b153f0c5cf2f5ba72c312e0c6f2ade068e6e6c113d9b9d671d51e61973d"
+    }
+  ],
+  "violations": []
+}

@@ -1,0 +1,35 @@
+version: 0.1.0
+type: plugin
+author: "pi_agent"
+name: "pi_dify"
+label:
+  en_US: "Pi Agent"
+  zh_Hans: "Pi Agent"
+created_at: "2026-10-29T00:00:00.000000000Z"
+icon: icon.svg
+description:
+  en_US: Pi harness agent using the current Dify model, injected tools, skills and conversation state.
+  zh_Hans: 使用当前 Dify 模型、注入工具、技能与对话状态的 Pi Harness Agent。
+tags:
+  - "agent"
+resource:
+  memory: 2097152
+  permission:
+    tool:
+      enabled: true
+    model:
+      enabled: true
+      llm: true
+plugins:
+  agent_strategies:
+    - "provider/pi_agent.yaml"
+meta:
+  version: 0.0.1
+  minimum_dify_version: "1.7.0"
+  arch:
+    - "amd64"
+    - "arm64"
+  runner:
+    language: "python"
+    version: "3.12"
+    entrypoint: "main"
