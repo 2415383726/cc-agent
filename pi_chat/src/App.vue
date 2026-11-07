@@ -18,6 +18,7 @@ import NoteRow from './timeline/NoteRow.vue'
 import ReasoningRow from './timeline/ReasoningRow.vue'
 import TerminalRow from './timeline/TerminalRow.vue'
 import UserMessage from './timeline/UserMessage.vue'
+import QuestionCard from './cards/QuestionCard.vue'
 import CompactionRow from './timeline/CompactionRow.vue'
 import SkillRow from './timeline/SkillRow.vue'
 import ToolCard from './timeline/ToolCard.vue'
@@ -38,8 +39,10 @@ import type {
  * Binding seam: both controllers are framework-agnostic pure TS. This shell is
  * the only Vue-aware layer — it wraps the controller in reactive() and reads
  * view/ui as plain data. 时间线条目由 timeline/ 下的 Harness 同族组件渲染：
- * 消息四类（票据 03）+ 工具折叠卡/分组/技能行/压缩行（票据 04）；问卷/审批卡
- * 仍是占位（票据 05/06 接管）。自动吸底：读者未向上滚离底部时，新内容保持贴底
+ * 消息四类（票据 03）+ 工具折叠卡/分组/技能行/压缩行（票据 04）；问卷卡由
+ * cards/QuestionCard.vue 渲染（票据 05，提交走 controller 的
+ * submitAnswers/cancelQuestion，回放本地闭环）；审批卡仍是占位（票据 06 接管）。
+ * 自动吸底：读者未向上滚离底部时，新内容保持贴底
  * （timeline/scrollFollow.ts，上游 use-scroll-follow 的 best-effort 平移）。
  */
 const replay = reactive(new ReplayController()) as ReplayController
@@ -172,20 +175,11 @@ function entryLabel(entry: WorkbenchEntry): string {
   }
 }
 
-function questionText(entry: QuestionEntry): string {
-  const lines = [entry.questionnaire.title || '问卷', statusText(entry.status)]
-  for (const question of entry.questionnaire.questions || []) {
-    lines.push(`- ${question.question}`)
-  }
-  return lines.join('\n')
-}
-
 function approvalText(entry: ApprovalEntry): string {
   return `${entry.tool} · ${statusText(entry.status)}`
 }
 
-const isPlaceholder = (entry: WorkbenchEntry): boolean =>
-  entry.kind === 'question' || entry.kind === 'approval'
+const isPlaceholder = (entry: WorkbenchEntry): boolean => entry.kind === 'approval'
 
 const firstEntryTs = computed(() => view.value.entries[0]?.ts)
 </script>
@@ -254,11 +248,18 @@ const firstEntryTs = computed(() => view.value.entries[0]?.ts)
 
             <NoteRow v-else-if="segment.entry.kind === 'note'" :entry="segment.entry as NoteEntry" />
 
-            <!-- 问卷/审批卡（票据 05/06）保持占位渲染。 -->
+            <!-- 问卷卡（票据 05）：作答/跳过/取消提交为 interaction JSON（回放本地闭环）。 -->
+            <QuestionCard
+              v-else-if="segment.entry.kind === 'question'"
+              :entry="segment.entry as QuestionEntry"
+              @submit="(answers) => replay.submitAnswers(segment.entry as QuestionEntry, answers)"
+              @cancel="replay.cancelQuestion(segment.entry as QuestionEntry)"
+            />
+
+            <!-- 审批卡（票据 06）保持占位渲染。 -->
             <template v-else-if="isPlaceholder(segment.entry)">
               <strong>{{ entryLabel(segment.entry) }}</strong>
-              <p v-if="segment.entry.kind === 'question'">{{ questionText(segment.entry as QuestionEntry) }}</p>
-              <p v-else-if="segment.entry.kind === 'approval'">{{ approvalText(segment.entry as ApprovalEntry) }}</p>
+              <p v-if="segment.entry.kind === 'approval'">{{ approvalText(segment.entry as ApprovalEntry) }}</p>
             </template>
 
             <template v-else>

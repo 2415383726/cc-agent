@@ -32,7 +32,8 @@ describe('pi_chat replay shell', () => {
 
     await select.setValue('questionnaire')
     await flushPromises()
-    expect(wrapper.text()).toContain('退款信息')
+    // 票据 05 后问卷场景渲染完整问卷卡：第 1 题眉题（question.header）与题干可见。
+    expect(wrapper.text()).toContain('订单')
     expect(wrapper.text()).toContain('要退款的是哪个订单？')
 
     await select.setValue('approval')
@@ -77,6 +78,46 @@ describe('pi_chat replay shell', () => {
     const send = wrapper.find('[data-zone="composer"] [data-testid="composer-send"]')
     expect(send.exists()).toBe(true)
     expect(send.attributes('disabled')).toBeDefined()
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('问卷回放可完整交互：作答、翻页、跳过、提交全程本地闭环', async () => {
+    const wrapper = mount(App)
+    await flushPromises()
+    const select = wrapper.find('select')
+    await select.setValue('questionnaire')
+    await flushPromises()
+
+    // 第 1 题（必填单选）：选第二个选项，自动翻页。
+    await wrapper.findAll('[role="radio"]')[1].trigger('click')
+    expect(wrapper.find('[data-testid="question-progress"]').text()).toBe('2 / 3')
+    // 第 2 题（multi，min1/max2）：勾选两项后翻页。
+    const checkboxes = wrapper.findAll('[role="checkbox"]')
+    await checkboxes[0].trigger('click')
+    await checkboxes[1].trigger('click')
+    await wrapper.find('[data-testid="question-primary"]').trigger('click')
+    expect(wrapper.find('[data-testid="question-progress"]').text()).toBe('3 / 3')
+    // 第 3 题（text 选填）：跳过即提交。
+    await wrapper.findAll('button').find((button) => button.text() === '跳过')!.trigger('click')
+
+    // 回放闭环：question.answered 落记录 → 卡片只读回显 + 用户答复气泡 + 回放终态。
+    await flushPromises()
+    expect(wrapper.find('[data-testid="question-review-status"]').text()).toBe('已回答')
+    expect(wrapper.text()).toContain('谢谢，问卷已提交')
+    expect(wrapper.text()).toContain('订单 B-2099')
+    expect(wrapper.text()).toContain('到货损坏, 商品错误')
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('问卷取消走回放本地闭环并渲染取消态', async () => {
+    const wrapper = mount(App)
+    await flushPromises()
+    const select = wrapper.find('select')
+    await select.setValue('questionnaire')
+    await flushPromises()
+    await wrapper.find('[data-testid="card-close"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="question-review-status"]').text()).toBe('已取消')
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 })
