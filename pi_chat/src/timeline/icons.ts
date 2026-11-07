@@ -70,6 +70,18 @@ const EDIT_OUTLINE = stroke1(
 const CODE_OUTLINE = stroke1(
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke-width="${strokeWidth}"><path d="M6.27612 1.5L4.52612 14.5" stroke="currentColor"></path><path d="M11.4739 1.5L9.72388 14.5" stroke="currentColor"></path><path d="M2.39868 5.5H14.0681" stroke="currentColor"></path><path d="M1.93188 10.5H13.6013" stroke="currentColor"></path></svg>',
 )
+
+/* 侧栏折叠开关与新会话（上游 SidebarRoot 用），path 逐字取自 artwork.ts。
+   new-chat 的 medium 变体（1.3px 描边）由 NEW_CHAT_MEDIUM 单独固化。 */
+const PANEL_LEFT_OUTLINE = stroke1(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke-width="${strokeWidth}"><path d="M13.5 1.5H2.5C1.94772 1.5 1.5 1.94772 1.5 2.5V13.5C1.5 14.0523 1.94772 14.5 2.5 14.5H13.5C14.0523 14.5 14.5 14.0523 14.5 13.5V2.5C14.5 1.94772 14.0523 1.5 13.5 1.5Z" stroke="currentColor"></path><path d="M5.5 1.5V14.5" stroke="currentColor"></path></svg>',
+)
+
+const NEW_CHAT_OUTLINE = stroke1(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke-width="${strokeWidth}"><path d="M2.37091 11.2501C1.58745 9.89288 1.32067 8.29835 1.61969 6.76006C1.91872 5.22177 2.76342 3.8433 3.99826 2.87846C5.2331 1.91362 6.77494 1.42737 8.33988 1.50925C9.90482 1.59113 11.3875 2.23562 12.5149 3.32406C13.6425 4.41269 14.3387 5.87206 14.4754 7.4334C14.612 8.99474 14.18 10.5529 13.2587 11.8209C12.3375 13.0888 10.9891 13.9813 9.46194 14.3337C8.18691 14.628 6.85895 14.5294 5.64989 14.0605C5.1712 13.8748 4.76962 13.4932 4.26534 13.3967C3.67413 13.2835 2.95257 13.5598 2.03794 14.3337" stroke="currentColor"></path><path d="M8 5V11" stroke="currentColor"></path><path d="M5 8H11" stroke="currentColor"></path></svg>',
+)
+
+const NEW_CHAT_MEDIUM = NEW_CHAT_OUTLINE.replace('stroke-width="1"', 'stroke-width="1.3"')
 /** 上游 RunningWhaleTail.tsx 的 REST_PATH（静止鲸尾轮廓，动画帧不随行）。 */
 const WHALE_TAIL_REST_PATH =
   'M8.844 13.742C8.967 12.328 8.45 10.4 8.45 9.65C8.45 8.94 8.88 8.43 9.6 8.43C11.285 8.43 12.106 8.281 12.685 8.104C13.71 7.791 14.585 6.768 15.055 5.945C15.137 5.803 14.99 5.641 14.829 5.671C13.829 5.86 12.828 5.376 11.827 4.978C10.659 4.514 9.491 4.707 8.935 4.876C8.805 4.915 8.658 4.819 8.636 4.686C8.468 3.643 7.405 2.615 5.498 2.238C4.54 2.048 3.748 1.574 3.347 1.202C3.252 1.113 3.088 1.125 3.03 1.242C2.628 2.059 2.168 3.82 5.248 6.115C5.82 6.494 6.31 6.785 6.574 7.637C6.72 8.104 6.157 9.168 6.061 9.368C5.157 11.27 5.089 12.19 4.926 13.742'
@@ -90,7 +102,10 @@ export function iconSvg(
     | 'sparkle'
     | 'skill'
     | 'edit'
-    | 'code',
+    | 'code'
+    | 'panel-left'
+    | 'new-chat'
+    | 'new-chat-medium',
   /** 显式尺寸（像素）。上游 productIcon 组件总是输出 width/height；依赖
       CSS 定尺寸的 timeline 行不传（行为不变），问卷卡等依赖 glyph 固有
       尺寸的场景传入（上游默认：chevron 14，close/edit 16，check 12）。 */
@@ -113,6 +128,9 @@ export function iconSvg(
       case 'skill': return SKILL_OUTLINE
       case 'edit': return EDIT_OUTLINE
       case 'code': return CODE_OUTLINE
+      case 'panel-left': return PANEL_LEFT_OUTLINE
+      case 'new-chat': return NEW_CHAT_OUTLINE
+      case 'new-chat-medium': return NEW_CHAT_MEDIUM
     }
   })()
   if (size === undefined) return svg

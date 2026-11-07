@@ -150,6 +150,58 @@ export const REPLAY_SCENARIOS: ReplayScenario[] = [
     actions: ['questionnaire'],
   },
   {
+    id: 'multi',
+    title: '多回合与折叠',
+    description: '三个回合：前两回合完成态折叠进终态头，第三回合停在问卷等待。',
+    events: (() => {
+      const run = makeRun('run_replay_multi', 1_700_000_300_000)
+      return [
+        run('run.start', { conversation_id: 'replay-conv' }),
+        // 第一回合：思考 + 工具 + 回答，完成折叠
+        run('message.user', { message_id: 'mu1', text: '用 python 写一个快排完看看。' }),
+        run('reasoning.delta', { reasoning_id: 'mr1', delta: '写一个带测试的快排。' }),
+        run('reasoning.end', { reasoning_id: 'mr1' }),
+        run('tool.start', { tool_call_id: 'mcall_write', name: 'write_file', arguments: { path: 'quicksort.py' } }),
+        run('tool.end', { tool_call_id: 'mcall_write', name: 'write_file', status: 'ok', result: '已写入 quicksort.py', duration_ms: 420, execution_outcome: 'executed' }),
+        run('tool.start', { tool_call_id: 'mcall_run', name: 'run_code', arguments: { cmd: 'python3 quicksort.py' } }),
+        run('tool.end', { tool_call_id: 'mcall_run', name: 'run_code', status: 'ok', result: 'OK 20 万随机整数 → 通过', duration_ms: 1500, execution_outcome: 'executed' }),
+        run('message.start', { message_id: 'ma1' }),
+        run('message.end', {
+          message_id: 'ma1',
+          text: [
+            '跑通了：`quicksort.py`。',
+            '',
+            '实现上做了三件事：',
+            '',
+            '1. **Hoare 分区 + 三数取中** — 全等值输入也保持 O(n log n)。',
+            '2. **只递归较小的一侧** — 栈深度压到 O(log n)。',
+            '3. **≤16 元素切插入排序** — 少一堆递归调用。',
+          ].join('\n'),
+          stop_reason: 'stop',
+          has_tool_calls: false,
+        }),
+        run('run.state', { status: 'completed', answer: '跑通了。', stats: {}, state_ref: { revision: 2, delivery_status: 'encoded' } }),
+        run('run.done', { status: 'completed' }),
+        // 第二回合：纯文本回答，完成折叠
+        run('message.user', { message_id: 'mu2', text: '复杂度分析再展开讲讲。' }),
+        run('message.start', { message_id: 'ma2' }),
+        run('message.end', { message_id: 'ma2', text: '平均 O(n log n)；三数取中把最坏退化压到近似 O(n log n)。', stop_reason: 'stop', has_tool_calls: false }),
+        run('run.state', { status: 'completed', answer: '平均 O(n log n)。', stats: {}, state_ref: { revision: 3, delivery_status: 'encoded' } }),
+        run('run.done', { status: 'completed' }),
+        // 第三回合：停在问卷等待（不折叠）
+        run('message.user', { message_id: 'mu3', text: '帮我顺手跑一个基准测试。' }),
+        run('message.start', { message_id: 'ma3' }),
+        run('message.end', { message_id: 'ma3', text: '我先确认几项信息。', stop_reason: 'toolUse', has_tool_calls: true }),
+        run('tool.start', { tool_call_id: 'mcall_ask', name: 'ask_user', arguments: { title: '基准参数' } }),
+        run('question.asked', { questionnaire }),
+        run('tool.end', { tool_call_id: 'mcall_ask', name: 'ask_user', status: 'awaiting_user', result: '问卷已展示。', execution_outcome: 'executed' }),
+        run('run.state', { status: 'awaiting_user', answer: 'Agent 正在等待你的回答。', pending: { kind: 'ask_user', questionnaire } }),
+        run('run.done', { status: 'awaiting_user' }),
+      ]
+    })(),
+    actions: ['questionnaire'],
+  },
+  {
     id: 'approval',
     title: '工具审批与未知写操作',
     description: '写工具需要单独审批；可批准、拒绝，或模拟远程结果未知。',

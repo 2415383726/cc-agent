@@ -413,3 +413,82 @@ describe('TranscriptView 回合折叠（完成态过程收进终态头）', () =
     expect(wrapper.text()).toContain('第二轮答案。')
   })
 })
+
+describe('TranscriptView 回合尾（助手文本后的 copy + 时钟行）', () => {
+  function toolEntry(id: string): ToolEntry {
+    return {
+      id,
+      kind: 'tool',
+      ts: BASE_TS + 1000,
+      callId: id,
+      name: 'bash',
+      args: { cmd: 'echo hi' },
+      updates: [],
+      status: 'ok',
+      result: 'hi',
+      artifacts: [],
+      isError: false,
+      executionOutcome: 'success',
+    }
+  }
+
+  function turnEntries(): WorkbenchEntry[] {
+    return [
+      { id: 'u1', kind: 'message', role: 'user', text: '跑一下', streaming: false, ts: BASE_TS } as MessageEntry,
+      toolEntry('t1'),
+      messageEntry({ id: 'a1', role: 'assistant', text: '中间进度说明。', ts: BASE_TS + 1500 }),
+      messageEntry({ id: 'a2', role: 'assistant', text: '最终答案。', ts: BASE_TS + 2000 }),
+      {
+        id: 'terminal_run1',
+        kind: 'terminal',
+        terminal: { status: 'completed', answer: '', error: null, stats: {} },
+        ts: BASE_TS + 9000,
+      } as TerminalEntry,
+    ]
+  }
+
+  it('闭合回合渲染回合尾：copy 按钮 + 助手时钟（clock=end，时间取最后助手消息）', async () => {
+    const writeText = vi.fn(() => Promise.resolve())
+    Object.defineProperty(window.navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    })
+    const wrapper = mount(TranscriptView, { props: { entries: turnEntries(), running: false } })
+    const tail = wrapper.find('[data-testid="turn-tail"]')
+    expect(tail.exists()).toBe(true)
+    const copy = tail.find('button')
+    expect(copy.attributes('aria-label')).toBe('复制')
+    expect(tail.find('[data-testid="assistant-time"]').exists()).toBe(true)
+    // copy 动作写最后一条助手文本
+    await copy.trigger('click')
+    await flushPromises()
+    expect(writeText).toHaveBeenCalledWith('最终答案。')
+    delete (window.navigator as Partial<Navigator>).clipboard
+  })
+
+  it('进行中回合无回合尾；助手无文本（纯工具回合）也无回合尾', () => {
+    const running = turnEntries().filter((entry) => entry.kind !== 'terminal')
+    const runningView = mount(TranscriptView, { props: { entries: running, running: true } })
+    expect(runningView.find('[data-testid="turn-tail"]').exists()).toBe(false)
+
+    const toolOnly: WorkbenchEntry[] = [
+      { id: 'u2', kind: 'message', role: 'user', text: '只跑工具', streaming: false, ts: BASE_TS } as MessageEntry,
+      toolEntry('t2'),
+      {
+        id: 'terminal_run2',
+        kind: 'terminal',
+        terminal: { status: 'completed', answer: '', error: null, stats: {} },
+        ts: BASE_TS + 5000,
+      } as TerminalEntry,
+    ]
+    const toolOnlyView = mount(TranscriptView, { props: { entries: toolOnly, running: false } })
+    expect(toolOnlyView.find('[data-testid="turn-tail"]').exists()).toBe(false)
+  })
+
+  it('回合尾的锚点属性：每回合首元素带 data-turn-anchor（导航轨跳转锚）', () => {
+    const wrapper = mount(TranscriptView, { props: { entries: turnEntries(), running: false } })
+    const anchors = wrapper.findAll('[data-turn-anchor]')
+    expect(anchors).toHaveLength(1)
+    expect(anchors[0].attributes('data-turn-anchor')).toBe('turn:0:u1')
+  })
+})

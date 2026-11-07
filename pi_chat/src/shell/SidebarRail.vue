@@ -1,26 +1,76 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { WorkbenchController } from '../dify/controller'
 import type { DifyConversation } from '../dify/transport'
 import { relativeTimeLabel } from '../projection/relativeTime'
+import { iconSvg } from '../timeline/icons'
 import css from '../vendor/dsh/ui-sidebar/src/client/SidebarRoot.module.css'
 import rows from '../vendor/dsh/ui-workspace/src/client/rows/Rows.module.css'
 
 /*
- * DOM 蓝图：ui-sidebar SidebarRoot.tsx 的展开态骨架（newSession →
- * scrollRegion/scrollArea）+ ui-workspace Rows.tsx 的 SessionNodeItem 行结构
- * （slot/title/rowResting/time/rowActions，悬停互换由 CSS 完成）。票面裁剪项
- * （品牌区、插件、自动化任务、工作区管理、搜索）不渲染。回放基线（无控制器）
- * 显示提示而非列表。
+ * DOM 蓝图：ui-sidebar SidebarRoot.tsx 的展开态骨架（logoRow(toggle) →
+ * newSession → scrollRegion/scrollArea）+ ui-workspace Rows.tsx 的
+ * SessionNodeItem 行结构（slot/title/rowResting/time/rowActions，悬停互换由
+ * CSS 完成）。票面裁剪项（品牌区、插件、自动化任务、工作区管理、搜索）不
+ * 渲染；logoRow 仅承载折叠开关（panel-left 图标，无品牌徽标位）。
+ * 折叠（平移上游 slide + crossfade 相位机）：折叠开始时宽内容冻结在
+ * 280px（inline width）并整列淡出（.fading，150ms）；settle 后卸载宽内容、
+ * 呈现 56px 导轨（.collapsed：36px 控件、主墨图标）；再展开时宽内容以
+ * .wide 淡入。冷折叠渲染（无动画）不走 .railIn。
  */
-const props = defineProps<{ controller?: WorkbenchController | null }>()
+const props = withDefaults(
+  defineProps<{ controller?: WorkbenchController | null; collapsed?: boolean }>(),
+  { collapsed: false },
+)
+const emit = defineEmits<{ toggle: [] }>()
+
+/** 宽内容淡出卸载延时；对齐上游 COLLAPSE_SETTLE_MS 与 150ms 淡出。 */
+const COLLAPSE_SETTLE_MS = 150
+const SIDEBAR_WIDTH = 280
 
 const conversations = computed(() => props.controller?.ui.conversations ?? [])
 const activeId = computed(() => props.controller?.ui.conversationId ?? '')
 const conversationsError = computed(() => props.controller?.ui.conversationsError ?? '')
 const actionNote = computed(() => props.controller?.ui.actionNote ?? '')
 
-/* 相对时间的时钟：30s 步进让「4分钟前」这类标签保持新鲜。 */
+/* ---- 折叠相位（上游 SidebarRoot settled/wide/animateRail 平移） ----
+   冷折叠渲染（初始即 collapsed）：settled 直接为真、无 railIn 动画。 */
+const settled = ref(props.collapsed)
+let settleTimer: number | undefined
+const animateRail = ref(!props.collapsed)
+
+watch(
+  () => props.collapsed,
+  (collapsed) => {
+    if (settleTimer !== undefined) window.clearTimeout(settleTimer)
+    if (!collapsed) {
+      settled.value = false
+      animateRail.value = true
+      return
+    }
+    settled.value = false
+    settleTimer = window.setTimeout(() => {
+      settled.value = true
+      animateRail.value = false
+    }, COLLAPSE_SETTLE_MS)
+  },
+)
+
+onBeforeUnmount(() => {
+  if (settleTimer !== undefined) window.clearTimeout(settleTimer)
+})
+
+/* 宽 = 抽屉展开或折叠淡出未 settle（内容仍挂载、冻结宽度、整列淡出）。 */
+const wide = computed(() => !props.collapsed || !settled.value)
+const rootClass = computed(() => [
+  css.root,
+  !wide.value && css.collapsed,
+  !wide.value && animateRail.value && css.railIn,
+  props.collapsed && wide.value && css.fading,
+])
+const toggleLabel = computed(() => (props.collapsed ? '展开侧栏' : '折叠侧栏'))
+
+/* 相对时间的时钟：30s 步进让「4分钟」这类标签保持新鲜。 */
 const now = ref(Date.now())
 let clock: number | null = null
 onMounted(() => {
@@ -92,24 +142,36 @@ function cancelDelete(): void {
 </script>
 
 <template>
-  <div :class="css.root">
+  <div :class="rootClass" :style="wide ? { width: `${SIDEBAR_WIDTH}px` } : undefined">
+    <!-- logoRow：票面裁剪品牌区，仅承载折叠开关（展开态右缘、导轨态首位）。 -->
+    <div :class="css.logoRow">
+      <button
+        type="button"
+        :class="[css.iconButton, css.toggle]"
+        data-testid="sidebar-toggle"
+        :aria-label="toggleLabel"
+        :aria-expanded="!collapsed"
+        @click="emit('toggle')"
+      >
+        <span aria-hidden="true" v-html="iconSvg('panel-left', wide ? 16 : 18)" />
+      </button>
+    </div>
+
     <button
       type="button"
       :class="css.newSession"
       data-testid="new-conversation"
-      aria-label="新会话"
+      :aria-label="wide ? undefined : '新会话'"
       :disabled="!controller"
       @click="controller?.newConversation()"
     >
       <span :class="css.newSessionContent">
-        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden>
-          <circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.3" />
-          <path d="M8 5v6M5 8h6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
-        </svg>
-        <span :class="css.newSessionLabel">新会话</span>
+        <span aria-hidden="true" v-html="iconSvg(wide ? 'new-chat-medium' : 'new-chat', wide ? 14 : 18)" />
+        <span v-if="wide" :class="[css.newSessionLabel, css.wide]">新会话</span>
       </span>
     </button>
-    <div :class="css.scrollRegion">
+
+    <div v-if="wide" :class="css.scrollRegion">
       <div :class="css.scrollArea" aria-label="会话列表">
         <div v-if="!controller" class="pi-list-status" data-testid="replay-notice">
           回放模式：连接 Dify 后展示会话历史。

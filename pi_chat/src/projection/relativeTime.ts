@@ -35,9 +35,10 @@ const UNIT_ZH: Record<Exclude<RelativeTimeUnit, 'now'>, string> = {
   years: '年',
 }
 
-/** zh-CN 行内文案：刚刚 / 4分钟前 / 3小时前 / 2天前 / 4个月前 / 1年前。 */
+/** zh-CN 行内文案：刚刚 / 4分钟 / 3小时 / 2天 / 4个月 / 1年（对齐 dsh 会话行
+    trailing 显示，无「前」后缀；「{t}前」是上游悬停时间变体）。 */
 export function relativeTimeLabel(at: number, now: number): string {
   const { unit, n } = relativeTime(at, now)
   if (unit === 'now') return '刚刚'
-  return `${n}${UNIT_ZH[unit]}前`
+  return `${n}${UNIT_ZH[unit]}`
 }

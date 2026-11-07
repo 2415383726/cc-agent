@@ -14,6 +14,7 @@ import ConnectionForm from './shell/ConnectionForm.vue'
 import LiveConversation from './shell/LiveConversation.vue'
 import TranscriptView from './timeline/TranscriptView.vue'
 import { ScrollFollow, scrollMetrics } from './timeline/scrollFollow'
+import { railItems as deriveRailItems, type TurnRailItem } from './timeline/rail'
 import type { FileRef } from './projection/transcript'
 
 /*
@@ -127,6 +128,12 @@ function onScenarioChange(event: Event): void {
 const activeEntries = computed(() =>
   mode.value === 'live' ? live.value?.view.entries ?? [] : view.value.entries,
 )
+/* 回合导航轨条目（右侧刻度）：当前模式条目 → 每回合一个预览刻度。 */
+const turnRailItems = computed<TurnRailItem[]>(() => deriveRailItems(activeEntries.value))
+
+/* ---- 侧栏折叠（对齐 dsh：280 ↔ 56 轨道过渡 + 内容淡出/导轨入场） ---- */
+const sidebarCollapsed = ref(false)
+
 const column = ref<InstanceType<typeof ConversationColumn> | null>(null)
 const follow = new ScrollFollow(true, 80)
 let stopWatch: (() => void) | undefined
@@ -165,11 +172,15 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <AppShell>
+  <AppShell :sidebar-collapsed="sidebarCollapsed">
     <template #sidebar>
-      <SidebarRail :controller="mode === 'live' ? live : null" />
+      <SidebarRail
+        :controller="mode === 'live' ? live : null"
+        :collapsed="sidebarCollapsed"
+        @toggle="sidebarCollapsed = !sidebarCollapsed"
+      />
     </template>
-    <ConversationColumn ref="column" :title="liveTitle" :badge="modeBadge">
+    <ConversationColumn ref="column" :title="liveTitle" :badge="modeBadge" :rail-items="turnRailItems">
       <template #actions>
         <template v-if="mode === 'live'">
           <button type="button" class="pi-mode-button" data-testid="back-replay" @click="backToReplay">回放模式</button>

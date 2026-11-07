@@ -37,15 +37,15 @@ describe('relativeTimeLabel zh-CN 文案', () => {
     expect(relativeTimeLabel(NOW - 10_000, NOW)).toBe('刚刚')
   })
 
-  it('分钟桶为「4分钟前」样式', () => {
-    expect(relativeTimeLabel(NOW - 4 * MIN, NOW)).toBe('4分钟前')
-    expect(relativeTimeLabel(NOW - 1 * MIN, NOW)).toBe('1分钟前')
+  it('分钟桶为「4分钟」样式（对齐 dsh 会话行，无「前」）', () => {
+    expect(relativeTimeLabel(NOW - 4 * MIN, NOW)).toBe('4分钟')
+    expect(relativeTimeLabel(NOW - 1 * MIN, NOW)).toBe('1分钟')
   })
 
-  it('小时/天/月/年桶为「3小时前」「2天前」「4个月前」「1年前」样式', () => {
-    expect(relativeTimeLabel(NOW - 3 * HOUR, NOW)).toBe('3小时前')
-    expect(relativeTimeLabel(NOW - 2 * DAY, NOW)).toBe('2天前')
-    expect(relativeTimeLabel(NOW - 120 * DAY, NOW)).toBe('4个月前')
-    expect(relativeTimeLabel(NOW - 400 * DAY, NOW)).toBe('1年前')
+  it('小时/天/月/年桶为「3小时」「2天」「4个月」「1年」样式', () => {
+    expect(relativeTimeLabel(NOW - 3 * HOUR, NOW)).toBe('3小时')
+    expect(relativeTimeLabel(NOW - 2 * DAY, NOW)).toBe('2天')
+    expect(relativeTimeLabel(NOW - 120 * DAY, NOW)).toBe('4个月')
+    expect(relativeTimeLabel(NOW - 400 * DAY, NOW)).toBe('1年')
   })
 })

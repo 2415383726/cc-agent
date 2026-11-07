@@ -13,6 +13,8 @@ import QuestionCard from '../cards/QuestionCard.vue'
 import ApprovalCard from '../cards/ApprovalCard.vue'
 import { groupTimeline, groupTitle, turnViews, type TurnView } from './grouping'
 import { safeOutputHref } from './links'
+import MessageActions from './MessageActions.vue'
+import tailCss from '../vendor/dsh/ui-chat/src/client/chat/TurnTailNodeView.module.css'
 import type {
   ApprovalEntry,
   FileRef,
@@ -76,20 +78,42 @@ const groupActivity = (segment: { kind: 'tool-group'; running: boolean; counts: 
 const outputLinks = computed(() =>
   (props.outputs ?? []).map((file) => ({ file, href: safeOutputHref(file.url) })),
 )
+
+/*
+ * 回合尾（对齐上游 TurnTailNodeView）：闭合回合的助手文本之后渲染
+ * copy + 时钟 IconActions（clock=end）。文本取回合内最后一条助手消息，
+ * 时钟取提升终态的 ts（无终态不渲染尾行）；进行中/等待交互回合无尾行。
+ */
+const turnTail = (turn: TurnView): { text: string; time: number } | null => {
+  if (!turn.closed) return null
+  let text: string | null = null
+  let time = turn.header?.ts ?? 0
+  for (const segment of turn.segments) {
+    if (segment.kind !== 'single') continue
+    const entry = segment.entry
+    if (entry.kind === 'message' && (entry as MessageEntry).role === 'assistant') {
+      text = (entry as MessageEntry).text
+      time = entry.ts
+    }
+  }
+  if (text === null || text.trim() === '') return null
+  return { text, time }
+}
 </script>
 
 <template>
   <ol class="pi-timeline" aria-label="会话记录">
     <template v-for="turn in turns" :key="turn.id">
-      <!-- 回合开头的用户消息（折叠头之前，始终可见） -->
-      <template v-for="segment in turn.lead" :key="`lead:${segment.entry.kind}:${segment.entry.id}`">
-        <li>
+      <!-- 回合开头的用户消息（折叠头之前，始终可见）；首条承担回合锚点 -->
+      <template v-for="(segment, leadIndex) in turn.lead" :key="`lead:${segment.entry.kind}:${segment.entry.id}`">
+        <li :data-turn-anchor="leadIndex === 0 ? turn.id : undefined">
           <UserMessage :entry="segment.entry as MessageEntry" />
         </li>
       </template>
 
-      <!-- 闭合回合：终态头渲染在用户消息之后，点击折叠/展开过程行 -->
-      <li v-if="turn.header">
+      <!-- 闭合回合：终态头渲染在用户消息之后，点击折叠/展开过程行；
+           无 lead 时由头承担回合锚点 -->
+      <li v-if="turn.header" :data-turn-anchor="turn.lead.length === 0 ? turn.id : undefined">
         <TerminalRow
           :entry="turn.header"
           :start-ts="turn.startTs"
@@ -99,8 +123,8 @@ const outputLinks = computed(() =>
         />
       </li>
 
-      <template v-for="segment in visibleSegments(turn)" :key="segment.kind === 'tool-group' ? segment.id : `${segment.entry.kind}:${segment.entry.id}`">
-        <li v-if="segment.kind === 'single'">
+      <template v-for="(segment, segmentIndex) in visibleSegments(turn)" :key="segment.kind === 'tool-group' ? segment.id : `${segment.entry.kind}:${segment.entry.id}`">
+        <li v-if="segment.kind === 'single'" :data-turn-anchor="turn.lead.length === 0 && !turn.header && segmentIndex === 0 ? turn.id : undefined">
           <UserMessage v-if="isUser(segment.entry)" :entry="segment.entry as MessageEntry" />
 
           <AssistantMessage v-else-if="isAssistant(segment.entry)" :entry="segment.entry as MessageEntry" />
@@ -151,6 +175,16 @@ const outputLinks = computed(() =>
           </ToolGroupRow>
         </li>
       </template>
+
+      <!-- 回合尾（上游 TurnTailNodeView）：闭合回合助手文本后的 copy + 时钟行。 -->
+      <li v-if="turnTail(turn)" :class="tailCss.root" data-testid="turn-tail">
+        <MessageActions
+          :text="turnTail(turn)!.text"
+          :time="turnTail(turn)!.time"
+          clock="end"
+          :class="tailCss.actions"
+        />
+      </li>
     </template>
   </ol>
 

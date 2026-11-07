@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import type { WorkbenchController } from '../src/dify/controller'
 import type { UiState } from '../src/dify/controller'
@@ -60,8 +60,8 @@ describe('SidebarRail 侧栏会话列表', () => {
     const items = wrapper.findAll('[data-testid="conversation-item"]')
     expect(items).toHaveLength(2)
     expect(items[0].text()).toContain('问候')
-    expect(items[0].text()).toContain('4分钟前')
-    expect(items[1].text()).toContain('3小时前')
+    expect(items[0].text()).toContain('4分钟')
+    expect(items[1].text()).toContain('3小时')
     expect(items[0].attributes('aria-selected')).toBe('true')
     expect(items[1].attributes('aria-selected')).toBe('false')
   })
@@ -143,5 +143,94 @@ describe('SidebarRail 侧栏会话列表', () => {
     expect(wrapper.find('[data-testid="replay-notice"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="new-conversation"]').attributes('disabled')).toBeDefined()
     expect(wrapper.find('[data-testid="conversation-item"]').exists()).toBe(false)
+  })
+})
+
+describe('SidebarRail 折叠（对齐 dsh：淡出卸载 → 56px 导轨 → 展开淡入）', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('折叠开关：点击上抛 toggle，aria-expanded 表达当前态', async () => {
+    const controller = fakeController()
+    const wrapper = mount(SidebarRail, { props: { controller } })
+    const toggle = wrapper.find('[data-testid="sidebar-toggle"]')
+    expect(toggle.exists()).toBe(true)
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    await toggle.trigger('click')
+    expect(wrapper.emitted('toggle')).toHaveLength(1)
+  })
+
+  it('折叠相位：宽内容淡出期间仍挂载，150ms settle 后卸载列表、保留导轨控件', async () => {
+    const controller = fakeController()
+    const wrapper = mount(SidebarRail, { props: { controller } })
+    await wrapper.setProps({ collapsed: true })
+    // 淡出相位（settled=false）：列表仍挂载（冻结宽度、整列淡出）
+    expect(wrapper.find('[data-testid="conversation-item"]').exists()).toBe(true)
+    vi.advanceTimersByTime(150)
+    await wrapper.vm.$nextTick()
+    // settle：列表卸载，导轨只剩折叠开关 + 新会话图标
+    expect(wrapper.find('[data-testid="conversation-item"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="sidebar-toggle"]').exists()).toBe(true)
+    const newSession = wrapper.find('[data-testid="new-conversation"]')
+    expect(newSession.exists()).toBe(true)
+    expect(newSession.attributes('aria-label')).toBe('新会话')
+  })
+
+  it('展开恢复：列表重新挂载，aria-expanded 翻转', async () => {
+    const controller = fakeController()
+    const wrapper = mount(SidebarRail, { props: { controller, collapsed: true } })
+    vi.advanceTimersByTime(150)
+    expect(wrapper.find('[data-testid="conversation-item"]').exists()).toBe(false)
+    await wrapper.setProps({ collapsed: false })
+    expect(wrapper.find('[data-testid="sidebar-toggle"]').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.find('[data-testid="conversation-item"]').exists()).toBe(true)
+  })
+
+  it('冷折叠渲染（初始即 collapsed，settle 后）：无宽内容、无 railIn 动画相位', async () => {
+    const controller = fakeController()
+    mount(SidebarRail, { props: { controller, collapsed: true } })
+    // 冷渲染不经过淡出：settled 即刻为真（初始 collapsed 直接导轨态）
+    vi.advanceTimersByTime(150)
+    const wrapper = mount(SidebarRail, { props: { controller, collapsed: true } })
+    expect(wrapper.find('[data-testid="conversation-item"]').exists()).toBe(false)
+  })
+})
+
+describe('AppShell 折叠轨道（280 ↔ 56）', () => {
+  it('展开态：280px 轨道，无折叠标注', async () => {
+    const { default: AppShell } = await import('../src/shell/AppShell.vue')
+    const wrapper = mount(AppShell, { props: { sidebarCollapsed: false } })
+    const frame = wrapper.find('[class*="frame"]')
+    expect(frame.attributes('style')).toContain('280px')
+    expect(frame.attributes('data-sidebar-collapsed')).toBeUndefined()
+    expect(wrapper.find('[data-zone="sidebar"]').exists()).toBe(true)
+  })
+
+  it('折叠态：56px 轨道 + data-sidebar-collapsed 标注', async () => {
+    const { default: AppShell } = await import('../src/shell/AppShell.vue')
+    const wrapper = mount(AppShell, { props: { sidebarCollapsed: true } })
+    const frame = wrapper.find('[class*="frame"]')
+    expect(frame.attributes('style')).toContain('56px')
+    expect(frame.attributes('data-sidebar-collapsed')).toBeDefined()
+  })
+
+  it('折叠切换期间挂 data-animating（轨道缓动），320ms 后摘除', async () => {
+    vi.useFakeTimers()
+    try {
+      const { default: AppShell } = await import('../src/shell/AppShell.vue')
+      const wrapper = mount(AppShell, { props: { sidebarCollapsed: false } })
+      await wrapper.setProps({ sidebarCollapsed: true })
+      expect(wrapper.find('[class*="frame"]').attributes('data-animating')).toBeDefined()
+      vi.advanceTimersByTime(320)
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('[class*="frame"]').attributes('data-animating')).toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
