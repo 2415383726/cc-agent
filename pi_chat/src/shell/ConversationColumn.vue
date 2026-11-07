@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import css from '../vendor/dsh/ui-conversation/src/client/skeleton/ConversationRoot.module.css'
 
 /*
@@ -7,8 +8,12 @@ import css from '../vendor/dsh/ui-conversation/src/client/skeleton/ConversationR
  * 滚动区，default slot）→ .composerSeat（composer 槽）。data-phase="active" 激活
  * 上游的 sticky composer 座位与渐变遮罩；宽度轴变量（--dsh-chat-content-width 等）
  * 随 .body 类生效。回放徽标/场景选择由父级通过 actions 槽注入 headerActions。
+ * scrollBody 经 defineExpose 暴露给父级，供自动吸底跟随使用。
  */
 defineProps<{ title?: string }>()
+
+const scrollBody = ref<HTMLElement | null>(null)
+defineExpose({ scrollBody })
 </script>
 
 <template>
@@ -25,7 +30,7 @@ defineProps<{ title?: string }>()
       </div>
     </header>
     <div :class="css.body">
-      <div :class="css.scrollBody" data-zone="timeline">
+      <div ref="scrollBody" :class="css.scrollBody" data-zone="timeline">
         <main :class="css.viewArea">
           <slot />
         </main>

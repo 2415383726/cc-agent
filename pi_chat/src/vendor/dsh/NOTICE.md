@@ -20,6 +20,19 @@
 | `ui-sidebar/src/client/SidebarRoot.module.css` | 同名上游文件 | 侧栏根布局（logo 行、新会话按钮、滚动区、底部区） |
 | `ui-conversation/src/client/skeleton/ConversationRoot.module.css` | 同名上游文件 | 会话列（头部 76px、滚动体、composer 座位） |
 | `ui-conversation/src/client/skeleton/InputBar.module.css` | 同名上游文件 | 输入卡（圆角面板卡、工具行、发送按钮） |
+| `ui-primitives/src/UserMessageBubble.module.css` | 同名上游文件 | 用户气泡面（--dsw-specific-bubble、radius-xl、10px 16px 内距） |
+| `ui-primitives/src/DisclosureRow.module.css` | 同名上游文件 | 披露行头部（思考折叠行 24px 行、leading 图标/hover chevron 交换） |
+| `ui-primitives/src/TextShimmer.module.css` | 同名上游文件 | 文本 shimmer 扫光（思考摘要流式态、打字指示） |
+| `ui-primitives/src/markdown/MarkdownText.module.css` | 同名上游文件 | markdown 正则排版（标题/列表/表格/引用/行内码、compact 次级变体） |
+| `ui-primitives/src/markdown/CodeBlock.module.css` | 同名上游文件 | 代码块卡（banner、infostring、复制按钮、pre 包装） |
+| `ui-primitives/src/clipboard.ts` | 同名上游文件 | 剪贴板写入（async API + execCommand 回退，框架无关 pure TS） |
+| `ui-chat/src/client/chat/MessageItem.module.css` | 同名上游文件 | 用户行/stack 布局、附件卡、错误行、压缩行等消息行样式 |
+| `ui-chat/src/client/chat/MessageIconActions.module.css` | 同名上游文件 | 消息 IconActions 行（时钟 + 复制按钮 + hover 显隐） |
+| `ui-chat/src/client/chat/AssistantMarkdown.module.css` | 同名上游文件 | 助手正文流（14/24、块间 16px、中断标记） |
+| `ui-chat/src/client/chat/ReasoningRow.module.css` | 同名上游文件 | 思考折叠行（摘要单行截断、流式渐隐 mask、thinkBody 缩进） |
+| `ui-chat/src/client/chat/TurnProcessNodeView.module.css` | 同名上游文件 | 终态头部行（33px、底部 0.5px 分隔、durationNumber 等宽） |
+| `ui-chat/src/client/chat/accessibility.module.css` | 同名上游文件 | visuallyHidden |
+| `ui-chat/src/client/chat/ChatView.module.css` | 同名上游文件 | 整文件保留；本票据仅引用 `.running/.runningContent/.runningText/.runningIcon` 打字指示片段 |
 
 CSS Modules 类名与选择器零改动；`onboarding.css`、`gradient-shadow-text.css`、
 `shiki.css` 当前未被引用，仅随目录完整保留，后续票据按需引用。
@@ -30,6 +43,18 @@ CSS Modules 类名与选择器零改动；`onboarding.css`、`gradient-shadow-te
   的 DOM 结构被忠实**重写为 Vue SFC**（`pi_chat/src/shell/`），类名引用保持一致；
   文案为 zh-CN 基线。Lexical 富文本编辑器未引入（取材黑名单），composer 文本面为
   原生 `<textarea>`，复用同一组 `.input/.scroll/.grow/.placeholder` 类。
+- 票据 03：`pi_chat/src/timeline/` 按上游组件 DOM 蓝图重写为 Vue SFC
+  （UserMessage/UserContent+MessageIconActions、AssistantMessage/AssistantMarkdown+
+  RunningStatus、ReasoningRow+DisclosureRow（内联）、TerminalRow/TurnProcessNodeView、
+  MarkdownContent/MarkdownText+CodeBlock、TextShimmer）。代码块/表格包装在
+  `timeline/markdown.ts` 经 markdown-it renderer 规则生成（上游为 mdast 渲染器，
+  本应用规格固定 markdown-it + highlight.js）。图标 `timeline/icons.ts` 的
+  glyph path 逐字取自 ui-primitives icons/artwork.ts（内联常量，不引 sprite）；
+  文案取自 ui-chat locale.ts zh 字典；`clock.ts` 平移 message-chrome.ts 的
+  formatMessageClock/formatRunDuration；`scrollFollow.ts` best-effort 平移
+  use-scroll-follow.ts 的 ScrollFollow（裁掉 WeakMap 归主/动画 retarget）。
+- `src/vendor/dsh/theme.css` 与 `pi_chat/src/styles/base.css` 是本项目的装配索引/
+  挂载默认，不属于上游文件。
 - `src/vendor/dsh/theme.css` 与 `pi_chat/src/styles/base.css` 是本项目的装配索引/
   挂载默认，不属于上游文件。
 
