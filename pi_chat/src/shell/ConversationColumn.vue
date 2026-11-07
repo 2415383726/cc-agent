@@ -25,24 +25,43 @@ const props = defineProps<{
 
 const scrollBody = ref<HTMLElement | null>(null)
 const composerSeat = ref<HTMLElement | null>(null)
+const rootEl = ref<HTMLElement | null>(null)
 defineExpose({ scrollBody })
 
-/* ---- 带高变量（上游 ConversationContent seatObserver 平移） ---- */
+/* ---- 宽度轴与带高变量 ----
+   上游 ConversationContent seatObserver 发布 --dsh-composer-height /
+   --dsh-conversation-viewport-height；ConversationWidthControls.publishWidths
+   发布 --dsh-conversation-column-width（内容宽度轴
+   --dsh-chat-content-width 的 clamp 输入，未发布时 clamp 输入为 0px、
+   内容恒压 680px 下限）。本应用无拖宽手柄（P3-5），只发布测量值。 */
 let seatObserver: ResizeObserver | null = null
+
+function publishMeasures(): void {
+  const scroller = scrollBody.value
+  const seat = composerSeat.value
+  const root = rootEl.value
+  if (scroller === null || seat === null || root === null) return
+  scroller.style.setProperty('--dsh-composer-height', `${seat.offsetHeight}px`)
+  scroller.style.setProperty('--dsh-conversation-viewport-height', `${scroller.clientHeight}px`)
+  root.style.setProperty('--dsh-conversation-column-width', `${scroller.offsetWidth}px`)
+}
+
 onMounted(() => {
   const scroller = scrollBody.value
   const seat = composerSeat.value
+  /* 首帧同步发布（ResizeObserver 的初始回调在部分内核不投递），观察器只管后续尺寸变化。 */
+  publishMeasures()
   if (scroller === null || seat === null || typeof ResizeObserver === 'undefined') return
-  seatObserver = new ResizeObserver(() => {
-    scroller.style.setProperty('--dsh-composer-height', `${seat.offsetHeight}px`)
-    scroller.style.setProperty('--dsh-conversation-viewport-height', `${scroller.clientHeight}px`)
-  })
+  seatObserver = new ResizeObserver(publishMeasures)
   seatObserver.observe(seat)
   seatObserver.observe(scroller)
+  if (rootEl.value !== null) seatObserver.observe(rootEl.value)
+  window.addEventListener('resize', publishMeasures)
 })
 onBeforeUnmount(() => {
   seatObserver?.disconnect()
   seatObserver = null
+  window.removeEventListener('resize', publishMeasures)
 })
 
 /* ---- 回合导航：scrollspy（激活回合）+ 跳转（对齐 scrollToTurn 的 24px 落点） ----
@@ -106,7 +125,7 @@ watch(
 </script>
 
 <template>
-  <div :class="css.root" data-phase="active">
+  <div ref="rootEl" :class="css.root" data-phase="active">
     <header :class="css.header">
       <div :class="css.titleRow">
         <div :class="css.titleCluster">

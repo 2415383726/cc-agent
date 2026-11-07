@@ -52,15 +52,19 @@ function onScroll(): void {
 }
 
 /* 视口高度初始测量（上游 observeElementRect 的 ResizeObserver 语义）：
-   首次布局与尺寸变化时刷新，让激活刻度在无滚动事件时也能落位。 */
+   首帧同步测量一次（部分内核不投递 RO 初始回调），观察器管后续变化。 */
 let frameObserver: ResizeObserver | null = null
+function measureFrame(): void {
+  const el = scroller.value
+  if (el === null) return
+  viewHeight.value = el.clientHeight
+  scrollTop.value = el.scrollTop
+}
 onMounted(() => {
   const el = scroller.value
+  measureFrame()
   if (el === null || typeof ResizeObserver === 'undefined') return
-  frameObserver = new ResizeObserver(() => {
-    viewHeight.value = el.clientHeight
-    scrollTop.value = el.scrollTop
-  })
+  frameObserver = new ResizeObserver(measureFrame)
   frameObserver.observe(el)
 })
 onBeforeUnmount(() => {
