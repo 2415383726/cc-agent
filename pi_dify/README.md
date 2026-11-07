@@ -8,6 +8,9 @@ platform output.
 
 The old `cc_agent/` plugin, its sessions and its frontend remain independent.
 This plugin starts new sessions and does not import old `ccagent-state` values.
+The obsolete `pi-agent/` scaffold has been removed; this directory is the
+implementation and contains `main.py`, `manifest.yaml`, the provider/strategy
+manifests and the offline build scripts.
 
 ## Status
 

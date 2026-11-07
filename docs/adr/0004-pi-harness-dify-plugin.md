@@ -1,3 +1,5 @@
+> 实施位置说明（2026-10-29）：最终实现位于 `pi_dify/`（插件）与 `pi_workbench/`（静态工作台）；原 `pi-agent/` 骨架已删除，见 [ADR-0008](0008-pi-agent-v2-implementation.md)。以下保留原决策记录。
+
 # 基于 Pi 架构与开源 Harness 新建 Dify 插件
 
 用户选择在 `pi-agent/` 新建 Dify Agent Strategy 插件，以专业开源社区的设计、实现和测试基础改善自行拼装的 Harness；现有 `cc_agent/` 提供 Dify 适配代码与行为验收基线，跨轮状态继续由 Dify `agent_state` 承载。用户明确不把摆脱长期维护或持续跟随官方 Pi 版本作为主要目标，重点是当前能力在受限 Dify 环境中稳定高效运行。

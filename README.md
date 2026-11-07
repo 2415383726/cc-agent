@@ -3,6 +3,35 @@
 CC Agent 是 Dify Agent Strategy 插件，提供工具调用、技能、任务和跨轮会话状态。会话状态统一通过 Dify 的 `agent_state` 变量流转；文件读取、代码执行、检索和文件生成由 Dify 注入的工具或配置的远程 MCP 服务提供。
 
 
+
+## 快速开始（从干净 clone）
+
+需要 Python 3.12、[uv](https://docs.astral.sh/uv/) 和 Node.js 20+。`main` 已包含 `pi_dify/` 与 `pi_workbench/`；旧的 `pi-agent/` 骨架已删除，不应再作为插件目录使用。
+
+```bash
+git clone git@github.com:2415383726/cc-agent.git
+cd cc-agent/pi_dify
+
+# 后端测试（使用 fake Dify session + 真实固定版 Pi Harness）
+uv sync --python 3.12
+uv run python -m unittest discover -s tests
+
+# 离线插件包：wheels/ 是构建产物，不提交，需先按架构下载
+python3 scripts/download_offline_wheels.py --arch amd64
+python3 scripts/build_offline_package.py --arch amd64
+# 产物：pi_dify/dist/pi_dify-0.1.0-offline-linux-amd64.difypkg
+
+# 静态工作台
+cd ../pi_workbench
+npm install
+npm run dev        # 打开 http://localhost:5173/?replay=process 查看回放
+npm run test
+npm run build
+npm run check:static
+```
+
+arm64 把 `--arch` 换成 `arm64`；真实 Dify 安装、真实 provider/MCP 和 arm64 执行仍需在目标环境验收，不能以本地 fake 或 wheel 解析代替。
+
 ## Pi Agent v2（新插件）
 
 `pi_dify/` 是按 v2 规格新建的独立 Dify Agent Strategy 插件，复用固定 0.6.0 的 Python Pi Harness；`pi_workbench/` 是从 Leyline 固定提交抽取的静态 Vue 工作台。两者与旧 `cc_agent/`、`copilotkit-dify/` 并存，旧插件和旧前端不改协议、不迁移旧状态。
@@ -14,11 +43,7 @@ CC Agent 是 Dify Agent Strategy 插件，提供工具调用、技能、任务�
 
 当前核心代码与本地测试已完成；真实 Dify 版本、真实 provider 流、真实远程 MCP 和 arm64 执行尚未在本环境验收，不能以本地 fake 或静态构建替代平台证据。
 
-```bash
-python -B -m unittest discover -s pi_dify/tests
-cd pi_workbench && npm install && npm run test && npm run build && npm run check:static
-cd ../pi_dify && python3 scripts/build_offline_package.py --arch amd64
-```
+完整命令见上方“快速开始”。离线打包前必须先运行 `scripts/download_offline_wheels.py`，否则 `wheels/` 不存在会直接报错。
 
 ## 项目结构
 
@@ -26,6 +51,7 @@ cd ../pi_dify && python3 scripts/build_offline_package.py --arch amd64
 - `copilotkit-dify/`：Vue 3 + Vite 前端，消费 AG-UI / Dify 流并展示工具过程、结构化答案、附件和交互中断。
 - `pi_dify/`：v2 独立 Pi Harness 插件（Python 3.12）。
 - `pi_workbench/`：v2 静态 Vue 工作台，消费 `piagent.display.v1`。
+- `pi-agent/`：历史骨架，已删除；实现请看 `pi_dify/`。
 
 ## 运行流程
 
