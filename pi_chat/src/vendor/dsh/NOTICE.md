@@ -34,6 +34,10 @@
 | `ui-chat/src/client/chat/TurnProcessNodeView.module.css` | 同名上游文件 | 终态头部行（33px、底部 0.5px 分隔、durationNumber 等宽） |
 | `ui-chat/src/client/chat/accessibility.module.css` | 同名上游文件 | visuallyHidden |
 | `ui-chat/src/client/chat/ChatView.module.css` | 同名上游文件 | 整文件保留；本票据仅引用 `.running/.runningContent/.runningText/.runningIcon` 打字指示片段 |
+| `ui-tool/src/client/tool/components/ToolRow.module.css` | 同名上游文件 | 工具折叠卡（24px 摘要行、sep 点、IN/OUT ioCard、error/stopped 摘要着色、bodyScroll） |
+| `ui-skill/src/client/SkillRow.module.css` | 同名上游文件 | 加载技能行（skill glyph、说明卡 instructionsCard/instructions） |
+| `ui-chat/src/client/chat/ChatGroupSeat.module.css` | 同名上游文件 | 过程分组（组头 title/activityIcon+chevron 交换、body 滚动帽与渐隐 mask、content 行距） |
+| `ui-primitives/src/Tag.module.css` | 同名上游文件 | 只读胶囊徽章（状态徽标复用 neutral/success/danger 等色调） |
 
 CSS Modules 类名与选择器零改动；`onboarding.css`、`gradient-shadow-text.css`、
 `shiki.css` 当前未被引用，仅随目录完整保留，后续票据按需引用。
@@ -54,8 +58,15 @@ CSS Modules 类名与选择器零改动；`onboarding.css`、`gradient-shadow-te
   文案取自 ui-chat locale.ts zh 字典；`clock.ts` 平移 message-chrome.ts 的
   formatMessageClock/formatRunDuration；`scrollFollow.ts` best-effort 平移
   use-scroll-follow.ts 的 ScrollFollow（裁掉 WeakMap 归主/动画 retarget）。
-- `src/vendor/dsh/theme.css` 与 `pi_chat/src/styles/base.css` 是本项目的装配索引/
-  挂载默认，不属于上游文件。
+- 票据 04：`pi_chat/src/timeline/` 新增 ToolCard/ToolGroupRow/SkillRow/CompactionRow
+  Vue SFC（蓝图分别为 ui-tool GenericToolCard+ToolRow+DisclosureRow、ui-chat
+  ChatGroupSeat+step-process、ui-skill SkillRow、ui-chat CompactionItem）。
+  `timeline/toolModel.ts` 平移 ui-tool tool-call-model.ts 的纯函数子集
+  （variant 分类/摘要派生/参数 JSON 格式化），`timeline/grouping.ts` 平移
+  process-groups 的类别计数与 processTitle 拼装；文案取 ui-conversation/ui-chat/
+  ui-skill locale zh 字典。上游 slot 装配（renderSlot/toolview 注册表）换成
+  本组件内的简单 variant 分派；file/web/diff/search/terminal/image 专用卡不
+  在本契约事件面内，统一走 generic IN/OUT 卡（偏离已注释）。
 - `src/vendor/dsh/theme.css` 与 `pi_chat/src/styles/base.css` 是本项目的装配索引/
   挂载默认，不属于上游文件。
 
