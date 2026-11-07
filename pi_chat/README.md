@@ -96,3 +96,25 @@ npm run build    # 产物构建
 
 - 停止 / 断流规则（`stopped_unconfirmed` 合成终态、绝不自动重发、停止 best-effort）由 fake transport 控制器测试与真实传输链路的组件测试双重覆盖（`tests/controller.test.ts`、`tests/composer.test.ts`、`tests/app.test.ts`）；上表冒烟用于对真实后端的最终确认。
 - 附件只走 Dify `local_file` 传输与安全元数据展示；不存在文件内容访问路径。
+
+## 删除门执行清单（票 09 阶段 2 · 交接文档）
+
+> 本清单是删除门的唯一执行依据：阶段 1 已完成 check:static 移植（`scripts/check-static.mjs` + `npm run check:static`）、whale 品牌资产清理（构建零告警）与回放三场景证据重制（`docs/evidence/09-replay-*.png`）。**阶段 2 在用户完成 live 冒烟后才执行下列步骤；在此之前不得删除 pi_workbench、不得改 AGENTS.md。**
+
+1. **前置确认（全部满足才继续）**
+   - `cd pi_chat && npm run test` 四条 seam（投影 / 控制器 / 组件 / 回放）全部通过；
+   - `cd pi_chat && npm run build && npm run check:static` 零告警、零违例，产出 `dist/static-report.json`；
+   - 用户按上方「实时模式手动冒烟清单（票 08）」完成 live 冒烟：流式对话、停止、附件上传、问卷、审批、历史切换 / 重命名 / 删除全部通过；
+   - 证据落位核对：`docs/evidence/` 中 09-replay-process / 09-replay-questionnaire / 09-replay-approval 三张截图与 live 截图可对照旧证据。
+
+2. **删除旧项目**：`git rm -r pi_workbench/`（含其 docs/evidence 与 scripts/check-static.mjs——机制已平移至 `pi_chat/scripts/`）。
+
+3. **改写 AGENTS.md** 的 pi_workbench 条款为 pi_chat 条款：
+   - `pi_workbench/` 项目条目改为 `pi_chat/`（静态 Vue 3 显示层，消费 `piagent.display.v1`）；
+   - 「Runtime boundaries」中 `pi_workbench/src/dify/controller.ts` → `pi_chat/src/dify/controller.ts`、`src/projection/transcript.ts` → `pi_chat/src/projection/transcript.ts`；
+   - **逐字保留回放不变量表述**：「Replay must use the same contract and components, not a second renderer.」（回放必须用同一契约与组件，不做第二个渲染器）；
+   - 「Tests」一节中 `pi_workbench/tests/` 条目改为 `pi_chat/tests/`（contract / projection / controller / components / replay / history / staticScan）；开发命令改为 `npm run test`、`npm run build`、`npm run check:static`（在 `pi_chat/` 下）。
+
+4. **同步根 README.md**：`pi_workbench/` 项目简介、构建命令（`cd pi_workbench && …`）与文档链接全部指向 `pi_chat/`；确认仓库内无其他 pi_workbench 残留引用（`grep -rn "pi_workbench" --exclude-dir=node_modules --exclude-dir=.git .`）。
+
+5. **重跑全部收尾门**：`cd pi_chat && npm run test && npm run build && npm run check:static`；根目录各插件测试命令不受影响；提交并在票 09 勾选验收项。
