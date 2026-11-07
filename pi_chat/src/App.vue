@@ -12,6 +12,7 @@ import NoteRow from './timeline/NoteRow.vue'
 import ReasoningRow from './timeline/ReasoningRow.vue'
 import TerminalRow from './timeline/TerminalRow.vue'
 import UserMessage from './timeline/UserMessage.vue'
+import QuestionCard from './cards/QuestionCard.vue'
 import { ScrollFollow, scrollMetrics } from './timeline/scrollFollow'
 import type {
   ApprovalEntry,
@@ -30,9 +31,11 @@ import type {
  * Binding seam: both controllers are framework-agnostic pure TS. This shell is
  * the only Vue-aware layer — it wraps the controller in reactive() and reads
  * view/ui as plain data. 时间线四类消息条目（用户/助手/思考/终态）由
- * timeline/ 下的 Harness 同族组件渲染；工具/技能/压缩/问卷/审批仍是占位
- * （票据 04/05/06 接管）。自动吸底：读者未向上滚离底部时，新内容保持贴底
- * （timeline/scrollFollow.ts，上游 use-scroll-follow 的 best-effort 平移）。
+ * timeline/ 下的 Harness 同族组件渲染；问卷卡由 cards/QuestionCard.vue 渲染
+ * （票据 05，提交走 controller 的 submitAnswers/cancelQuestion，回放本地闭环）；
+ * 工具/技能/压缩/审批仍是占位（票据 04/06 接管）。自动吸底：读者未向上滚离
+ * 底部时，新内容保持贴底（timeline/scrollFollow.ts，上游 use-scroll-follow
+ * 的 best-effort 平移）。
  */
 const replay = reactive(new ReplayController()) as ReplayController
 
@@ -125,14 +128,6 @@ function compactionText(entry: CompactionEntry): string {
   return parts.join(' · ') || (entry.phase === 'start' ? '开始压缩' : '压缩完成')
 }
 
-function questionText(entry: QuestionEntry): string {
-  const lines = [entry.questionnaire.title || '问卷', statusText(entry.status)]
-  for (const question of entry.questionnaire.questions || []) {
-    lines.push(`- ${question.question}`)
-  }
-  return lines.join('\n')
-}
-
 function approvalText(entry: ApprovalEntry): string {
   return `${entry.tool} · ${statusText(entry.status)}`
 }
@@ -146,7 +141,7 @@ function resultText(entry: ToolEntry): string {
 
 const isPlaceholder = (entry: WorkbenchEntry): boolean =>
   entry.kind === 'tool' || entry.kind === 'skill' || entry.kind === 'compaction'
-  || entry.kind === 'question' || entry.kind === 'approval'
+  || entry.kind === 'approval'
 
 const firstEntryTs = computed(() => view.value.entries[0]?.ts)
 </script>
@@ -190,7 +185,15 @@ const firstEntryTs = computed(() => view.value.entries[0]?.ts)
 
           <NoteRow v-else-if="entry.kind === 'note'" :entry="entry as NoteEntry" />
 
-          <!-- 工具卡/技能/压缩（票据 04）与问卷/审批卡（票据 05/06）保持占位渲染。 -->
+          <!-- 问卷卡（票据 05）：作答/跳过/取消提交为 interaction JSON（回放本地闭环）。 -->
+          <QuestionCard
+            v-else-if="entry.kind === 'question'"
+            :entry="entry as QuestionEntry"
+            @submit="(answers) => replay.submitAnswers(entry as QuestionEntry, answers)"
+            @cancel="replay.cancelQuestion(entry as QuestionEntry)"
+          />
+
+          <!-- 工具卡/技能/压缩（票据 04）与审批卡（票据 06）保持占位渲染。 -->
           <template v-else-if="isPlaceholder(entry)">
             <strong>{{ entryLabel(entry) }}</strong>
             <template v-if="entry.kind === 'tool'">
@@ -200,7 +203,6 @@ const firstEntryTs = computed(() => view.value.entries[0]?.ts)
             </template>
             <p v-else-if="entry.kind === 'skill'">{{ skillText(entry as SkillEntry) }}</p>
             <p v-else-if="entry.kind === 'compaction'">{{ compactionText(entry as CompactionEntry) }}</p>
-            <p v-else-if="entry.kind === 'question'">{{ questionText(entry as QuestionEntry) }}</p>
             <p v-else-if="entry.kind === 'approval'">{{ approvalText(entry as ApprovalEntry) }}</p>
           </template>
 

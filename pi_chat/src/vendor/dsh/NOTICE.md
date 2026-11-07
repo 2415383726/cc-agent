@@ -26,6 +26,8 @@
 | `ui-primitives/src/markdown/MarkdownText.module.css` | 同名上游文件 | markdown 正则排版（标题/列表/表格/引用/行内码、compact 次级变体） |
 | `ui-primitives/src/markdown/CodeBlock.module.css` | 同名上游文件 | 代码块卡（banner、infostring、复制按钮、pre 包装） |
 | `ui-primitives/src/clipboard.ts` | 同名上游文件 | 剪贴板写入（async API + execCommand 回退，框架无关 pure TS） |
+| `ui-primitives/src/Button.module.css` | 同名上游文件 | dsh Button 原子（primary/ghost/outline、md/sm，--dsw-alias-button-* 令牌族；票据 05 引入，问卷卡与票据 06 审批卡共用） |
+| `ui-user-questions/src/client/QuestionComposer.module.css` | 同名上游文件 | 问卷卡全量样式（card/header/option/number/checkbox/badge/field/customRow/footer/pager 等；票据 05 引入，卡片体系共享卡面） |
 | `ui-chat/src/client/chat/MessageItem.module.css` | 同名上游文件 | 用户行/stack 布局、附件卡、错误行、压缩行等消息行样式 |
 | `ui-chat/src/client/chat/MessageIconActions.module.css` | 同名上游文件 | 消息 IconActions 行（时钟 + 复制按钮 + hover 显隐） |
 | `ui-chat/src/client/chat/AssistantMarkdown.module.css` | 同名上游文件 | 助手正文流（14/24、块间 16px、中断标记） |
@@ -53,6 +55,14 @@ CSS Modules 类名与选择器零改动；`onboarding.css`、`gradient-shadow-te
   文案取自 ui-chat locale.ts zh 字典；`clock.ts` 平移 message-chrome.ts 的
   formatMessageClock/formatRunDuration；`scrollFollow.ts` best-effort 平移
   use-scroll-follow.ts 的 ScrollFollow（裁掉 WeakMap 归主/动画 retarget）。
+- 票据 05：`pi_chat/src/cards/` 为问卷卡。`questionDraft.ts` 平移 ui-user-questions
+  draft-store.ts 形状与 QuestionComposer 纯函数（parseRecommendedLabel 等；
+  selection 按本仓库 wire 契约存 option id，上游存 label）；`questionPending.ts`
+  平移 contract/slots.ts `PendingQuestion` 的倒计时/等待状态机（takeTime/
+  holdFocus/releaseFocus/engage/timeout 逐字），按票据要求剥离 waterfall/rpc/
+  seat 传输面，提交通道换成 controller。`QuestionCard.vue`/`CardFrame.vue`/
+  `DshButton.vue` 按上游 QuestionComposer.tsx/Button.tsx DOM 蓝图重写为 Vue
+  SFC，类名引用保持一致；文案取 ui-user-questions locales.ts zh 字典。
 - `src/vendor/dsh/theme.css` 与 `pi_chat/src/styles/base.css` 是本项目的装配索引/
   挂载默认，不属于上游文件。
 - `src/vendor/dsh/theme.css` 与 `pi_chat/src/styles/base.css` 是本项目的装配索引/
