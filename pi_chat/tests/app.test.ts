@@ -120,6 +120,44 @@ describe('pi_chat replay shell', () => {
     expect(wrapper.find('[data-testid="question-review-status"]').text()).toBe('已取消')
     expect(fetchSpy).not.toHaveBeenCalled()
   })
+
+  it('审批回放批准路径闭环：阻断态可操作，scope 随决定提交，卡片回显已批准', async () => {
+    const wrapper = mount(App)
+    await flushPromises()
+    await wrapper.find('select').setValue('approval')
+    await flushPromises()
+    // 等待态：阻断提示醒目，scope 默认 once，卡可直接操作（工具名/参数可见）。
+    expect(wrapper.find('[data-testid="approval-blocked"]').text()).toContain('阻断')
+    expect(wrapper.find('[data-testid="approval-args"]').text()).toContain('"record": "stale-14"')
+    expect(wrapper.find('[data-testid="approval-scope-once"]').attributes('aria-checked')).toBe('true')
+    // 切到 session 后批准：scope 随决定一并提交。
+    await wrapper.find('[data-testid="approval-scope-session"]').trigger('click')
+    await wrapper.find('[data-testid="approval-approve"]').trigger('click')
+    await flushPromises()
+    // 回放闭环：卡片只读回显已批准（本会话范围），终态落记录。
+    expect(wrapper.find('[data-testid="approval-echo"]').text()).toContain('已批准')
+    expect(wrapper.find('[data-testid="approval-echo"]').text()).toContain('本会话范围')
+    expect(wrapper.find('[data-testid="approval-approve"]').exists()).toBe(false)
+    // 终态行（已完成）+ 助手收尾消息落记录；terminal.answer 不直接进 DOM（与问卷流同款）。
+    expect(wrapper.text()).toContain('回放模式下已应用审批')
+    expect(wrapper.text()).toContain('已完成')
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('审批回放拒绝路径闭环：卡片呈现未执行非执行态', async () => {
+    const wrapper = mount(App)
+    await flushPromises()
+    await wrapper.find('select').setValue('approval')
+    await flushPromises()
+    await wrapper.find('[data-testid="approval-reject"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('已拒绝')
+    expect(wrapper.find('[data-testid="approval-echo"]').text()).toContain('未执行')
+    expect(wrapper.find('[data-testid="approval-approve"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="approval-reject"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('操作已被拒绝，没有产生变更。')
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
 })
 
 describe('pi_chat 实时模式接线', () => {

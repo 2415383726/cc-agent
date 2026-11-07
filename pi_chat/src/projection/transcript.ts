@@ -133,6 +133,8 @@ export interface ApprovalEntry extends BaseEntry {
   tool: string
   arguments: unknown
   source?: string
+  /** 授权范围候选（approval.requested 的 scope_options，保存态恢复同款）；审批卡默认 once。 */
+  scopeOptions?: ('once' | 'session')[]
   status: 'waiting' | 'approved' | 'rejected' | 'cancelled'
   scope?: string
   submitting?: boolean
@@ -516,6 +518,11 @@ export function applyEvent(view: TranscriptView, event: DisplayEvent): void {
         tool: String(approval.tool || 'tool'),
         arguments: approval.arguments ?? {},
         source: approval.source ? String(approval.source) : undefined,
+        scopeOptions: Array.isArray(approval.scope_options)
+          ? approval.scope_options.map(String).filter((value): value is 'once' | 'session' =>
+              value === 'once' || value === 'session',
+            )
+          : undefined,
         status: 'waiting',
         ts: event.ts,
       })

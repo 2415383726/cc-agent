@@ -5,8 +5,7 @@ import { scenarioById } from './replay/scenarios'
 import { DifyController } from './dify/controller'
 import { defaultConfig, saveSessionCredentials } from './dify/config'
 import type { SessionCredentials } from './dify/config'
-/* toolStatusText 不再由本壳引用：状态徽标文案由 timeline/ToolCard 经 projection/toolStatus 取得。 */
-import { statusText } from './projection/labels'
+/* toolStatusText/statusText 不再由本壳引用：状态文案由各卡片与 timeline 组件经 projection 取得。 */
 import AppShell from './shell/AppShell.vue'
 import SidebarRail from './shell/SidebarRail.vue'
 import ConversationColumn from './shell/ConversationColumn.vue'
@@ -19,6 +18,7 @@ import ReasoningRow from './timeline/ReasoningRow.vue'
 import TerminalRow from './timeline/TerminalRow.vue'
 import UserMessage from './timeline/UserMessage.vue'
 import QuestionCard from './cards/QuestionCard.vue'
+import ApprovalCard from './cards/ApprovalCard.vue'
 import CompactionRow from './timeline/CompactionRow.vue'
 import SkillRow from './timeline/SkillRow.vue'
 import ToolCard from './timeline/ToolCard.vue'
@@ -40,8 +40,8 @@ import type {
  * the only Vue-aware layer — it wraps the controller in reactive() and reads
  * view/ui as plain data. 时间线条目由 timeline/ 下的 Harness 同族组件渲染：
  * 消息四类（票据 03）+ 工具折叠卡/分组/技能行/压缩行（票据 04）；问卷卡由
- * cards/QuestionCard.vue 渲染（票据 05，提交走 controller 的
- * submitAnswers/cancelQuestion，回放本地闭环）；审批卡仍是占位（票据 06 接管）。
+ * cards/QuestionCard.vue 渲染（票据 05），审批卡由 cards/ApprovalCard.vue
+ * 渲染（票据 06，提交均走 controller 的 inputs.interaction 通道，回放本地闭环）。
  * 自动吸底：读者未向上滚离底部时，新内容保持贴底
  * （timeline/scrollFollow.ts，上游 use-scroll-follow 的 best-effort 平移）。
  */
@@ -164,23 +164,6 @@ const segments = computed(() => groupTimeline(view.value.entries, view.value.run
 const groupActivity = (segment: Extract<typeof segments.value[number], { kind: 'tool-group' }>): string =>
   segment.running ? segment.counts[0]?.kind ?? 'tools' : segment.counts[0]?.kind ?? 'thinking'
 
-function entryLabel(entry: WorkbenchEntry): string {
-  switch (entry.kind) {
-    case 'question':
-      return '问卷'
-    case 'approval':
-      return '审批'
-    default:
-      return entry.kind
-  }
-}
-
-function approvalText(entry: ApprovalEntry): string {
-  return `${entry.tool} · ${statusText(entry.status)}`
-}
-
-const isPlaceholder = (entry: WorkbenchEntry): boolean => entry.kind === 'approval'
-
 const firstEntryTs = computed(() => view.value.entries[0]?.ts)
 </script>
 
@@ -256,11 +239,14 @@ const firstEntryTs = computed(() => view.value.entries[0]?.ts)
               @cancel="replay.cancelQuestion(segment.entry as QuestionEntry)"
             />
 
-            <!-- 审批卡（票据 06）保持占位渲染。 -->
-            <template v-else-if="isPlaceholder(segment.entry)">
-              <strong>{{ entryLabel(segment.entry) }}</strong>
-              <p v-if="segment.entry.kind === 'approval'">{{ approvalText(segment.entry as ApprovalEntry) }}</p>
-            </template>
+            <!-- 审批卡（票据 06）：批准/拒绝（含 scope）提交为 interaction JSON（回放本地闭环）。 -->
+            <ApprovalCard
+              v-else-if="segment.entry.kind === 'approval'"
+              :entry="segment.entry as ApprovalEntry"
+              @submit="
+                (decision, scope) => replay.submitApproval(segment.entry as ApprovalEntry, decision, scope)
+              "
+            />
 
             <template v-else>
               <strong>{{ segment.entry.kind }}</strong>
