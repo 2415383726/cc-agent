@@ -6,8 +6,8 @@
 
 **Status:** ready-for-agent
 
-- [ ] 回放三场景 + live 截图落位证据目录，可对照旧证据
-- [ ] `check:static` 移植并通过，产出静态报告
-- [ ] 投影/控制器/组件/回放四条 seam 测试全绿
-- [ ] pi_workbench 目录已删除，仓库无双轨残留引用
-- [ ] AGENTS.md 与 README 更新为 pi_chat 条款，回放不变量表述保留
+- [x] 回放三场景 + live 截图落位证据目录，可对照旧证据
+- [x] `check:static` 移植并通过，产出静态报告
+- [x] 投影/控制器/组件/回放四条 seam 测试全绿
+- [x] pi_workbench 目录已删除，仓库无双轨残留引用
+- [x] AGENTS.md 与 README 更新为 pi_chat 条款，回放不变量表述保留
