@@ -80,3 +80,65 @@ describe('pi_chat replay shell', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 })
+
+describe('pi_chat 实时模式接线', () => {
+  it('默认仍是回放模式；进入实时模式后显示连接表单与实时徽标', async () => {
+    const wrapper = mount(App)
+    await flushPromises()
+    expect(wrapper.text()).toContain('回放模式')
+    await wrapper.find('[data-testid="enter-live"]').trigger('click')
+    expect(wrapper.find('[data-testid="connection-form"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('实时模式')
+    // 侧栏切到实时控制器：无凭据时列表为空态
+    expect(wrapper.find('[data-testid="conversation-item"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('暂无历史会话')
+  })
+
+  it('连接表单校验：缺 API Key 提示；填写后提交触发会话列表刷新（失败有兜底态）', async () => {
+    const wrapper = mount(App)
+    await flushPromises()
+    await wrapper.find('[data-testid="enter-live"]').trigger('click')
+    const form = wrapper.find('[data-testid="connection-form"]')
+    await form.find('[data-testid="connect-submit"]').trigger('click')
+    expect(wrapper.text()).toContain('请填写服务地址与 API Key')
+    expect(fetchSpy).not.toHaveBeenCalled()
+
+    await form.find('[data-testid="form-api-key"]').setValue('app-test-key')
+    await form.find('[data-testid="connect-submit"]').trigger('click')
+    expect(fetchSpy).toHaveBeenCalled()
+    await flushPromises()
+    // fetch 桩始终拒绝：侧栏进入「加载失败重试」兜底态
+    expect(wrapper.find('[data-testid="conversations-error"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('重试')
+  })
+
+  it('实时模式可切回回放模式，回放内容不受影响', async () => {
+    const wrapper = mount(App)
+    await flushPromises()
+    await wrapper.find('[data-testid="enter-live"]').trigger('click')
+    expect(wrapper.find('[data-testid="connection-form"]').exists()).toBe(true)
+    await wrapper.find('[data-testid="back-replay"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('回放模式')
+    expect(wrapper.text()).toContain('lookup_order')
+    expect(wrapper.find('[data-testid="connection-form"]').exists()).toBe(false)
+  })
+
+  it('实时模式 composer 可发送：点击发送即发起 Dify 请求', async () => {
+    const wrapper = mount(App)
+    await flushPromises()
+    await wrapper.find('[data-testid="enter-live"]').trigger('click')
+    await wrapper.find('[data-testid="form-api-key"]').setValue('app-test-key')
+    await wrapper.find('[data-testid="connect-submit"]').trigger('click')
+    await flushPromises()
+    const textarea = wrapper.find('[data-zone="composer"] textarea')
+    await textarea.setValue('你好，Dify')
+    const send = wrapper.find('[data-zone="composer"] [data-testid="composer-send"]')
+    expect(send.attributes('disabled')).toBeUndefined()
+    await send.trigger('click')
+    await flushPromises()
+    // fetch 桩拒绝 → 控制器进入错误终态（transport_failed）
+    expect(wrapper.text()).toContain('你好，Dify')
+    expect(fetchSpy).toHaveBeenCalled()
+  })
+})

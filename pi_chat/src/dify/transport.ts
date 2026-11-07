@@ -181,6 +181,52 @@ export interface DifyConversation {
   updatedAt: number
 }
 
+/**
+ * Dify conversations API 的时间戳是 Unix 秒；侧栏相对时间按毫秒计算，这里统一
+ * 换算（小于 1e12 的值视为秒），已是毫秒的值保持不变。
+ */
+function conversationUpdatedAt(item: any): number {
+  const raw = Number(item?.updated_at || item?.created_at || 0)
+  if (!raw) return 0
+  return raw < 1e12 ? raw * 1000 : raw
+}
+
+function normalizeConversation(item: any): DifyConversation {
+  return {
+    id: String(item?.id || ''),
+    name: String(item?.name || '未命名会话'),
+    updatedAt: conversationUpdatedAt(item),
+  }
+}
+
+/**
+ * Dify service API: POST /conversations/{id}/name with { user, name, auto_generate }.
+ * (Shape verified against the pi_workbench-lineage frontend in copilotkit-dify.)
+ */
+export async function renameConversation(
+  config: DifyConfig,
+  conversationId: string,
+  name: string,
+): Promise<DifyConversation> {
+  const response = await fetch(`${base(config.baseUrl)}/conversations/${encodeURIComponent(conversationId)}/name`, {
+    method: 'POST',
+    headers: { ...auth(config), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user: config.user, name, auto_generate: false }),
+  })
+  await assertOk(response, 'Dify 会话重命名失败')
+  return normalizeConversation(await response.json())
+}
+
+/** Dify service API: DELETE /conversations/{id} with { user }. */
+export async function deleteConversation(config: DifyConfig, conversationId: string): Promise<void> {
+  const response = await fetch(`${base(config.baseUrl)}/conversations/${encodeURIComponent(conversationId)}`, {
+    method: 'DELETE',
+    headers: { ...auth(config), 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ user: config.user }),
+  })
+  await assertOk(response, 'Dify 会话删除失败')
+}
+
 /** Read a display projection source, never a browser-owned recovery snapshot. */
 export async function readAgentState(config: DifyConfig, conversationId: string): Promise<string | null> {
   let lastId = ''
@@ -221,11 +267,7 @@ export async function listConversations(
   const payload = await response.json()
   return Array.isArray(payload.data)
     ? payload.data
-        .map((item: any) => ({
-          id: String(item.id || ''),
-          name: String(item.name || '未命名会话'),
-          updatedAt: Number(item.updated_at || item.created_at || 0),
-        }))
+        .map((item: any) => normalizeConversation(item))
         .filter((item: DifyConversation) => item.id)
     : []
 }
