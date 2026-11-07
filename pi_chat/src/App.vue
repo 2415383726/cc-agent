@@ -80,7 +80,7 @@ onMounted(() => {
       if (!target || !follow.active) return
       follow.toBottom(target, scrollMetrics(target))
     },
-    { deep: true },
+    { deep: true, immediate: true },
   )
 })
 
@@ -174,7 +174,7 @@ const firstEntryTs = computed(() => view.value.entries[0]?.ts)
       </ul>
 
       <p v-if="!view.entries.length">选择一个回放场景查看过程事件。</p>
-      <ol v-else aria-label="会话记录">
+      <ol v-else class="pi-timeline" aria-label="会话记录">
         <li v-for="entry in view.entries" :key="`${entry.kind}:${entry.id}`">
           <UserMessage v-if="isUser(entry)" :entry="entry as MessageEntry" />
 
@@ -218,6 +218,25 @@ const firstEntryTs = computed(() => view.value.entries[0]?.ts)
 </template>
 
 <style>
+/* 组件自有（非 vendor）：时间线列表。上游 ChatView 的 flow 列（容器查询轴 +
+   行间 16px）在本应用由该列表承担；宽度对齐 --dsh-chat-content-width，
+   使 vendored 的 .md-table-wide 断行 CSS 在同一宽度轴上生效。 */
+.pi-timeline {
+  list-style: none;
+  margin: 0 auto;
+  padding: 24px 16px 16px;
+  width: 100%;
+  max-width: var(--dsh-chat-content-width, min(100% - 32px, 920px));
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.pi-timeline > li {
+  min-width: 0;
+}
+
 /* 组件自有（非 vendor）：headerActions 里的回放场景选择器，令牌着色的 caption 行。 */
 .pi-replay-select {
   display: inline-flex;
