@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -152,6 +153,12 @@ class ToolCallAccumulator:
         return calls, invalid
 
 
+# Dify model providers prefix inline reasoning with marker comments such as
+# ``<!--dify-deepseek-reasoning-->``; they are transport artifacts, not content.
+_DIFY_MARKER_RE = re.compile(r"<!--\s*dify-[\w.-]*\s*-->")
+_DIFY_MARKER_PARTIAL = re.compile(r"<!--\s*dify-[\w.-]*-{0,2}>?$")
+
+
 class ThinkingTagSplitter:
     """Split provider-emitted ``<think>`` blocks when no reasoning field is sent."""
 
@@ -175,16 +182,33 @@ class ThinkingTagSplitter:
         events: list[tuple[str, str]] = []
         while self.buffer:
             if self.inside:
+                if not final:
+                    partial = _DIFY_MARKER_PARTIAL.search(self.buffer)
+                    if partial and "-->" not in self.buffer[partial.start() :]:
+                        # Hold back a dangling provider marker so split markers
+                        # are stripped whole instead of leaking into thinking.
+                        head, self.buffer = (
+                            self.buffer[: partial.start()],
+                            self.buffer[partial.start() :],
+                        )
+                        clean = _DIFY_MARKER_RE.sub("", head)
+                        if clean:
+                            events.append(("thinking", clean))
+                        break
                 index = self.buffer.find(self.CLOSE)
                 if index >= 0:
                     if index:
-                        events.append(("thinking", self.buffer[:index]))
+                        clean = _DIFY_MARKER_RE.sub("", self.buffer[:index])
+                        if clean:
+                            events.append(("thinking", clean))
                     self.buffer = self.buffer[index + len(self.CLOSE) :]
                     self.inside = False
                     continue
                 emit, keep = _split_partial_marker(self.buffer, self.CLOSE, final)
                 if emit:
-                    events.append(("thinking", emit))
+                    clean = _DIFY_MARKER_RE.sub("", emit)
+                    if clean:
+                        events.append(("thinking", clean))
                 self.buffer = keep
                 break
             index = self.buffer.find(self.OPEN)

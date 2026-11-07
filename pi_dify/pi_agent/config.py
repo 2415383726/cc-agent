@@ -120,6 +120,16 @@ class RuntimeConfig:
                         stage="config",
                         message="runtime_config must be valid JSON.",
                     ) from exc
+                if isinstance(value, str) and value.strip():
+                    # Dify template inputs may arrive JSON-quoted; unwrap once more.
+                    try:
+                        value = json.loads(value)
+                    except json.JSONDecodeError as exc:
+                        raise PiError(
+                            code="invalid_configuration",
+                            stage="config",
+                            message="runtime_config must be valid JSON.",
+                        ) from exc
             if not isinstance(value, dict):
                 raise PiError(
                     code="invalid_configuration",
@@ -351,18 +361,27 @@ def _parse_mapping(value: Any, name: str) -> dict[str, Any] | None:
     if isinstance(value, dict):
         return value
     if isinstance(value, str):
-        try:
-            parsed = json.loads(value)
-        except json.JSONDecodeError:
-            raise PiError(
-                code="invalid_configuration",
-                stage="config",
-                message=f"{name} must be a JSON object.",
-            ) from None
-        if parsed is None:
-            return None
-        if isinstance(parsed, dict):
-            return parsed
+        # Dify template inputs may arrive JSON-quoted; unwrap one extra layer.
+        # Dify 1.5 workflow variable references additionally wrap string
+        # parameters in a pair of literal quotes (not JSON escapes), which is
+        # not valid JSON as a whole; try that unwrapped text as a fallback.
+        candidates = [value]
+        stripped = value.strip()
+        if len(stripped) >= 2 and stripped[0] == '"' and stripped[-1] == '"':
+            candidates.append(stripped[1:-1])
+        for text in candidates:
+            parsed: Any = text
+            for _ in range(2):
+                try:
+                    parsed = json.loads(parsed)
+                except json.JSONDecodeError:
+                    break
+                if parsed is None:
+                    return None
+                if isinstance(parsed, dict):
+                    return parsed
+                if not isinstance(parsed, str):
+                    break
     raise PiError(
         code="invalid_configuration", stage="config", message=f"{name} must be a JSON object."
     )

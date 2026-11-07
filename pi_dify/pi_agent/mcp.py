@@ -85,10 +85,7 @@ class McpRuntime:
                 )
             )
             read, write, _get_session_id = await self._stack.enter_async_context(
-                streamable_http_client(
-                    server.url,
-                    http_client=http_client,
-                )
+                streamable_http_client(server.url, http_client=http_client)
             )
         session = await self._stack.enter_async_context(ClientSession(read, write))
         await asyncio.wait_for(session.initialize(), timeout=server.timeout)

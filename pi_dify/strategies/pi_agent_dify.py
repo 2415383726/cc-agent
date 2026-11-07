@@ -34,8 +34,11 @@ class PiAgentStrategy(AgentStrategy):
         logger.info("pi_dify strategy invoke entered: %s", _parameter_summary(parameters))
         runtime = PiAgentRuntime(self.session)
         stream = runtime.run(parameters)
+        emitted_state = False
         try:
             for message in stream:
+                if isinstance(message, dict) and message.get("type") == "state":
+                    emitted_state = True
                 yield self._dispatch(message)
         except Exception:
             # Never leak a traceback or provider text into the Dify stream.
@@ -60,7 +63,14 @@ class PiAgentStrategy(AgentStrategy):
             yield self.create_text_message("The Pi agent run failed.")
         finally:
             stream.close()
-            logger.info("pi_dify strategy invoke completed")
+        if not emitted_state:
+            # Runs that fail before building a request never emit state; re-emit
+            # the incoming value so the Dify variable-assigner node still finds
+            # the agent_state output and the conversation value stays stable.
+            yield self.create_variable_message(
+                "agent_state", str(parameters.get("agent_state") or "")
+            )
+        logger.info("pi_dify strategy invoke completed")
 
     def _dispatch(self, message: Any) -> Any:
         if not isinstance(message, dict):

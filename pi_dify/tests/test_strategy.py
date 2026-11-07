@@ -91,7 +91,7 @@ class ConfigurationContractTests(unittest.TestCase):
         self.assertEqual(manifest["name"], "pi_dify")
         self.assertEqual(manifest["meta"]["runner"]["language"], "python")
         self.assertEqual(manifest["meta"]["runner"]["version"], "3.12")
-        self.assertEqual(manifest["meta"]["minimum_dify_version"], "1.7.0")
+        self.assertEqual(manifest["meta"]["minimum_dify_version"], "1.5.0")
         self.assertEqual(set(manifest["meta"]["arch"]), {"amd64", "arm64"})
 
         strategy = yaml.safe_load(
