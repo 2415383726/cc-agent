@@ -251,6 +251,149 @@ describe('DifyController', () => {
   })
 })
 
+describe('DifyController 交互提交协议（inputs.interaction）', () => {
+  /** 让控制器进入 waiting 问卷：send 一轮只含 question.asked 的流。 */
+  async function withWaitingQuestion() {
+    mockStream([
+      { event: 'message', answer: '请回答', task_id: 't', conversation_id: 'c' },
+      {
+        event: 'agent_log',
+        data: {
+          piagent: piEvent('question.asked', 1, {
+            questionnaire: {
+              id: 'q1',
+              pending_id: 'q1',
+              questions: [{ id: 'city', type: 'text', question: '城市？', options: [], required: true }],
+            },
+          }),
+        },
+      },
+    ])
+    const controller = new DifyController(config)
+    await controller.send('问我吧')
+    const entry = controller.view.entries.find(
+      (candidate): candidate is any => candidate.kind === 'question',
+    )!
+    expect(entry.status).toBe('waiting')
+    return { controller, entry }
+  }
+
+  /** 让控制器进入 waiting 审批：send 一轮只含 approval.requested 的流。 */
+  async function withWaitingApproval() {
+    mockStream([
+      { event: 'message', answer: '需要授权', task_id: 't', conversation_id: 'c' },
+      {
+        event: 'agent_log',
+        data: {
+          piagent: piEvent('approval.requested', 1, {
+            approval: {
+              pending_id: 'ap1',
+              tool_call_id: 'call_1',
+              tool: 'delete_record',
+              arguments: { record: 'stale-14' },
+              scope_options: ['once', 'session'],
+            },
+          }),
+        },
+      },
+    ])
+    const controller = new DifyController(config)
+    await controller.send('删吧')
+    const entry = controller.view.entries.find(
+      (candidate): candidate is any => candidate.kind === 'approval',
+    )!
+    expect(entry.status).toBe('waiting')
+    return { controller, entry }
+  }
+
+  function lastStreamCall(): { query: string; interaction: unknown } {
+    const call = (transport.streamChat as any).mock.calls.at(-1)![0]
+    return { query: call.query, interaction: call.inputs.interaction }
+  }
+
+  it('submitAnswers：以新轮次提交 query=提交交互，inputs.interaction 为 ask_user JSON', async () => {
+    const { controller, entry } = await withWaitingQuestion()
+    mockStream([
+      {
+        event: 'agent_log',
+        data: { piagent: piEvent('question.answered', 2, { pending_id: 'q1', answers: { city: '杭州' } }) },
+      },
+    ])
+    await controller.submitAnswers(entry, { city: '杭州' })
+    expect(controller.ui.running).toBe(false)
+    // 线形：query 固定为「提交交互」，interaction 是完整 ask_user JSON 载荷
+    const wire = lastStreamCall()
+    expect(wire.query).toBe('提交交互')
+    expect(JSON.parse(String(wire.interaction))).toEqual({
+      type: 'ask_user',
+      pending_id: 'q1',
+      answers: { city: '杭州' },
+    })
+    // 闭环：question.answered 落地后卡片离开 waiting
+    expect(entry.status).toBe('answered')
+  })
+
+  it('cancelQuestion：提交 cancel JSON 载荷并落到 cancelled 态', async () => {
+    const { controller, entry } = await withWaitingQuestion()
+    mockStream([
+      {
+        event: 'agent_log',
+        data: { piagent: piEvent('question.cancelled', 2, { pending_id: 'q1' }) },
+      },
+    ])
+    await controller.cancelQuestion(entry)
+    const wire = lastStreamCall()
+    expect(wire.query).toBe('提交交互')
+    expect(JSON.parse(String(wire.interaction))).toEqual({ type: 'cancel', pending_id: 'q1' })
+    expect(entry.status).toBe('cancelled')
+  })
+
+  it('submitApproval：提交 approval JSON 载荷（decision+scope 随载荷一并传输）', async () => {
+    const { controller, entry } = await withWaitingApproval()
+    mockStream([
+      {
+        event: 'agent_log',
+        data: { piagent: piEvent('approval.resolved', 2, { pending_id: 'ap1', decision: 'approved', scope: 'session' }) },
+      },
+    ])
+    await controller.submitApproval(entry, 'approve', 'session')
+    const wire = lastStreamCall()
+    expect(wire.query).toBe('提交交互')
+    expect(JSON.parse(String(wire.interaction))).toEqual({
+      type: 'approval',
+      pending_id: 'ap1',
+      decision: 'approve',
+      scope: 'session',
+    })
+    expect(entry.status).toBe('approved')
+    expect(entry.scope).toBe('session')
+  })
+
+  it('守卫与失败路径：失败保留 waiting 可重试；非 waiting 不再发请求', async () => {
+    const { controller, entry } = await withWaitingQuestion()
+    // 失败路径：interaction 流抛错 → entry.error 与错误横幅同时可见，状态仍可重试
+    ;(transport.streamChat as any).mockRejectedValue(new Error('boom'))
+    await controller.submitAnswers(entry, { city: '杭州' })
+    expect(entry.error).toContain('boom')
+    expect(controller.ui.error).toContain('boom')
+    expect(controller.ui.running).toBe(false)
+    expect(entry.status).toBe('waiting')
+    // 失败后重试走 cancel 闭环成功
+    mockStream([
+      {
+        event: 'agent_log',
+        data: { piagent: piEvent('question.cancelled', 2, { pending_id: 'q1' }) },
+      },
+    ])
+    await controller.cancelQuestion(entry)
+    expect(entry.status).toBe('cancelled')
+    // 非等待守卫：已取消的问卷不再发起新轮次（不发空交互）
+    await controller.submitAnswers(entry, { city: '上海' })
+    await controller.cancelQuestion(entry)
+    expect(transport.streamChat).toHaveBeenCalledTimes(3) // 初次 + 失败 + cancel；无第四次
+  })
+})
+
 describe('DifyController 会话管理（重命名/删除/列表）', () => {
   beforeEach(() => {
     ;(transport.renameConversation as any).mockReset()

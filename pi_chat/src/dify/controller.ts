@@ -376,6 +376,34 @@ export class DifyController implements WorkbenchController {
     await this._stream('提交交互', inputs, [])
   }
 
+  /**
+   * 断流未确认终态的合成（S2 收敛：try 尾「流先于终态结束」与 catch/stop 的
+   * 「停止未确认」共用同一私有 helper）——诚实终态 status=unknown + 警示备注，
+   * 绝不自动重发。
+   */
+  private _synthesizeUnconfirmed(stopped: boolean): void {
+    this.view.terminal = {
+      status: 'unknown',
+      answer: stopped ? '已请求停止，但服务器没有确认终态。' : '',
+      error: {
+        code: stopped ? 'stopped_unconfirmed' : 'unknown',
+        stage: 'transport',
+        message: stopped
+          ? '已请求停止，但没有收到可信的服务端终态。'
+          : '流在可信终态之前结束。',
+      },
+    }
+    this.view.entries.push({
+      id: `${stopped ? 'stop' : 'unconfirmed'}_${Date.now()}`,
+      kind: 'note',
+      text: stopped
+        ? '已请求停止；结果未确认，未重新发送请求。'
+        : '流在可信终态到达前结束，未重新发送请求。',
+      tone: 'warning',
+      ts: Date.now(),
+    })
+  }
+
   private async _stream(
     query: string,
     inputs: Record<string, unknown>,
@@ -409,53 +437,12 @@ export class DifyController implements WorkbenchController {
         this._handleDifyEvent(payload)
       }
       if (ticket !== this._ticket) return
-      if (!this.view.terminal) {
-        const stopped = this.ui.stopRequested
-        this.view.terminal = {
-          status: 'unknown',
-          answer: stopped
-            ? '已请求停止，但服务器没有确认终态。'
-            : '',
-          error: {
-            code: stopped ? 'stopped_unconfirmed' : 'unknown',
-            stage: 'transport',
-            message: stopped
-              ? '已请求停止，但没有收到可信的服务端终态。'
-              : '流在可信终态之前结束。',
-          },
-        }
-        this.view.entries.push({
-          id: `unconfirmed_${Date.now()}`,
-          kind: 'note',
-          text: stopped
-            ? '已请求停止；结果未确认，未重新发送请求。'
-            : '流在可信终态到达前结束，未重新发送请求。',
-          tone: 'warning',
-          ts: Date.now(),
-        })
-      }
+      if (!this.view.terminal) this._synthesizeUnconfirmed(this.ui.stopRequested)
       this.ui.running = false
     } catch (error) {
       if (ticket !== this._ticket) return
       if (this.ui.stopRequested) {
-        if (!this.view.terminal) {
-          this.view.terminal = {
-            status: 'unknown',
-            answer: '已请求停止，但服务器没有确认终态。',
-            error: {
-              code: 'stopped_unconfirmed',
-              stage: 'transport',
-              message: '已请求停止，但没有收到可信的服务端终态。',
-            },
-          }
-          this.view.entries.push({
-            id: `stop_${Date.now()}`,
-            kind: 'note',
-            text: '已请求停止；结果未确认，未重新发送请求。',
-            tone: 'warning',
-            ts: Date.now(),
-          })
-        }
+        if (!this.view.terminal) this._synthesizeUnconfirmed(true)
       } else {
         this.ui.error = safeError(error)
         if (!this.view.terminal) {

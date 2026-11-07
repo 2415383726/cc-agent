@@ -60,7 +60,27 @@ describe('check:static 扫描器', () => {
     expect(violations[0].match).toContain('https:')
   })
 
-  it('模式清单与移植源一致（机制照搬）', () => {
+  it('模式清单与移植源一致（P3-2 冻结快照，防漂移）', () => {
+    // 快照逐字取自迁移时的 pi_workbench/scripts/check-static.mjs 原始 FORBIDDEN 清单
+    // （机制照搬的移植源）。不 import ../pi_workbench —— 该目录在阶段 2 会被删除；
+    // 以字面量深比对守住扫描器模式不被无意增删改。新增/修改模式必须显式更新此
+    // 快照并在注释说明来源依据。
+    const MIGRATED_FORBIDDEN_SNAPSHOT = [
+      '/\\bsrc\\s*=\\s*["\']https?:/i',
+      '/\\bhref\\s*=\\s*["\']https?:/i',
+      '/url\\(\\s*["\']?https?:/i',
+      "/\\bfetch\\(\\s*[\"'`]https?:/i",
+      "/\\bimport\\(\\s*[\"'`]https?:/i",
+      '/wss?:\\/\\//i',
+      '/pi-coding-agent/i',
+      '/@earendil-works/i',
+      '/\\/api\\/pi\\//i',
+      '/fonts\\.googleapis\\.com/i',
+      '/cdn\\.jsdelivr\\.net/i',
+      '/unpkg\\.com/i',
+      '/google-analytics/i',
+    ]
+    expect(FORBIDDEN.map(String)).toEqual(MIGRATED_FORBIDDEN_SNAPSHOT)
     expect(FORBIDDEN).toHaveLength(13)
   })
 })

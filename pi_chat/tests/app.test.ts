@@ -4,6 +4,89 @@ import App from '../src/App.vue'
 
 const fetchSpy = vi.fn(() => Promise.reject(new Error('回放模式不允许网络请求')))
 
+function jsonResponse(body: unknown, status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    text: async () => JSON.stringify(body),
+    json: async () => body,
+  } as unknown as Response
+}
+
+/** SSE 流：推入给定事件后即关闭（正常收束）；带 signal 时 abort 提前关流（模拟断流）。 */
+function sseResponse(events: unknown[], signal?: AbortSignal): Response {
+  const encoder = new TextEncoder()
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const item of events) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(item)}\n\n`))
+      }
+      const close = () => {
+        try {
+          controller.close()
+        } catch {
+          /* 已关闭 */
+        }
+      }
+      if (signal) {
+        if (signal.aborted) close()
+        else signal.addEventListener('abort', close, { once: true })
+        return
+      }
+      close()
+    },
+  })
+  return { ok: true, status: 200, body: stream } as unknown as Response
+}
+
+/** 路由式 fetch 桩：记录各类请求次数与最近的 chat-messages init。 */
+function useLiveFetch(options: {
+  conversations?: unknown | Error
+  upload?: unknown | Error
+  onChat?: (init: RequestInit) => Response
+}) {
+  const counts = { chat: 0, stop: 0, upload: 0, conversations: 0 }
+  let chatInit: RequestInit | null = null
+  fetchSpy.mockImplementation((url: unknown, init: RequestInit = {}) => {
+    const target = String(url)
+    if (target.includes('/files/upload')) {
+      counts.upload += 1
+      return options.upload instanceof Error
+        ? Promise.reject(options.upload)
+        : Promise.resolve(jsonResponse(options.upload ?? { id: 'file_1', name: '报告.pdf', mime_type: 'application/pdf', size: 2048 }))
+    }
+    if (target.includes('/chat-messages/') && target.endsWith('/stop')) {
+      counts.stop += 1
+      return Promise.resolve(jsonResponse({ result: 'success' }))
+    }
+    if (target.endsWith('/chat-messages')) {
+      counts.chat += 1
+      chatInit = init
+      return Promise.resolve(options.onChat ? options.onChat(init) : sseResponse([]))
+    }
+    if (target.includes('/conversations')) {
+      counts.conversations += 1
+      return options.conversations instanceof Error
+        ? Promise.reject(options.conversations)
+        : Promise.resolve(jsonResponse(options.conversations ?? { data: [], has_more: false }))
+    }
+    return Promise.reject(new Error(`unexpected fetch: ${target}`))
+  })
+  return {
+    counts,
+    chatInit: () => chatInit,
+    chatBody: () => (chatInit ? JSON.parse(String(chatInit.body)) : null),
+  }
+}
+
+/** 只做 UI 步骤：fetch 桩由各用例先经 useLiveFetch 设置（避免覆盖路由）。 */
+async function enterConnectedLive(wrapper: ReturnType<typeof mount>) {
+  await wrapper.find('[data-testid="enter-live"]').trigger('click')
+  await wrapper.find('[data-testid="form-api-key"]').setValue('app-live-key')
+  await wrapper.find('[data-testid="connect-submit"]').trigger('click')
+  await flushPromises()
+}
+
 beforeEach(() => {
   fetchSpy.mockClear()
   vi.stubGlobal('fetch', fetchSpy)
@@ -225,87 +308,6 @@ describe('pi_chat 实时模式接线', () => {
 })
 
 describe('pi_chat 实时模式：附件、停止与连接表单收尾（票 08）', () => {
-  function jsonResponse(body: unknown, status = 200): Response {
-    return {
-      ok: status >= 200 && status < 300,
-      status,
-      text: async () => JSON.stringify(body),
-      json: async () => body,
-    } as unknown as Response
-  }
-
-  /** SSE 流：先推入给定事件，随后保持打开，直到请求被 abort 才关闭（模拟真实断流）。 */
-  function sseResponse(events: unknown[], signal?: AbortSignal): Response {
-    const encoder = new TextEncoder()
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        for (const item of events) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(item)}\n\n`))
-        }
-        const close = () => {
-          try {
-            controller.close()
-          } catch {
-            /* 已关闭 */
-          }
-        }
-        if (signal) {
-          if (signal.aborted) close()
-          else signal.addEventListener('abort', close, { once: true })
-        }
-      },
-    })
-    return { ok: true, status: 200, body: stream } as unknown as Response
-  }
-
-  /** 路由式 fetch 桩：记录各类请求次数与最近的 chat-messages init。 */
-  function useLiveFetch(options: {
-    conversations?: unknown | Error
-    upload?: unknown | Error
-    onChat?: (init: RequestInit) => Response
-  }) {
-    const counts = { chat: 0, stop: 0, upload: 0, conversations: 0 }
-    let chatInit: RequestInit | null = null
-    fetchSpy.mockImplementation((url: unknown, init: RequestInit = {}) => {
-      const target = String(url)
-      if (target.includes('/files/upload')) {
-        counts.upload += 1
-        return options.upload instanceof Error
-          ? Promise.reject(options.upload)
-          : Promise.resolve(jsonResponse(options.upload ?? { id: 'file_1', name: '报告.pdf', mime_type: 'application/pdf', size: 2048 }))
-      }
-      if (target.includes('/chat-messages/') && target.endsWith('/stop')) {
-        counts.stop += 1
-        return Promise.resolve(jsonResponse({ result: 'success' }))
-      }
-      if (target.endsWith('/chat-messages')) {
-        counts.chat += 1
-        chatInit = init
-        return Promise.resolve(options.onChat ? options.onChat(init) : sseResponse([]))
-      }
-      if (target.includes('/conversations')) {
-        counts.conversations += 1
-        return options.conversations instanceof Error
-          ? Promise.reject(options.conversations)
-          : Promise.resolve(jsonResponse(options.conversations ?? { data: [], has_more: false }))
-      }
-      return Promise.reject(new Error(`unexpected fetch: ${target}`))
-    })
-    return {
-      counts,
-      chatInit: () => chatInit,
-      chatBody: () => (chatInit ? JSON.parse(String(chatInit.body)) : null),
-    }
-  }
-
-  /** 只做 UI 步骤：fetch 桩由各用例先经 useLiveFetch 设置（避免覆盖路由）。 */
-  async function enterConnectedLive(wrapper: ReturnType<typeof mount>) {
-    await wrapper.find('[data-testid="enter-live"]').trigger('click')
-    await wrapper.find('[data-testid="form-api-key"]').setValue('app-live-key')
-    await wrapper.find('[data-testid="connect-submit"]').trigger('click')
-    await flushPromises()
-  }
-
   async function pickComposerFile(wrapper: ReturnType<typeof mount>, file: File): Promise<void> {
     const input = wrapper.find('[data-testid="composer-file-input"]')
     Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
@@ -374,6 +376,11 @@ describe('pi_chat 实时模式：附件、停止与连接表单收尾（票 08�
     expect(note.text()).toContain('附件上传失败')
     expect(note.text()).toContain('File Too Large')
     expect(wrapper.findAll('[data-testid="composer-file-chip"]')).toHaveLength(0)
+    // P3-4：同一失败即时反馈贴近 composer 附件行
+    const composerNote = wrapper.find('[data-testid="composer-action-note"]')
+    expect(composerNote.exists()).toBe(true)
+    expect(composerNote.text()).toContain('附件上传失败')
+    expect(composerNote.text()).toContain('File Too Large')
   })
 
   it('停止链路：composer 停止按钮→stop 端点+请求中止→「已请求停止」未确认终态，绝不自动重发，结束后恢复发送按钮', async () => {
@@ -464,5 +471,83 @@ describe('pi_chat 实时模式：附件、停止与连接表单收尾（票 08�
     expect(wrapper.find('[data-testid="connection-form"]').exists()).toBe(true)
     // 侧栏重试兜底同时可用
     expect(wrapper.find('[data-testid="conversations-error"]').exists()).toBe(true)
+  })
+})
+
+describe('pi_chat 实时模式：共享时间线渲染器（ADR-0010 同一契约与组件）', () => {
+  function agentLog(type: string, seq: number, fields: Record<string, unknown>): unknown {
+    return {
+      event: 'agent_log',
+      data: {
+        piagent: {
+          schema: 'piagent.display.v1',
+          schema_version: 1,
+          type,
+          run_id: 'run_1',
+          seq,
+          ts: seq,
+          ...fields,
+        },
+      },
+    }
+  }
+
+  it('live 工具事件经共享组件渲染：ToolCard 出现（不再是占位级 JSON.stringify 时间线）', async () => {
+    const wrapper = mount(App)
+    await flushPromises()
+    useLiveFetch({
+      onChat: () =>
+        sseResponse([
+          { event: 'message', answer: '查一下', task_id: 't', conversation_id: 'conv_live' },
+          agentLog('tool.start', 1, { tool_call_id: 'call_1', name: 'web_search', arguments: { query: '杭州天气' } }),
+          agentLog('tool.end', 2, { tool_call_id: 'call_1', name: 'web_search', status: 'ok', result: '晴' }),
+          { event: 'message_end', conversation_id: 'conv_live' },
+        ]),
+    })
+    await enterConnectedLive(wrapper)
+    await wrapper.find('[data-zone="composer"] textarea').setValue('查杭州天气')
+    await wrapper.find('[data-zone="composer"] [data-testid="composer-send"]').trigger('click')
+    await flushPromises()
+    // 票据 04 同款：工具卡在折叠组内，展开后参数经 ToolCard 的 io 面渲染
+    expect(wrapper.find('[data-testid="tool-card"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="tool-toggle"]').exists()).toBe(true)
+    await wrapper.find('[data-testid="tool-toggle"]').trigger('click')
+    expect(wrapper.find('[data-testid="tool-input"]').text()).toContain('杭州天气')
+  })
+
+  it('live 问卷卡可交互：作答提交走 submitAnswers 通道（query=提交交互 + ask_user JSON 载荷）', async () => {
+    const wrapper = mount(App)
+    await flushPromises()
+    const { chatBody } = useLiveFetch({
+      onChat: () =>
+        sseResponse([
+          { event: 'message', answer: '需要问卷', task_id: 't', conversation_id: 'conv_live' },
+          agentLog('question.asked', 1, {
+            questionnaire: {
+              id: 'q1',
+              pending_id: 'q1',
+              questions: [{ id: 'city', type: 'text', question: '城市？', options: [], required: true }],
+            },
+          }),
+        ]),
+    })
+    await enterConnectedLive(wrapper)
+    await wrapper.find('[data-zone="composer"] textarea').setValue('问我')
+    await wrapper.find('[data-zone="composer"] [data-testid="composer-send"]').trigger('click')
+    await flushPromises()
+    // 共享渲染器：问卷卡渲染（此前 live 分支不可交互）
+    expect(wrapper.find('[data-testid="question-card"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('城市？')
+    // 作答并提交：交互经 controller.submitAnswers → inputs.interaction 协议
+    await wrapper.find('[data-testid="question-text-0"]').setValue('杭州')
+    await wrapper.find('[data-testid="question-primary"]').trigger('click')
+    await flushPromises()
+    const body = chatBody()
+    expect(body.query).toBe('提交交互')
+    expect(JSON.parse(body.inputs.interaction)).toEqual({
+      type: 'ask_user',
+      pending_id: 'q1',
+      answers: { city: '杭州' },
+    })
   })
 })
