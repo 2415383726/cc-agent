@@ -1,8 +1,39 @@
 /*
- * 文档级浅色底：仅固定画布与文字颜色（spec 决策「浅色主题」）。
- * 组件视觉由后续票据的 ui-theme 令牌与 CSS Modules 接管。
+ * 挂载默认：照 Harness web/src/base.css 的壳默认（高 100%、无页边距、字体与
+ * 画布色），减去桌面端窗口透明背景。主题令牌由 src/vendor/dsh/theme.css 先行注入。
  */
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+/* 浅色主题是规格决策（spec Implementation Decisions）：显式固定 light，
+   系统暗色偏好不得翻转 UA 控件、滚动条与表单控件。 */
+html {
+  color-scheme: light;
+}
+
 body {
-  background: #ffffff;
-  color: #111111;
+  font-family: var(
+    --dsw-font-family,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    'PingFang SC',
+    'Hiragino Sans GB',
+    'Microsoft YaHei',
+    'Helvetica Neue',
+    Helvetica,
+    Arial,
+    sans-serif
+  );
+  /* 灰阶抗锯齿（Harness 同款声明；其余引擎忽略）。 */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: var(--dsw-alias-label-primary, #0f1115);
+  background: var(--dsw-alias-bg-base, #fff);
+  /* 支持的浏览器在中西文混排中自动加间隙（Harness 同款）。 */
+  text-autospace: normal;
 }
