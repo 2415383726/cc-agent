@@ -81,6 +81,12 @@ export function findPiEventsInMessage(record: Record<string, unknown>): DisplayE
   return events
 }
 
+/** Dify message `created_at` is Unix seconds; display `ts` is milliseconds. */
+function historyTs(record: HistoryRecord): number {
+  const n = Number(record.created_at || 0)
+  return n > 0 && n < 1e12 ? n * 1000 : n
+}
+
 function syntheticUser(id: string, record: HistoryRecord): DisplayEvent {
   return {
     schema: SCHEMA,
@@ -88,7 +94,7 @@ function syntheticUser(id: string, record: HistoryRecord): DisplayEvent {
     type: 'message.user',
     run_id: `history:${id}`,
     seq: 0,
-    ts: Number(record.created_at || 0),
+    ts: historyTs(record),
     text: String(record.query || ''),
     files: Array.isArray(record.message_files) ? record.message_files : undefined,
     message_id: `history:${id}:user`,
@@ -102,7 +108,7 @@ function syntheticAssistant(id: string, record: HistoryRecord): DisplayEvent {
     type: 'message.end',
     run_id: `history:${id}`,
     seq: 1,
-    ts: Number(record.created_at || 0),
+    ts: historyTs(record),
     text: String(record.answer || ''),
     message_id: `history:${id}:assistant`,
   } as DisplayEvent

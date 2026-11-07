@@ -55,4 +55,18 @@ describe('history reconstruction', () => {
     ])
     expect(result.events).toHaveLength(1)
   })
+
+  it('normalizes Unix-second created_at to milliseconds', () => {
+    const seconds = 1794054000 // 2026-11-07 前后，Dify 返回秒
+    const result = eventsFromHistory([{ id: 'm1', query: 'hi', answer: 'yo', created_at: seconds }])
+    const user = result.events.find((item) => item.type === 'message.user') as any
+    const assistant = result.events.find((item) => item.type === 'message.end') as any
+    expect(user.ts).toBe(seconds * 1000)
+    expect(assistant.ts).toBe(seconds * 1000)
+    // 已是毫秒的值保持不变
+    const ms = 1794054000000
+    const resultMs = eventsFromHistory([{ id: 'm2', query: 'a', answer: 'b', created_at: ms }])
+    const userMs = resultMs.events.find((item) => item.type === 'message.user') as any
+    expect(userMs.ts).toBe(ms)
+  })
 })
