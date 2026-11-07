@@ -5,10 +5,10 @@ CC Agent 是 Dify Agent Strategy 插件，提供工具调用、技能、任务�
 
 ## Pi Agent v2（新插件）
 
-`pi_dify/` 是按 v2 规格新建的独立 Dify Agent Strategy 插件，复用固定 0.6.0 的 Python Pi Harness；`pi_workbench/` 是从 Leyline 固定提交抽取的静态 Vue 工作台。两者与旧 `cc_agent/`、`copilotkit-dify/` 并存，旧插件和旧前端不改协议、不迁移旧状态。
+`pi_dify/` 是按 v2 规格新建的独立 Dify Agent Strategy 插件，复用固定 0.6.0 的 Python Pi Harness；`pi_chat/` 是消费同一 `piagent.display.v1` 契约的静态 Vue 工作台，展示层自 MIT 许可的 DeepSeek Harness 移植（见其 NOTICE.md）。两者与旧 `cc_agent/`、`copilotkit-dify/` 并存，旧插件和旧前端不改协议、不迁移旧状态。
 
 - 插件说明、Dify 节点映射、技能/MCP/交互格式与离线构建：[pi_dify/README.md](pi_dify/README.md)
-- 工作台构建、静态部署、回放与安全边界：[pi_workbench/README.md](pi_workbench/README.md)
+- 工作台构建、静态部署、回放与安全边界：[pi_chat/README.md](pi_chat/README.md)
 - 逐票实现与已验证/未验证证据：[docs/evidence/v2-implementation.md](docs/evidence/v2-implementation.md)
 - 实施决策：[ADR-0008](docs/adr/0008-pi-agent-v2-implementation.md)
 
@@ -16,7 +16,7 @@ CC Agent 是 Dify Agent Strategy 插件，提供工具调用、技能、任务�
 
 ```bash
 python -B -m unittest discover -s pi_dify/tests
-cd pi_workbench && npm install && npm run test && npm run build && npm run check:static
+cd pi_chat && npm install && npm run test && npm run build && npm run check:static
 cd ../pi_dify && python3 scripts/build_offline_package.py --arch amd64
 ```
 
@@ -25,7 +25,7 @@ cd ../pi_dify && python3 scripts/build_offline_package.py --arch amd64
 - `cc_agent/`：Python ≥3.12 的 Dify 插件，包含共享运行时、两个策略入口、内置技能和测试。
 - `copilotkit-dify/`：Vue 3 + Vite 前端，消费 AG-UI / Dify 流并展示工具过程、结构化答案、附件和交互中断。
 - `pi_dify/`：v2 独立 Pi Harness 插件（Python 3.12）。
-- `pi_workbench/`：v2 静态 Vue 工作台，消费 `piagent.display.v1`。
+- `pi_chat/`：静态 Vue 工作台，消费 `piagent.display.v1`。
 
 ## 运行流程
 

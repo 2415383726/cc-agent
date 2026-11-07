@@ -5,7 +5,7 @@
 - `cc_agent/`: Dify Agent Strategy plugin, Python ≥3.12. Conversation state uses the Dify `agent_state` variable. Internal tools handle skills, tasks, and AG-UI user prompts; Dify injects external tools.
 - `copilotkit-dify/`: Vue 3 + Vite frontend consuming AG-UI / Dify streams, with tool cards, structured answers, attachments, and permission interrupts.
 - `pi_dify/`: independent v2 Pi Harness Dify Agent Strategy plugin (Python 3.12). Pins `pi-agent-core-lc`/`pi-agent-harness-lc` 0.6.0 and uses `piagent-state:v1:gzip-base64:`; it does not import old `cc_agent` state or loops.
-- `pi_workbench/`: static Vue 3 workbench for the `piagent.display.v1` contract, extracted from the pinned Leyline commit. No Node/Pi runtime backend.
+- `pi_chat/`: static Vue 3 workbench for the `piagent.display.v1` contract; presentation ported from the MIT-licensed DeepSeek Harness (attribution in its NOTICE.md). No Node/Pi runtime backend.
 - `cc-haha/` and `cheetahclaws/`, when present, are read-only reference implementations.
 
 For configuration and the full state flow, read [README.md](README.md). For domain terms and architectural decisions, read [CONTEXT.md](CONTEXT.md) and [docs/adr/](docs/adr/).
@@ -22,7 +22,7 @@ python -B -m unittest discover -s pi_dify/tests
 python pi_dify/scripts/build_offline_package.py --arch amd64
 ```
 
-From `pi_workbench/`, use `npm install`, `npm run dev`, `npm run test`, `npm run build`, and `npm run check:static`.
+From `pi_chat/`, use `npm install`, `npm run dev`, `npm run test`, `npm run build`, and `npm run check:static`.
 
 From `cc_agent/`, formatting uses `uv run black . -C -l 100` and `uv run ruff check --fix`.
 
@@ -47,7 +47,7 @@ From `copilotkit-dify/`, use `npm install`, `npm run dev`, `npm run test`, and `
 - `pi_dify/pi_agent/stream.py` is the only Dify model boundary for Pi. Complete arguments only; `tool_stream_mode` is explicit; keep the one-overflow-compaction retry and never replay completed tools.
 - `pi_dify/pi_agent/state.py` is the only Pi cross-turn authority. Keep the size-limited codec, pending/leaf/tool pairing on trim, and state-before-terminal ordering. `state_ref` must not claim platform persistence.
 - AskUser and approval are distinct pending interactions in `pi_agent/interaction.py`; both stop the batch deterministically and resume from a validated next-turn `interaction`. A questionnaire answer is not a tool authorization.
-- `pi_workbench/src/dify/controller.ts` owns Dify send/stop/history/stale-result rules; `src/projection/transcript.ts` owns display reduction. Replay must use the same contract and components, not a second renderer.
+- `pi_chat/src/dify/controller.ts` owns Dify send/stop/history/stale-result rules; `src/projection/transcript.ts` owns display reduction. Replay must use the same contract and components, not a second renderer.
 
 ## Invariants
 
@@ -72,6 +72,6 @@ Tests use `unittest` and `SimpleNamespace` for fake Dify objects. Prefer fakes o
 - Skill, command, permission and app YAML tests live beside these in `cc_agent/tests/`.
 - `pi_dify/tests/test_runtime.py`: Pi text/tool/AskUser/approval/budget/overflow flows with fakes.
 - `pi_dify/tests/test_state.py`, `test_stream.py`, `test_skills*.py`, `test_interaction.py`, `test_mcp.py`, `test_strategy.py`: codec/trimming, stream modes, skills, interactions, MCP lifecycle and manifest contracts.
-- `pi_workbench/tests/`: contract validation, projection/merge, history, controller stale/stop rules, forms and static replay.
+- `pi_chat/tests/`: contract validation, projection/merge, history, controller stale/stop rules, interaction cards, timeline/composer and static replay.
 
 For frontend changes, preserve tool-card fallback rendering, attachment handling and conversation-ID recovery in `src/cc-assistant/`. Generic file renderers can also serve Dify-injected tools.

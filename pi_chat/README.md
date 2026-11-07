@@ -99,7 +99,7 @@ npm run build    # 产物构建
 
 ## 删除门执行清单（票 09 阶段 2 · 交接文档）
 
-> 本清单是删除门的唯一执行依据：阶段 1 已完成 check:static 移植（`scripts/check-static.mjs` + `npm run check:static`）、whale 品牌资产清理（构建零告警）与回放三场景证据重制（`docs/evidence/09-replay-*.png`）。**阶段 2 在用户完成 live 冒烟后才执行下列步骤；在此之前不得删除 pi_workbench、不得改 AGENTS.md。**
+> 本清单是删除门的唯一执行依据：阶段 1 已完成 check:static 移植（`scripts/check-static.mjs` + `npm run check:static`）、whale 品牌资产清理（构建零告警）与回放三场景证据重制（`docs/evidence/09-replay-*.png`）。**✅ 阶段 2 已于 2026-11-07 执行**：live 冒烟通过（连接/流式/问卷闭环/重命名/删除/停止，证据 `docs/evidence/10-live-*.png`）后删除了 `pi_workbench/` 并改写 AGENTS.md 条款。
 
 1. **前置确认（全部满足才继续）**
    - `cd pi_chat && npm run test` 四条 seam（投影 / 控制器 / 组件 / 回放）全部通过；
