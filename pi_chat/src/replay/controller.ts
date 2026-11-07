@@ -131,6 +131,7 @@ export class ReplayController implements WorkbenchController {
       execution_outcome: decision === 'approve' ? 'unknown' : 'not_executed',
       business_ref: decision === 'approve' ? `${entry.tool}:${entry.toolCallId}` : undefined,
     })
+    this._append('message.start', { message_id: `replay-approval-assistant-${this._seq}` })
     this._append('message.end', {
       message_id: `replay-approval-assistant-${this._seq}`,
       text:
