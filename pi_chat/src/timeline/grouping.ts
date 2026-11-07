@@ -7,7 +7,7 @@
  * 由投影扁平 entries 全量重算替代；组内 running 判据为「成员工具处于
  * running 状态」（awaiting_* 不是进行中，组头保持已完成词）。
  */
-import type { CompactionEntry, SkillEntry, ToolEntry, WorkbenchEntry } from '../projection/transcript'
+import type { CompactionEntry, SkillEntry, TerminalEntry, ToolEntry, WorkbenchEntry } from '../projection/transcript'
 import { PROCESS_DONE, PROCESS_JOIN, PROCESS_LIVE } from './strings'
 
 /** 上游 ProcessActivity（本契约涉及的子集；context/subagents/questions 不在事件面）。 */
@@ -124,4 +124,66 @@ export function groupTitle(
   return counts.length > 3
     ? PROCESS_JOIN.more.replace('{title}', title)
     : title
+}
+
+/**
+ * 回合折叠视图（对齐 DeepSeek Harness 的完成态行为）：回答完成后，回合的
+ * 过程行（思考/工具组）折叠进「已完成，用时 X 秒」头部，文本消息保持原位
+ * 可见；头部可展开还原原始穿插顺序。
+ *
+ * - 回合以用户消息为界；回合内含**非等待类**终态（completed/failed/stopped…）
+ *   即视为闭合，可折叠。awaiting_user/awaiting_approval 是交互等待，不折叠。
+ * - 折叠头取回合内最后一条非等待终态（终态即最终事实），提升到回合首位；
+ *   其余条目保持原始顺序（展开时组与文本穿插如流式当时）。
+ * - 进行中/无终态回合 header 为 null，照常平铺渲染。
+ */
+export type TurnView = {
+  id: string
+  /** 闭合回合（可折叠）；进行中/等待交互的回合为 false。 */
+  closed: boolean
+  /** 回合首条目 ts（毫秒），供「用时 X」从回合起点计算。 */
+  startTs: number
+  /** 提升为折叠头的终态；null = 平铺渲染（无终态或等待类）。 */
+  header: TerminalEntry | null
+  /** 回合开头的用户消息段（折叠头之前渲染，始终可见）。 */
+  lead: TimelineSegment[]
+  /** 原序段（已摘除提升的终态条目，不含 lead）。 */
+  segments: TimelineSegment[]
+}
+
+const AWAITING_STATUSES = new Set(['awaiting_user', 'awaiting_approval'])
+
+export function turnViews(entries: WorkbenchEntry[], _running: boolean): TurnView[] {
+  const turns: WorkbenchEntry[][] = []
+  for (const entry of entries) {
+    const isUser = entry.kind === 'message' && (entry as { role?: string }).role === 'user'
+    if (isUser || turns.length === 0) turns.push([])
+    turns[turns.length - 1].push(entry)
+  }
+
+  return turns.map((turn, index) => {
+    const terminals = turn.filter(
+      (entry): entry is TerminalEntry =>
+        entry.kind === 'terminal' && !AWAITING_STATUSES.has((entry as TerminalEntry).terminal.status),
+    )
+    const header = terminals.length > 0 ? terminals[terminals.length - 1] : null
+    // 回合开头的用户消息为 lead（折叠头渲染在其后，对齐 DeepSeek 版式）
+    let leadEnd = 0
+    while (leadEnd < turn.length) {
+      const entry = turn[leadEnd]
+      if (!(entry.kind === 'message' && (entry as { role?: string }).role === 'user')) break
+      leadEnd += 1
+    }
+    const flow = turn.filter((entry) => entry !== header)
+    const lead = groupTimeline(flow.slice(0, leadEnd), false)
+    const segments = groupTimeline(flow.slice(leadEnd), false)
+    return {
+      id: `turn:${index}:${turn[0]?.id ?? 'empty'}`,
+      closed: header !== null,
+      startTs: turn[0]?.ts ?? 0,
+      header,
+      lead,
+      segments,
+    }
+  })
 }

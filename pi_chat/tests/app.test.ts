@@ -100,9 +100,14 @@ describe('pi_chat replay shell', () => {
     const wrapper = mount(App)
     await flushPromises()
     expect(wrapper.text()).toContain('回放模式')
+    // 完成态回合默认折叠：过程行（工具卡）藏进终态头，文本与技能名仍可见
+    const header = wrapper.find('[data-testid="terminal-row"]')
+    expect(header.exists()).toBe(true)
+    expect(header.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.text()).toContain('已完成')
+    await header.trigger('click')
     expect(wrapper.text()).toContain('lookup_order')
     expect(wrapper.text()).toContain('refund-policy')
-    expect(wrapper.text()).toContain('已完成')
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
@@ -284,6 +289,9 @@ describe('pi_chat 实时模式接线', () => {
     await wrapper.find('[data-testid="back-replay"]').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('回放模式')
+    // 回放内容不受影响：折叠头在，展开后过程行如常
+    expect(wrapper.find('[data-testid="terminal-row"]').exists()).toBe(true)
+    await wrapper.find('[data-testid="terminal-row"]').trigger('click')
     expect(wrapper.text()).toContain('lookup_order')
     expect(wrapper.find('[data-testid="connection-form"]').exists()).toBe(false)
   })

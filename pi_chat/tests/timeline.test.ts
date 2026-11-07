@@ -7,7 +7,8 @@ import ReasoningRow from '../src/timeline/ReasoningRow.vue'
 import TerminalRow from '../src/timeline/TerminalRow.vue'
 import UserMessage from '../src/timeline/UserMessage.vue'
 import { ScrollFollow } from '../src/timeline/scrollFollow'
-import type { MessageEntry, NoteEntry, ReasoningEntry, TerminalEntry } from '../src/projection/transcript'
+import TranscriptView from '../src/timeline/TranscriptView.vue'
+import type { MessageEntry, NoteEntry, ReasoningEntry, TerminalEntry, ToolEntry, WorkbenchEntry } from '../src/projection/transcript'
 
 const BASE_TS = new Date('2026-11-07T10:00:00').getTime()
 
@@ -295,5 +296,120 @@ describe('timeline NoteRow（备注行）', () => {
     const wrapper = mount(NoteRow, { props: { entry } })
     expect(wrapper.find('[data-testid="note-row"]').text()).toBe('回放模式：没有发起 Dify 请求或模型调用。')
     expect(wrapper.find('[data-testid="note-row"]').attributes('data-tone')).toBe('info')
+  })
+})
+
+describe('TranscriptView 回合折叠（完成态过程收进终态头）', () => {
+
+  function toolEntry(id: string): ToolEntry {
+    return {
+      id,
+      kind: 'tool',
+      ts: BASE_TS + 1000,
+      callId: id,
+      name: 'bash',
+      args: { cmd: 'echo hi' },
+      updates: [],
+      status: 'ok',
+      result: 'hi',
+      artifacts: [],
+      isError: false,
+      executionOutcome: 'success',
+    }
+  }
+
+  function turnEntries(): WorkbenchEntry[] {
+    return [
+      { id: 'u1', kind: 'message', role: 'user', text: '跑一下', streaming: false, ts: BASE_TS } as MessageEntry,
+      { id: 'r1', kind: 'reasoning', text: '先跑命令。', streaming: false, ts: BASE_TS + 500 } as ReasoningEntry,
+      toolEntry('t1'),
+      messageEntry({ id: 'a1', role: 'assistant', text: '中间进度说明。', ts: BASE_TS + 1500 }),
+      messageEntry({ id: 'a2', role: 'assistant', text: '最终答案。', ts: BASE_TS + 2000 }),
+      {
+        id: 'terminal_run1',
+        kind: 'terminal',
+        terminal: { status: 'completed', answer: '', error: null, stats: {} },
+        ts: BASE_TS + 9000,
+      } as TerminalEntry,
+    ]
+  }
+
+  it('闭合回合默认折叠：终态头在回合顶部带 chevron，思考/工具行隐藏，文本原位可见', () => {
+    const wrapper = mount(TranscriptView, { props: { entries: turnEntries(), running: false } })
+    const header = wrapper.find('[data-testid="terminal-row"]')
+    expect(header.exists()).toBe(true)
+    expect(header.element.tagName).toBe('BUTTON')
+    expect(header.attributes('aria-expanded')).toBe('false')
+    expect(header.find('[data-testid="terminal-chevron"]').exists()).toBe(true)
+    expect(header.text()).toMatch(/^已完成，用时 \d+秒$/)
+    // 过程行折叠
+    expect(wrapper.find('[data-testid="reasoning-toggle"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('已调用工具')
+    // 文本原位可见
+    expect(wrapper.text()).toContain('中间进度说明。')
+    expect(wrapper.text()).toContain('最终答案。')
+  })
+
+  it('点击终态头展开：思考/工具组按原始穿插顺序还原，可再收起', async () => {
+    const wrapper = mount(TranscriptView, { props: { entries: turnEntries(), running: false } })
+    await wrapper.find('[data-testid="terminal-row"]').trigger('click')
+    expect(wrapper.find('[data-testid="terminal-row"]').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.find('[data-testid="reasoning-toggle"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('执行了命令')
+    await wrapper.find('[data-testid="terminal-row"]').trigger('click')
+    expect(wrapper.find('[data-testid="terminal-row"]').attributes('aria-expanded')).toBe('false')
+    expect(wrapper.find('[data-testid="reasoning-toggle"]').exists()).toBe(false)
+  })
+
+  it('进行中回合（无终态）不折叠、无 chevron，过程行照常可见', () => {
+    const entries = turnEntries().filter((entry) => entry.kind !== 'terminal')
+    const wrapper = mount(TranscriptView, { props: { entries, running: true } })
+    expect(wrapper.find('[data-testid="terminal-row"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="reasoning-toggle"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('执行了命令')
+  })
+
+  it('awaiting_user 等待类终态不折叠（问卷作答期间过程行可见）', () => {
+    const entries = [
+      ...turnEntries().filter((entry) => entry.kind !== 'terminal'),
+      {
+        id: 'terminal_run2',
+        kind: 'terminal',
+        terminal: { status: 'awaiting_user', answer: '', error: null, stats: {} },
+        ts: BASE_TS + 9000,
+      } as TerminalEntry,
+    ]
+    const wrapper = mount(TranscriptView, { props: { entries, running: false } })
+    const header = wrapper.find('[data-testid="terminal-row"]')
+    expect(header.exists()).toBe(true)
+    expect(header.element.tagName).toBe('DIV')
+    expect(header.attributes('aria-expanded')).toBeUndefined()
+    // 过程行保持可见（等待期不收起）
+    expect(wrapper.find('[data-testid="reasoning-toggle"]').exists()).toBe(true)
+  })
+
+  it('多回合：各自折叠，时长从各自回合起点计算', async () => {
+    const first = turnEntries()
+    const second: WorkbenchEntry[] = [
+      { id: 'u2', kind: 'message', role: 'user', text: '再来一轮', streaming: false, ts: BASE_TS + 60_000 } as MessageEntry,
+      toolEntry('t2'),
+      messageEntry({ id: 'a3', role: 'assistant', text: '第二轮答案。', ts: BASE_TS + 62_000 }),
+      {
+        id: 'terminal_run3',
+        kind: 'terminal',
+        terminal: { status: 'completed', answer: '', error: null, stats: { duration_ms: 3000 } },
+        ts: BASE_TS + 63_000,
+      } as TerminalEntry,
+    ]
+    const wrapper = mount(TranscriptView, { props: { entries: [...first, ...second], running: false } })
+    const headers = wrapper.findAll('[data-testid="terminal-row"]')
+    expect(headers).toHaveLength(2)
+    // 第一回合：无 stats → 从回合起点（u1 ts）到终态 ts
+    expect(headers[0].text()).toMatch(/^已完成，用时 9秒$/)
+    // 第二回合：stats.duration_ms 优先
+    expect(headers[1].text()).toBe('已完成，用时 3秒')
+    // 两回合均折叠
+    expect(headers.every((h) => h.attributes('aria-expanded') === 'false')).toBe(true)
+    expect(wrapper.text()).toContain('第二轮答案。')
   })
 })

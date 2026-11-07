@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import type { TerminalEntry } from '../projection/transcript'
 import { errorText, statusText } from '../projection/labels'
 import { formatRunDuration } from './clock'
+import { iconSvg } from './icons'
 import { STRINGS } from './strings'
 import terminalCss from '../vendor/dsh/ui-chat/src/client/chat/TurnProcessNodeView.module.css'
 
@@ -12,15 +13,23 @@ import terminalCss from '../vendor/dsh/ui-chat/src/client/chat/TurnProcessNodeVi
  *   > span.label（ellipsis 单行）> 时长片段 span.durationNumber（tabular-nums 等宽）
  * 文案规则平移上游：completed → 「已完成，用时 X 秒」；stopped → 「已停止」；
  * 失败 → 状态文案（labels.ts 的 statusText，含处理失败/预算耗尽等）。
- * 偏离（本应用无 Turn process 折叠语义）：不可折叠（无 chevron、disabled 基调）；
  * 状态徽标为组件自有（.pi-terminal-badge，令牌着色；上游无徽标概念，状态由
  * 文案本身区分）；失败附加 errorText 错误行。
+ * 折叠头（对齐上游 Turn process 折叠语义）：collapsible 时渲染为 disclosure
+ * 按钮（aria-expanded + chevron），点击上抛 toggle；折叠体由 TranscriptView
+ * 承载（回合过程行：思考/工具组）。等待交互（awaiting_*）不可折叠。
  */
 const props = defineProps<{
   entry: TerminalEntry
   /** 回合起点（毫秒）；stats 无 duration 时以 起点→终态 计算，同上游 Math.max(1000, …)。 */
   startTs?: number
+  /** 折叠头模式：可点击展开/收起回合过程行。 */
+  collapsible?: boolean
+  /** 折叠体当前是否展开（仅 collapsible 时有意义）。 */
+  expanded?: boolean
 }>()
+
+const emit = defineEmits<{ toggle: [] }>()
 
 const terminal = computed(() => props.entry.terminal)
 const completed = computed(() => terminal.value.status === 'completed')
@@ -67,10 +76,23 @@ const errorMessage = computed(() => {
   if (!error?.message) return ''
   return errorText(error.code, error.message)
 })
+
+const chevron = computed(() =>
+  iconSvg(props.expanded ? 'chevron-up' : 'chevron-down', 14),
+)
 </script>
 
 <template>
-  <div :class="terminalCss.root" data-testid="terminal-row" role="status">
+  <component
+    :is="collapsible ? 'button' : 'div'"
+    :class="terminalCss.root"
+    data-testid="terminal-row"
+    :role="collapsible ? undefined : 'status'"
+    :type="collapsible ? 'button' : undefined"
+    :aria-expanded="collapsible ? String(expanded === true) : undefined"
+    :data-collapsible="collapsible ? 'true' : undefined"
+    @click="collapsible ? emit('toggle') : undefined"
+  >
     <span :class="terminalCss.label" data-testid="terminal-label">
       <template v-if="completed && durationText">{{ STRINGS.turnProcessTook }}<span :class="terminalCss.durationNumber">{{ durationText }}</span></template>
       <template v-else>{{ statusText(terminal.status) }}</template>
@@ -81,8 +103,15 @@ const errorMessage = computed(() => {
       :data-tone="badgeTone"
       data-testid="terminal-badge"
     >{{ statusText(terminal.status) }}</span>
+    <span
+      v-if="collapsible"
+      class="pi-terminal-chevron"
+      data-testid="terminal-chevron"
+      aria-hidden="true"
+      v-html="chevron"
+    />
     <span v-if="errorMessage" class="pi-terminal-error" data-testid="terminal-error">{{ errorMessage }}</span>
-  </div>
+  </component>
 </template>
 
 <style>
@@ -121,5 +150,23 @@ const errorMessage = computed(() => {
   line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 组件自有：折叠头 chevron（上游 Turn process 头部的展开指示）。 */
+button[data-testid='terminal-row'] {
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+}
+
+button[data-testid='terminal-row'] .pi-terminal-chevron {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  color: var(--dsw-alias-label-tertiary, #909094);
+}
+
+button[data-testid='terminal-row'] .pi-terminal-chevron svg {
+  display: block;
 }
 </style>
