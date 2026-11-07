@@ -20,6 +20,7 @@
 | `ui-sidebar/src/client/SidebarRoot.module.css` | 同名上游文件 | 侧栏根布局（logo 行、新会话按钮、滚动区、底部区） |
 | `ui-conversation/src/client/skeleton/ConversationRoot.module.css` | 同名上游文件 | 会话列（头部 76px、滚动体、composer 座位） |
 | `ui-conversation/src/client/skeleton/InputBar.module.css` | 同名上游文件 | 输入卡（圆角面板卡、工具行、发送按钮） |
+| `ui-workspace/src/client/rows/Rows.module.css` | 同名上游文件 | 会话列表行（32px 行、选中/悬停填充、行内重命名输入、时间戳与行操作按钮） |
 
 CSS Modules 类名与选择器零改动；`onboarding.css`、`gradient-shadow-text.css`、
 `shiki.css` 当前未被引用，仅随目录完整保留，后续票据按需引用。

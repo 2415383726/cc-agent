@@ -17,9 +17,11 @@ import { WorkbenchConfig } from './config'
 import {
   DifyConversation,
   UploadedFile,
+  deleteConversation as deleteConversationRequest,
   listConversations,
   listMessages,
   readAgentState,
+  renameConversation as renameConversationRequest,
   stopChat,
   streamChat,
   uploadFile,
@@ -38,6 +40,10 @@ export interface UiState {
   error: string
   conversationId: string
   conversations: DifyConversation[]
+  /** 会话列表加载失败信息；侧栏用它的存在切换到「加载失败重试」态。 */
+  conversationsError: string
+  /** 重命名/删除等列表操作的兜底提示（失败原因），成功时为空。 */
+  actionNote: string
   loadingHistory: boolean
   hasMore: boolean
   firstId: string
@@ -56,6 +62,10 @@ export interface WorkbenchController {
   refreshConversations(): Promise<void>
   loadConversation(id: string): Promise<void>
   newConversation(): void
+  /** 重命名会话；成功 true 并即时更新列表，失败 false 且 actionNote 有兜底提示。 */
+  renameConversation(id: string, name: string): Promise<boolean>
+  /** 删除会话；删除当前会话回到新会话态并丢弃陈旧流结果。 */
+  deleteConversation(id: string): Promise<boolean>
   updateConfig(config: WorkbenchConfig): void
 }
 
@@ -69,6 +79,8 @@ export class DifyController implements WorkbenchController {
     error: '',
     conversationId: '',
     conversations: [],
+    conversationsError: '',
+    actionNote: '',
     loadingHistory: false,
     hasMore: false,
     firstId: '',
@@ -192,9 +204,50 @@ export class DifyController implements WorkbenchController {
   async refreshConversations(): Promise<void> {
     try {
       this.ui.conversations = await listConversations(this.config)
+      this.ui.conversationsError = ''
       this.ui.connected = true
     } catch (error) {
-      this.ui.error = safeError(error)
+      this.ui.conversationsError = safeError(error)
+    }
+  }
+
+  async renameConversation(id: string, name: string): Promise<boolean> {
+    const nextName = String(name || '').trim()
+    if (!id || !nextName) return false
+    this.ui.actionNote = ''
+    try {
+      const updated = await renameConversationRequest(this.config, id, nextName)
+      const existing = this.ui.conversations.find((item) => item.id === id)
+      if (existing) {
+        existing.name = updated.name || nextName
+        if (updated.updatedAt) existing.updatedAt = updated.updatedAt
+      } else {
+        this.ui.conversations.unshift({
+          id,
+          name: updated.name || nextName,
+          updatedAt: updated.updatedAt || Date.now(),
+        })
+      }
+      await this.refreshConversations()
+      return true
+    } catch (error) {
+      this.ui.actionNote = `重命名失败：${safeError(error)}`
+      return false
+    }
+  }
+
+  async deleteConversation(id: string): Promise<boolean> {
+    if (!id) return false
+    this.ui.actionNote = ''
+    try {
+      await deleteConversationRequest(this.config, id)
+      this.ui.conversations = this.ui.conversations.filter((item) => item.id !== id)
+      if (this.ui.conversationId === id) this.newConversation()
+      await this.refreshConversations()
+      return true
+    } catch (error) {
+      this.ui.actionNote = `删除失败：${safeError(error)}`
+      return false
     }
   }
 
@@ -266,6 +319,7 @@ export class DifyController implements WorkbenchController {
     this.ui.firstId = ''
     this.ui.hasMore = false
     this.ui.stoppedNote = ''
+    this.ui.actionNote = ''
   }
 
   private _applyHistory(): void {

@@ -6,9 +6,10 @@ import css from '../vendor/dsh/ui-conversation/src/client/skeleton/ConversationR
  * .header（titleRow：titleCluster + headerActions）→ .body → .scrollBody（时间线
  * 滚动区，default slot）→ .composerSeat（composer 槽）。data-phase="active" 激活
  * 上游的 sticky composer 座位与渐变遮罩；宽度轴变量（--dsh-chat-content-width 等）
- * 随 .body 类生效。回放徽标/场景选择由父级通过 actions 槽注入 headerActions。
+ * 随 .body 类生效。模式徽标/场景选择由父级通过 actions 槽注入 headerActions；
+ * badge 文案由模式决定（回放/实时），置空则不渲染。
  */
-defineProps<{ title?: string }>()
+withDefaults(defineProps<{ title?: string; badge?: string | null }>(), { badge: '回放模式' })
 </script>
 
 <template>
@@ -17,7 +18,7 @@ defineProps<{ title?: string }>()
       <div :class="css.titleRow">
         <div :class="css.titleCluster">
           <div :class="[css.crumb, css.crumbCurrent]">{{ title || 'Pi Chat' }}</div>
-          <span class="pi-replay-badge" data-testid="replay-badge">回放模式</span>
+          <span v-if="badge" class="pi-replay-badge" data-testid="mode-badge">{{ badge }}</span>
         </div>
         <div :class="css.headerActions">
           <slot name="actions" />

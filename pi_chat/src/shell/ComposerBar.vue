@@ -8,13 +8,26 @@ import css from '../vendor/dsh/ui-conversation/src/client/skeleton/InputBar.modu
  * .placeholder（data-composer-placeholder），随后 .row > .tools/.trailing。
  * Lexical 属取材黑名单：文本面用原生 <textarea> 承接同一组 .input 类；
  * textarea 特有判定（block、去边框、去 resize）在组件自有 .pi-composer-textarea。
- * 发送按钮与附件「+」均为视觉占位：发送禁用（逻辑留待后续票据），附件不接逻辑。
+ * 发送按钮：回放基线保持禁用占位；interactive 启用时点击/Enter 触发 send 事件
+ * （实时模式接线属票 07），运行中（busy）禁用。附件「+」仍为视觉占位。
  */
+const props = withDefaults(defineProps<{ interactive?: boolean; busy?: boolean }>(), {
+  interactive: false,
+  busy: false,
+})
+const emit = defineEmits<{ send: [] }>()
 const draft = defineModel<string>({ default: '' })
 const placeholder = '发消息或创建任务，/ 调用指令，@ 文件或对话'
 
 const composing = ref(false)
 const textArea = ref<HTMLTextAreaElement | null>(null)
+
+function trySend(): void {
+  if (!props.interactive || props.busy || composing.value) return
+  const text = draft.value.trim()
+  if (!text) return
+  emit('send')
+}
 
 /* 近似 Harness 草稿面的自动增高：随内容抬升，滚动上限交给 .scroll 的 14 行帽。 */
 function autoGrow(): void {
@@ -42,6 +55,7 @@ watch(draft, () => nextTick(autoGrow))
             :aria-disabled="false"
             @compositionstart="composing = true"
             @compositionend="composing = false"
+            @keydown.enter.exact.prevent="trySend"
           />
           <!-- 上游以 CSS 在 IME 组词期隐藏占位（.input[data-composer-composing] +
                .placeholder）；此处在组词期直接不渲染，可观察行为一致。 -->
@@ -72,8 +86,9 @@ watch(draft, () => nextTick(autoGrow))
             type="button"
             :class="css.primary"
             data-testid="composer-send"
-            aria-label="发送（回放模式占位）"
-            disabled
+            :aria-label="interactive ? '发送' : '发送（回放模式占位）'"
+            :disabled="!interactive || busy"
+            @click="trySend"
           >
             <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
               <path d="M8.3125 0.980183C8.66767 1.0531 8.97902 1.20418 9.2627 1.43233C9.48724 1.61297 9.73029 1.85793 9.97949 2.10714L14.707 6.83468L13.293 8.24874L9 3.95577V15.0417H7V3.95577L2.70703 8.24874L1.29297 6.83468L6.02051 2.10714C6.26971 1.85793 6.51277 1.61297 6.7373 1.43233C6.97662 1.23986 7.28445 1.04402 7.6875 0.980183C7.8973 0.947006 8.1031 0.95516 8.3125 0.980183Z" fill="currentColor" />
