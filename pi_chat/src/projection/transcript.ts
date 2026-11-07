@@ -555,6 +555,7 @@ export function applyEvent(view: TranscriptView, event: DisplayEvent): void {
       }
       view.terminal = terminal
       view.running = false
+      finalizeStreaming(view)
       if (terminal.answer) mergeTerminalAnswer(view, terminal.answer)
       if (terminal.status !== 'awaiting_user' && terminal.status !== 'awaiting_approval') {
         const terminalId = `terminal_${event.run_id}`
@@ -586,6 +587,7 @@ export function applyEvent(view: TranscriptView, event: DisplayEvent): void {
       }
       view.terminal = terminal
       view.running = false
+      finalizeStreaming(view)
       view.entries.push({
         id: `terminal_${event.run_id}_failed`,
         kind: 'terminal',
@@ -619,6 +621,21 @@ export function applyEvent(view: TranscriptView, event: DisplayEvent): void {
     }
     default:
       view.ignored += 1
+  }
+}
+
+/**
+ * 终态清扫：运行结束时，所有仍处于流式态的条目（思考/消息）与仍在运行的
+ * 工具一律定格。推理流可能没有配对的 reasoning.end（答案开始即隐式结束、
+ * 停止/失败中断），不清扫会留下永远走表的「深度求索中」行。
+ */
+function finalizeStreaming(view: TranscriptView): void {
+  for (const entry of view.entries) {
+    if (entry.kind === 'reasoning' && entry.streaming) entry.streaming = false
+    if (entry.kind === 'message' && entry.streaming) entry.streaming = false
+    if (entry.kind === 'tool' && (entry as ToolEntry).status === 'running') {
+      ;(entry as ToolEntry).status = 'unknown'
+    }
   }
 }
 

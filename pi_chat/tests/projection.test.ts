@@ -125,3 +125,40 @@ describe('附件安全元数据标签（formatFileSize）', () => {
     expect(formatFileSize(Number.NaN)).toBe('未知大小')
   })
 })
+
+describe('terminal streaming sweep（终态清扫流式态）', () => {
+  it('run.state 完成时定格缺失 reasoning.end 的思考行', () => {
+    const view = newView()
+    applyEvent(view, event('run.start'))
+    applyEvent(view, event('reasoning.start', { reasoning_id: 'r1' }))
+    applyEvent(view, event('reasoning.delta', { reasoning_id: 'r1', delta: '推理中' }))
+    // 无 reasoning.end，答案直接开始并完成（deepseek 隐式结束形态）
+    applyEvent(view, event('message.start', { message_id: 'm1' }))
+    applyEvent(view, event('message.delta', { message_id: 'm1', delta: '答案' }))
+    applyEvent(view, event('run.state', { status: 'completed', answer: '答案', stats: {} }))
+    const reasoning = view.entries.find((entry) => entry.kind === 'reasoning') as any
+    expect(reasoning.streaming).toBe(false)
+  })
+
+  it('run.state 完成时把仍在运行的工具定格为 unknown', () => {
+    const view = newView()
+    applyEvent(view, event('run.start'))
+    applyEvent(view, event('tool.start', { tool_call_id: 'c1', name: 'bash', arguments: {} }))
+    applyEvent(view, event('run.state', { status: 'stopped', answer: '', stats: {} }))
+    const tool = view.entries.find((entry) => entry.kind === 'tool') as any
+    expect(tool.status).toBe('unknown')
+  })
+
+  it('agent_failed 同样清扫流式态', () => {
+    const view = newView()
+    applyEvent(view, event('run.start'))
+    applyEvent(view, event('reasoning.start', { reasoning_id: 'r1' }))
+    applyEvent(view, event('reasoning.delta', { reasoning_id: 'r1', delta: '推理中' }))
+    applyEvent(view, event('message.start', { message_id: 'm1' }))
+    applyEvent(view, event('agent_failed', { code: 'agent_failed', stage: 'runtime', message: '失败' }))
+    const reasoning = view.entries.find((entry) => entry.kind === 'reasoning') as any
+    const message = view.entries.find((entry) => entry.kind === 'message' && (entry as any).role === 'assistant') as any
+    expect(reasoning.streaming).toBe(false)
+    expect(message.streaming).toBe(false)
+  })
+})
