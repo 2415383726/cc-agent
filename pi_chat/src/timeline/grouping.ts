@@ -41,9 +41,12 @@ export type TimelineSegment =
     running: boolean
   }
 
-/** 是否折入工具组的条目类型。 */
+/** 是否折入工具组的条目类型。visualize 卡片（带 visual 载荷）独立呈现，不折组。 */
 function isGroupable(entry: WorkbenchEntry): entry is GroupMember {
-  return entry.kind === 'tool' || entry.kind === 'skill' || entry.kind === 'compaction'
+  if (entry.kind === 'tool') {
+    return (entry as ToolEntry).visual === undefined
+  }
+  return entry.kind === 'skill' || entry.kind === 'compaction'
 }
 
 /** 类别计数（按条目数；技能行计入 tools，压缩行不计数——上游压缩标记在组外）。 */

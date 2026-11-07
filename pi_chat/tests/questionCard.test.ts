@@ -4,7 +4,12 @@ import QuestionCard from '../src/cards/QuestionCard.vue'
 import { parseRecommendedLabel } from '../src/cards/questionDraft'
 import type { QuestionEntry, Questionnaire } from '../src/projection/transcript'
 
-const BASE_TS = new Date('2026-11-07T10:00:00').getTime()
+// 相对日期：跨天运行不改变「同日只显示时钟」的行为（BASE_TS 原为固定日期，会在日期翻转后失效）。
+const BASE_TS = (() => {
+  const today = new Date()
+  today.setHours(10, 0, 0, 0)
+  return today.getTime()
+})()
 
 /* 问卷夹具平移自 pi_workbench tests/components.test.ts 的 AskUserForm 半区
    （single/multi/text 三型 + 必填 + min/max），id 契约与 pi_dify 一致。 */

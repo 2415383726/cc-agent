@@ -24,7 +24,7 @@ Dify AgentStrategy
   └─ PiAgentRuntime (one worker thread + one event loop per request)
        ├─ PiHarness (pinned 0.6.0) + Pi core loop
        ├─ DifyModelStream  → current Dify model only
-       ├─ ToolRuntime      → Dify tools, remote MCP, internal ask/skill tools
+       ├─ ToolRuntime      → Dify tools, remote MCP, internal ask/skill/visualize tools
        ├─ RunLedger        → one budget for models, tools, retries, summaries
        ├─ piagent-state:v1:gzip-base64: (Dify agent_state)
        └─ DisplayEvents    → Dify LOG JSON + final Dify text + state variable
@@ -124,7 +124,8 @@ skills:
 ```
 
 Skills are discovered from `skills/*/SKILL.md` (this package ships the
-opt-in `pi-agent-help` builtin, hidden from the model) and from
+opt-in `pi-agent-help` builtin, hidden from the model, and the `visualize`
+authoring contract for the card tool) and from
 `app_skills_yaml`. They are
 checked for eligibility against the current tool set, activated by the user
 (`/skill:name ...`) or the model (`activate_skill`), and read through bounded,

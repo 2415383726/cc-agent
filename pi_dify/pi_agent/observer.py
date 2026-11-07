@@ -203,6 +203,13 @@ class DisplayObserver:
             fields["approval"] = details["approval"]
         if details.get("questionnaire"):
             fields["questionnaire"] = details["questionnaire"]
+        # Visualize cards: the fragment rides `visual`, exempt from the
+        # display_result_chars clip (the tool's own lint caps it; the event
+        # envelope applies the larger visual budget). `result` stays the
+        # one-line confirmation.
+        visual = details.get("visual")
+        if fields["name"] == "visualize" and isinstance(visual, dict):
+            fields["visual"] = visual
         self._push("tool.end", fields)
 
     def _flush_text(self) -> None:

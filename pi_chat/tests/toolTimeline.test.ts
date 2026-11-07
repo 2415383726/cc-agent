@@ -8,7 +8,12 @@ import SkillRow from '../src/timeline/SkillRow.vue'
 import CompactionRow from '../src/timeline/CompactionRow.vue'
 import type { CompactionEntry, SkillEntry, ToolEntry, WorkbenchEntry } from '../src/projection/transcript'
 
-const BASE_TS = new Date('2026-11-07T10:00:00').getTime()
+// 相对日期：跨天运行不改变「同日只显示时钟」的行为（BASE_TS 原为固定日期，会在日期翻转后失效）。
+const BASE_TS = (() => {
+  const today = new Date()
+  today.setHours(10, 0, 0, 0)
+  return today.getTime()
+})()
 
 function toolEntry(partial: Partial<ToolEntry>): ToolEntry {
   return {

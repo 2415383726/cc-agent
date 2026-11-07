@@ -23,6 +23,12 @@ from .interaction import (
     public_questionnaire,
 )
 from .mcp import McpRuntime
+from .visualize import (
+    TOOL_DESCRIPTION,
+    VISUALIZE_SCHEMA,
+    VISUALIZE_TOOL_NAME,
+    visualize_outcome,
+)
 from .skills import SkillCatalog
 
 try:  # pragma: no cover - Dify SDK types are present in the plugin runtime
@@ -376,6 +382,23 @@ class ToolRuntime:
                     "status": "ok",
                 },
             )
+        if spec.name == VISUALIZE_TOOL_NAME:
+            try:
+                outcome_fields = visualize_outcome(
+                    arguments, max_fragment_chars=self.config.visualize_max_fragment_chars
+                )
+            except PiError as exc:
+                self.ledger.record_tool(True, len(exc.message))
+                return ToolOutcome(
+                    text=exc.message,
+                    details={"kind": "visualize", "status": "error"},
+                    is_error=True,
+                )
+            self.ledger.record_tool(False, len(outcome_fields["text"]))
+            return ToolOutcome(
+                text=outcome_fields["text"],
+                details=outcome_fields["details"],
+            )
         return ToolOutcome(
             text=f"Unknown internal tool {spec.name}.", details={"status": "error"}, is_error=True
         )
@@ -524,6 +547,13 @@ def build_specs(dify_tools: list[Any], mcp: McpRuntime | None) -> list[ToolSpec]
             parameters=READ_SKILL_SCHEMA,
             source="internal",
             original_name="read_skill_resource",
+        ),
+        ToolSpec(
+            name=VISUALIZE_TOOL_NAME,
+            description=TOOL_DESCRIPTION,
+            parameters=VISUALIZE_SCHEMA,
+            source="internal",
+            original_name=VISUALIZE_TOOL_NAME,
         ),
     ]
     used = {spec.name for spec in specs}

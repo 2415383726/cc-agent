@@ -81,6 +81,14 @@ export interface ReasoningEntry extends BaseEntry {
   streaming: boolean
 }
 
+/** `tool.end` 的 visual 载荷（visualize 卡片）：片段由渲染侧沙箱化呈现。 */
+export interface VisualPayload {
+  fragment: string
+  title: string
+  mode: string
+  size_bytes?: number
+}
+
 export interface ToolEntry extends BaseEntry {
   kind: 'tool'
   callId: string
@@ -94,6 +102,8 @@ export interface ToolEntry extends BaseEntry {
   executionOutcome: string
   durationMs?: number
   businessRef?: string
+  /** visualize 工具的卡片载荷；其余工具为 undefined。 */
+  visual?: VisualPayload
 }
 
 export interface SkillEntry extends BaseEntry {
@@ -378,6 +388,7 @@ export function applyEvent(view: TranscriptView, event: DisplayEvent): void {
       entry.executionOutcome = String(event.execution_outcome || '')
       entry.durationMs = typeof event.duration_ms === 'number' ? event.duration_ms : undefined
       entry.businessRef = event.business_ref ? String(event.business_ref) : undefined
+      entry.visual = parseVisual(event.visual)
       return
     }
     case 'skill.activate': {
@@ -703,6 +714,23 @@ function findMessage(
       (candidate): candidate is MessageEntry =>
         candidate.kind === 'message' && candidate.role === role && candidate.streaming,
     )
+}
+
+/**
+ * Structurally narrow the wire `visual` payload (values cross the wire).
+ * `fragment` is load-bearing — malformed or absent payloads drop to undefined
+ * so the entry degrades to a plain tool result card instead of a broken frame.
+ */
+function parseVisual(value: unknown): VisualPayload | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const item = value as { fragment?: unknown; title?: unknown; mode?: unknown; size_bytes?: unknown }
+  if (typeof item.fragment !== 'string' || item.fragment.trim() === '') return undefined
+  return {
+    fragment: item.fragment,
+    title: typeof item.title === 'string' && item.title.trim() !== '' ? item.title : 'Visualization',
+    mode: item.mode === 'wide' ? 'wide' : 'inline',
+    size_bytes: typeof item.size_bytes === 'number' ? item.size_bytes : undefined,
+  }
 }
 
 function findTool(view: TranscriptView, callId: string): ToolEntry | undefined {

@@ -5,7 +5,12 @@ import { railItems, type TurnRailItem } from '../src/timeline/rail'
 import { turnViews } from '../src/timeline/grouping'
 import type { MessageEntry, TerminalEntry, WorkbenchEntry } from '../src/projection/transcript'
 
-const BASE_TS = new Date('2026-11-07T10:00:00').getTime()
+// 相对日期：跨天运行不改变「同日只显示时钟」的行为（BASE_TS 原为固定日期，会在日期翻转后失效）。
+const BASE_TS = (() => {
+  const today = new Date()
+  today.setHours(10, 0, 0, 0)
+  return today.getTime()
+})()
 
 function messageEntry(partial: Partial<MessageEntry>): MessageEntry {
   return {

@@ -9,6 +9,7 @@ import TerminalRow from './TerminalRow.vue'
 import ToolCard from './ToolCard.vue'
 import ToolGroupRow from './ToolGroupRow.vue'
 import UserMessage from './UserMessage.vue'
+import VisualizationCard from './VisualizationCard.vue'
 import QuestionCard from '../cards/QuestionCard.vue'
 import ApprovalCard from '../cards/ApprovalCard.vue'
 import { groupTimeline, groupTitle, turnViews, type TurnView } from './grouping'
@@ -23,6 +24,7 @@ import type {
   QuestionEntry,
   ReasoningEntry,
   TerminalEntry,
+  ToolEntry,
   WorkbenchEntry,
 } from '../projection/transcript'
 
@@ -128,6 +130,13 @@ const turnTail = (turn: TurnView): { text: string; time: number } | null => {
           <UserMessage v-if="isUser(segment.entry)" :entry="segment.entry as MessageEntry" />
 
           <AssistantMessage v-else-if="isAssistant(segment.entry)" :entry="segment.entry as MessageEntry" />
+
+          <!-- visualize 卡：沙箱化交互卡片，内容行（折叠时不随过程行隐藏）；
+               片段缺失（历史截断等）时卡片内降级为占位说明。 -->
+          <VisualizationCard
+            v-else-if="segment.entry.kind === 'tool' && (segment.entry as ToolEntry).name === 'visualize'"
+            :entry="segment.entry as ToolEntry"
+          />
 
           <ReasoningRow v-else-if="segment.entry.kind === 'reasoning'" :entry="segment.entry as ReasoningEntry" />
 

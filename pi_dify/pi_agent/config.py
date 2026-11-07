@@ -93,6 +93,7 @@ class RuntimeConfig:
     auto_compact: bool = True
     state_max_encoded_bytes: int = 190_000
     display_max_events: int = 400
+    visualize_max_fragment_chars: int = 40_000
     max_duplicate_tool_calls: int = 2
     max_consecutive_errors: int = 3
     approval_mode: str = "configured"
@@ -169,6 +170,7 @@ class RuntimeConfig:
                     "compaction_keep_recent_tokens",
                     "state_max_encoded_bytes",
                     "display_max_events",
+                    "visualize_max_fragment_chars",
                     "max_duplicate_tool_calls",
                     "max_consecutive_errors",
                     "max_questions",

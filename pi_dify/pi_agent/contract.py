@@ -100,6 +100,10 @@ class DisplayEvents:
     emitted: int = 0
     max_events: int = 400
     max_bytes: int = MAX_EVENT_BYTES
+    # `tool.end` events carrying a `visual` payload (the visualize card's
+    # fragment) get a larger ceiling: the fragment is the deliverable, and the
+    # tool's own lint caps it well below this envelope.
+    max_visual_bytes: int = 131_072
     dropped: int = 0
 
     def make(self, event_type: str, **fields: Any) -> dict[str, Any]:
@@ -118,8 +122,9 @@ class DisplayEvents:
         return self.fit(payload)
 
     def fit(self, payload: dict[str, Any]) -> dict[str, Any]:
+        limit = self.max_visual_bytes if "visual" in payload else self.max_bytes
         encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str)
-        if len(encoded.encode("utf-8")) <= self.max_bytes:
+        if len(encoded.encode("utf-8")) <= limit:
             return payload
         trimmed = dict(payload)
         for key in ("result", "output", "answer", "text", "arguments", "questions", "content"):
