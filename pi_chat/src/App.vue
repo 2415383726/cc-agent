@@ -1,12 +1,17 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { ReplayController } from './replay/controller'
 import { scenarioById } from './replay/scenarios'
+import { DifyController } from './dify/controller'
+import { defaultConfig, saveSessionCredentials } from './dify/config'
+import type { SessionCredentials } from './dify/config'
 import { statusText, toolStatusText } from './projection/labels'
 import AppShell from './shell/AppShell.vue'
 import SidebarRail from './shell/SidebarRail.vue'
 import ConversationColumn from './shell/ConversationColumn.vue'
 import ComposerBar from './shell/ComposerBar.vue'
+import ConnectionForm from './shell/ConnectionForm.vue'
+import LiveConversation from './shell/LiveConversation.vue'
 import AssistantMessage from './timeline/AssistantMessage.vue'
 import NoteRow from './timeline/NoteRow.vue'
 import ReasoningRow from './timeline/ReasoningRow.vue'
@@ -45,8 +50,62 @@ const view = computed(() => replay.view)
 const scenarioTitle = computed(
   () => replay.scenarios.find((scenario) => scenario.id === selectedId.value)?.title || 'Pi Chat',
 )
-/* composer 草稿只停留在本地（回放不发消息）；发送逻辑留待后续票据。 */
+/* composer 草稿只停留在本地（回放不发消息）；实时模式发送由 DifyController 承接。 */
 const draft = ref('')
+
+/* 实时模式（票 07）：默认仍是回放；点「连接 Dify」惰性创建 DifyController。 */
+const mode = ref<'replay' | 'live'>('replay')
+const live = shallowRef<DifyController | null>(null)
+const liveDraft = ref('')
+
+const modeBadge = computed(() => {
+  if (mode.value === 'replay') return '回放模式'
+  const controller = live.value
+  return controller?.ui.connected ? '实时模式' : '实时模式（未连接）'
+})
+
+const liveTitle = computed(() => {
+  if (mode.value === 'replay') return scenarioTitle.value
+  const controller = live.value
+  if (!controller) return 'Pi Chat'
+  if (!controller.ui.conversationId) return '新会话'
+  const found = controller.ui.conversations.find((item) => item.id === controller.ui.conversationId)
+  return found?.name || '当前会话'
+})
+
+const liveInteractive = computed(
+  () => mode.value === 'live' && Boolean(live.value?.ui.connected) && !live.value?.ui.running,
+)
+
+function enterLive(): void {
+  if (!live.value) {
+    const config = defaultConfig()
+    const controller = reactive(new DifyController(config)) as DifyController
+    live.value = controller
+    if (config.apiKey) void controller.refreshConversations()
+  }
+  mode.value = 'live'
+}
+
+function backToReplay(): void {
+  mode.value = 'replay'
+}
+
+async function onConnect(credentials: SessionCredentials): Promise<void> {
+  const controller = live.value
+  if (!controller) return
+  controller.updateConfig({ ...credentials })
+  saveSessionCredentials({ ...credentials })
+  await controller.refreshConversations()
+}
+
+async function onLiveSend(): Promise<void> {
+  const controller = live.value
+  if (!controller) return
+  const text = liveDraft.value
+  liveDraft.value = ''
+  await controller.send(text)
+}
 
 function onScenarioChange(event: Event): void {
   const id = (event.target as HTMLSelectElement).value
@@ -154,24 +213,48 @@ const firstEntryTs = computed(() => view.value.entries[0]?.ts)
 <template>
   <AppShell>
     <template #sidebar>
-      <SidebarRail />
+      <SidebarRail :controller="mode === 'live' ? live : null" />
     </template>
-    <ConversationColumn ref="column" :title="scenarioTitle">
+    <ConversationColumn ref="column" :title="liveTitle" :badge="modeBadge">
       <template #actions>
-        <label class="pi-replay-select">
-          回放场景
-          <select :value="selectedId" aria-label="回放场景" @change="onScenarioChange">
-            <option v-for="scenario in replay.scenarios" :key="scenario.id" :value="scenario.id">
-              {{ scenario.title }}
-            </option>
-          </select>
-        </label>
+        <template v-if="mode === 'live'">
+          <button type="button" class="pi-mode-button" data-testid="back-replay" @click="backToReplay">回放模式</button>
+          <button
+            v-if="live && live.ui.running"
+            type="button"
+            class="pi-mode-button"
+            data-testid="live-stop"
+            @click="live.stop()"
+          >
+            停止
+          </button>
+        </template>
+        <template v-else>
+          <button type="button" class="pi-mode-button" data-testid="enter-live" @click="enterLive">连接 Dify</button>
+          <label class="pi-replay-select">
+            回放场景
+            <select :value="selectedId" aria-label="回放场景" @change="onScenarioChange">
+              <option v-for="scenario in replay.scenarios" :key="scenario.id" :value="scenario.id">
+                {{ scenario.title }}
+              </option>
+            </select>
+          </label>
+        </template>
       </template>
 
-      <p v-if="replay.ui.error" role="alert">{{ replay.ui.error }}</p>
-      <ul v-if="view.warnings.length" aria-label="警告">
-        <li v-for="warning in view.warnings" :key="warning">{{ warning }}</li>
-      </ul>
+      <ConnectionForm
+        v-if="mode === 'live' && live && !live.ui.connected"
+        @connect="onConnect"
+      />
+      <LiveConversation
+        v-else-if="mode === 'live' && live"
+        :controller="live"
+      />
+      <template v-else>
+        <p v-if="replay.ui.error" role="alert">{{ replay.ui.error }}</p>
+        <ul v-if="view.warnings.length" aria-label="警告">
+          <li v-for="warning in view.warnings" :key="warning">{{ warning }}</li>
+        </ul>
 
       <p v-if="!view.entries.length">选择一个回放场景查看过程事件。</p>
       <ol v-else class="pi-timeline" aria-label="会话记录">
@@ -209,9 +292,17 @@ const firstEntryTs = computed(() => view.value.entries[0]?.ts)
           </template>
         </li>
       </ol>
+      </template>
 
       <template #composer>
-        <ComposerBar v-model="draft" />
+        <ComposerBar
+          v-if="mode === 'live'"
+          v-model="liveDraft"
+          :interactive="liveInteractive"
+          :busy="Boolean(live?.ui.running)"
+          @send="onLiveSend"
+        />
+        <ComposerBar v-else v-model="draft" />
       </template>
     </ConversationColumn>
   </AppShell>
@@ -266,5 +357,25 @@ const firstEntryTs = computed(() => view.value.entries[0]?.ts)
 
 .pi-replay-select select:hover:not(:disabled) {
   background-color: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.04));
+}
+
+/* 组件自有（非 vendor）：headerActions 里的模式切换按钮，几何对齐 28px 图标行。 */
+.pi-mode-button {
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--dsw-radius-sm, 8px);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, #545557);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pi-mode-button:hover {
+  background-color: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.04));
+  color: var(--dsw-alias-label-primary, #0b0b0c);
 }
 </style>
