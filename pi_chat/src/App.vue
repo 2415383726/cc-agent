@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ReplayController } from './replay/controller'
 import { scenarioById } from './replay/scenarios'
-import { statusText, toolStatusText } from './projection/labels'
+import { statusText } from './projection/labels'
 import AppShell from './shell/AppShell.vue'
 import SidebarRail from './shell/SidebarRail.vue'
 import ConversationColumn from './shell/ConversationColumn.vue'
@@ -12,26 +12,28 @@ import NoteRow from './timeline/NoteRow.vue'
 import ReasoningRow from './timeline/ReasoningRow.vue'
 import TerminalRow from './timeline/TerminalRow.vue'
 import UserMessage from './timeline/UserMessage.vue'
+import CompactionRow from './timeline/CompactionRow.vue'
+import SkillRow from './timeline/SkillRow.vue'
+import ToolCard from './timeline/ToolCard.vue'
+import ToolGroupRow from './timeline/ToolGroupRow.vue'
+import { groupTimeline, groupTitle } from './timeline/grouping'
 import { ScrollFollow, scrollMetrics } from './timeline/scrollFollow'
 import type {
   ApprovalEntry,
-  CompactionEntry,
   MessageEntry,
   NoteEntry,
   QuestionEntry,
   ReasoningEntry,
-  SkillEntry,
   TerminalEntry,
-  ToolEntry,
   WorkbenchEntry,
 } from './projection/transcript'
 
 /*
  * Binding seam: both controllers are framework-agnostic pure TS. This shell is
  * the only Vue-aware layer — it wraps the controller in reactive() and reads
- * view/ui as plain data. 时间线四类消息条目（用户/助手/思考/终态）由
- * timeline/ 下的 Harness 同族组件渲染；工具/技能/压缩/问卷/审批仍是占位
- * （票据 04/05/06 接管）。自动吸底：读者未向上滚离底部时，新内容保持贴底
+ * view/ui as plain data. 时间线条目由 timeline/ 下的 Harness 同族组件渲染：
+ * 消息四类（票据 03）+ 工具折叠卡/分组/技能行/压缩行（票据 04）；问卷/审批卡
+ * 仍是占位（票据 05/06 接管）。自动吸底：读者未向上滚离底部时，新内容保持贴底
  * （timeline/scrollFollow.ts，上游 use-scroll-follow 的 best-effort 平移）。
  */
 const replay = reactive(new ReplayController()) as ReplayController
@@ -94,14 +96,13 @@ const isUser = (entry: WorkbenchEntry): boolean =>
 const isAssistant = (entry: WorkbenchEntry): boolean =>
   entry.kind === 'message' && (entry as MessageEntry).role === 'assistant'
 
+/* 连续 tool/skill/compaction 折入可折叠组（票据 04）；分组与组头标题拼装是纯函数。 */
+const segments = computed(() => groupTimeline(view.value.entries, view.value.running))
+const groupActivity = (segment: Extract<typeof segments.value[number], { kind: 'tool-group' }>): string =>
+  segment.running ? segment.counts[0]?.kind ?? 'tools' : segment.counts[0]?.kind ?? 'thinking'
+
 function entryLabel(entry: WorkbenchEntry): string {
   switch (entry.kind) {
-    case 'tool':
-      return '工具'
-    case 'skill':
-      return '技能'
-    case 'compaction':
-      return '上下文压缩'
     case 'question':
       return '问卷'
     case 'approval':
@@ -109,20 +110,6 @@ function entryLabel(entry: WorkbenchEntry): string {
     default:
       return entry.kind
   }
-}
-
-function skillText(entry: SkillEntry): string {
-  if (entry.action === 'read') {
-    return `${entry.skill} · 读取 ${entry.path || ''}`
-  }
-  return `${entry.skill} · 已激活`
-}
-
-function compactionText(entry: CompactionEntry): string {
-  const parts: string[] = []
-  if (typeof entry.tokensBefore === 'number') parts.push(`压缩前 ${entry.tokensBefore} tokens`)
-  if (typeof entry.summaryChars === 'number') parts.push(`摘要 ${entry.summaryChars} 字符`)
-  return parts.join(' · ') || (entry.phase === 'start' ? '开始压缩' : '压缩完成')
 }
 
 function questionText(entry: QuestionEntry): string {
@@ -137,16 +124,8 @@ function approvalText(entry: ApprovalEntry): string {
   return `${entry.tool} · ${statusText(entry.status)}`
 }
 
-function resultText(entry: ToolEntry): string {
-  const parts: string[] = []
-  if (entry.updates.length) parts.push(entry.updates.join('\n'))
-  if (entry.result) parts.push(entry.result)
-  return parts.join('\n')
-}
-
 const isPlaceholder = (entry: WorkbenchEntry): boolean =>
-  entry.kind === 'tool' || entry.kind === 'skill' || entry.kind === 'compaction'
-  || entry.kind === 'question' || entry.kind === 'approval'
+  entry.kind === 'question' || entry.kind === 'approval'
 
 const firstEntryTs = computed(() => view.value.entries[0]?.ts)
 </script>
@@ -175,39 +154,49 @@ const firstEntryTs = computed(() => view.value.entries[0]?.ts)
 
       <p v-if="!view.entries.length">选择一个回放场景查看过程事件。</p>
       <ol v-else class="pi-timeline" aria-label="会话记录">
-        <li v-for="entry in view.entries" :key="`${entry.kind}:${entry.id}`">
-          <UserMessage v-if="isUser(entry)" :entry="entry as MessageEntry" />
+        <template v-for="segment in segments" :key="segment.kind === 'tool-group' ? segment.id : `${segment.entry.kind}:${segment.entry.id}`">
+          <li v-if="segment.kind === 'single'">
+            <UserMessage v-if="isUser(segment.entry)" :entry="segment.entry as MessageEntry" />
 
-          <AssistantMessage v-else-if="isAssistant(entry)" :entry="entry as MessageEntry" />
+            <AssistantMessage v-else-if="isAssistant(segment.entry)" :entry="segment.entry as MessageEntry" />
 
-          <ReasoningRow v-else-if="entry.kind === 'reasoning'" :entry="entry as ReasoningEntry" />
+            <ReasoningRow v-else-if="segment.entry.kind === 'reasoning'" :entry="segment.entry as ReasoningEntry" />
 
-          <TerminalRow
-            v-else-if="entry.kind === 'terminal'"
-            :entry="entry as TerminalEntry"
-            :start-ts="firstEntryTs"
-          />
+            <TerminalRow
+              v-else-if="segment.entry.kind === 'terminal'"
+              :entry="segment.entry as TerminalEntry"
+              :start-ts="firstEntryTs"
+            />
 
-          <NoteRow v-else-if="entry.kind === 'note'" :entry="entry as NoteEntry" />
+            <NoteRow v-else-if="segment.entry.kind === 'note'" :entry="segment.entry as NoteEntry" />
 
-          <!-- 工具卡/技能/压缩（票据 04）与问卷/审批卡（票据 05/06）保持占位渲染。 -->
-          <template v-else-if="isPlaceholder(entry)">
-            <strong>{{ entryLabel(entry) }}</strong>
-            <template v-if="entry.kind === 'tool'">
-              <span> · {{ (entry as ToolEntry).name }} · {{ toolStatusText((entry as ToolEntry).status) }}</span>
-              <pre>{{ JSON.stringify((entry as ToolEntry).args) }}</pre>
-              <p v-if="resultText(entry as ToolEntry)">{{ resultText(entry as ToolEntry) }}</p>
+            <!-- 问卷/审批卡（票据 05/06）保持占位渲染。 -->
+            <template v-else-if="isPlaceholder(segment.entry)">
+              <strong>{{ entryLabel(segment.entry) }}</strong>
+              <p v-if="segment.entry.kind === 'question'">{{ questionText(segment.entry as QuestionEntry) }}</p>
+              <p v-else-if="segment.entry.kind === 'approval'">{{ approvalText(segment.entry as ApprovalEntry) }}</p>
             </template>
-            <p v-else-if="entry.kind === 'skill'">{{ skillText(entry as SkillEntry) }}</p>
-            <p v-else-if="entry.kind === 'compaction'">{{ compactionText(entry as CompactionEntry) }}</p>
-            <p v-else-if="entry.kind === 'question'">{{ questionText(entry as QuestionEntry) }}</p>
-            <p v-else-if="entry.kind === 'approval'">{{ approvalText(entry as ApprovalEntry) }}</p>
-          </template>
 
-          <template v-else>
-            <strong>{{ entry.kind }}</strong>
-          </template>
-        </li>
+            <template v-else>
+              <strong>{{ segment.entry.kind }}</strong>
+            </template>
+          </li>
+
+          <!-- 工具活动组（票据 04）：连续 tool/skill/compaction 折入同一折叠组。 -->
+          <li v-else>
+            <ToolGroupRow
+              :label="groupTitle(segment.counts, segment.running)"
+              :activity="groupActivity(segment)"
+              :running="segment.running"
+            >
+              <template v-for="member in segment.entries" :key="`${member.kind}:${member.id}`">
+                <ToolCard v-if="member.kind === 'tool'" :entry="member" />
+                <SkillRow v-else-if="member.kind === 'skill'" :entry="member" />
+                <CompactionRow v-else-if="member.kind === 'compaction'" :entry="member" />
+              </template>
+            </ToolGroupRow>
+          </li>
+        </template>
       </ol>
 
       <template #composer>
