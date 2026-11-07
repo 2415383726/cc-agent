@@ -62,6 +62,18 @@ class SkillCatalogTests(unittest.TestCase):
         with self.assertRaises(PiError):
             normalize_skill_path("a\\..\\b")
 
+    def test_builtin_visualize_skill_is_model_listed(self) -> None:
+        """visualize authoring contract ships as a builtin: model-visible and user-invocable."""
+        from pathlib import Path
+
+        builtin = Path(__file__).resolve().parent.parent / "skills"
+        catalog = SkillCatalog.load(builtin_dir=builtin, available_tools=set())
+        self.assertIn("visualize", catalog.eligible_names())
+        self.assertIn("visualize", catalog.system_section())
+        activation = catalog.activate("visualize", activated_by="model")
+        self.assertIn("zero network access", activation.text)
+        self.assertIn(".btn", activation.text)
+
     def test_builtin_help_skill_is_discovered_but_not_model_listed(self) -> None:
         from pathlib import Path
 
