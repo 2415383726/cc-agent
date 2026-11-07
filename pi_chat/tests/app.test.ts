@@ -51,11 +51,32 @@ describe('pi_chat replay shell', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
-  it('composer 只有禁用占位，回放模式不发消息', async () => {
+  it('应用壳为三区布局：侧栏轨道、时间线滚动区、composer 区', async () => {
     const wrapper = mount(App)
     await flushPromises()
-    const input = wrapper.find('input')
-    expect(input.exists()).toBe(true)
-    expect(input.attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-zone="sidebar"]').exists()).toBe(true)
+    const timeline = wrapper.find('[data-zone="timeline"]')
+    expect(timeline.exists()).toBe(true)
+    expect(timeline.find('[aria-label="会话记录"]').exists()).toBe(true)
+    const composer = wrapper.find('[data-zone="composer"]')
+    expect(composer.exists()).toBe(true)
+    expect(wrapper.text()).toContain('新会话')
+    expect(wrapper.text()).toContain('回放模式')
+  })
+
+  it('composer 可输入文本，发送为禁用占位，输入不发网络请求', async () => {
+    const wrapper = mount(App)
+    await flushPromises()
+    const textarea = wrapper.find('[data-zone="composer"] textarea')
+    expect(textarea.exists()).toBe(true)
+    expect(textarea.attributes('disabled')).toBeUndefined()
+    await textarea.setValue('你好，pi chat')
+    expect((textarea.element as HTMLTextAreaElement).value).toBe('你好，pi chat')
+    expect(wrapper.text()).not.toContain('回放模式不允许网络请求')
+
+    const send = wrapper.find('[data-zone="composer"] [data-testid="composer-send"]')
+    expect(send.exists()).toBe(true)
+    expect(send.attributes('disabled')).toBeDefined()
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 })

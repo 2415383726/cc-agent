@@ -3,6 +3,10 @@ import { computed, reactive, ref } from 'vue'
 import { ReplayController } from './replay/controller'
 import { scenarioById } from './replay/scenarios'
 import { errorText, statusText, toolStatusText } from './projection/labels'
+import AppShell from './shell/AppShell.vue'
+import SidebarRail from './shell/SidebarRail.vue'
+import ConversationColumn from './shell/ConversationColumn.vue'
+import ComposerBar from './shell/ComposerBar.vue'
 import type {
   ApprovalEntry,
   CompactionEntry,
@@ -29,6 +33,11 @@ replay.loadScenario(initialScenario.id)
 
 const selectedId = ref(initialScenario.id)
 const view = computed(() => replay.view)
+const scenarioTitle = computed(
+  () => replay.scenarios.find((scenario) => scenario.id === selectedId.value)?.title || 'Pi Chat',
+)
+/* composer 草稿只停留在本地（回放不发消息）；发送逻辑留待后续票据。 */
+const draft = ref('')
 
 function onScenarioChange(event: Event): void {
   const id = (event.target as HTMLSelectElement).value
@@ -111,29 +120,27 @@ const isAssistant = (entry: WorkbenchEntry): boolean =>
 </script>
 
 <template>
-  <div class="pi-chat-shell">
-    <header>
-      <h1>Pi Chat</h1>
-      <p>
-        <strong data-testid="replay-badge">回放模式</strong>
-        <span>静态回放：使用与真实运行相同的契约、投影与控制器渲染，不发起任何网络请求。</span>
-      </p>
-      <label>
-        回放场景
-        <select :value="selectedId" aria-label="回放场景" @change="onScenarioChange">
-          <option v-for="scenario in replay.scenarios" :key="scenario.id" :value="scenario.id">
-            {{ scenario.title }}
-          </option>
-        </select>
-      </label>
-    </header>
+  <AppShell>
+    <template #sidebar>
+      <SidebarRail />
+    </template>
+    <ConversationColumn :title="scenarioTitle">
+      <template #actions>
+        <label class="pi-replay-select">
+          回放场景
+          <select :value="selectedId" aria-label="回放场景" @change="onScenarioChange">
+            <option v-for="scenario in replay.scenarios" :key="scenario.id" :value="scenario.id">
+              {{ scenario.title }}
+            </option>
+          </select>
+        </label>
+      </template>
 
-    <p v-if="replay.ui.error" role="alert">{{ replay.ui.error }}</p>
-    <ul v-if="view.warnings.length" aria-label="警告">
-      <li v-for="warning in view.warnings" :key="warning">{{ warning }}</li>
-    </ul>
+      <p v-if="replay.ui.error" role="alert">{{ replay.ui.error }}</p>
+      <ul v-if="view.warnings.length" aria-label="警告">
+        <li v-for="warning in view.warnings" :key="warning">{{ warning }}</li>
+      </ul>
 
-    <main>
       <p v-if="!view.entries.length">选择一个回放场景查看过程事件。</p>
       <ol v-else aria-label="会话记录">
         <li v-for="entry in view.entries" :key="`${entry.kind}:${entry.id}`">
@@ -194,16 +201,43 @@ const isAssistant = (entry: WorkbenchEntry): boolean =>
           </template>
         </li>
       </ol>
-    </main>
 
-    <footer>
-      <input
-        type="text"
-        disabled
-        placeholder="回放模式：输入在后续票据中启用"
-        aria-label="消息输入（回放模式禁用）"
-      />
-      <button type="button" disabled>发送</button>
-    </footer>
-  </div>
+      <template #composer>
+        <ComposerBar v-model="draft" />
+      </template>
+    </ConversationColumn>
+  </AppShell>
 </template>
+
+<style>
+/* 组件自有（非 vendor）：headerActions 里的回放场景选择器，令牌着色的 caption 行。 */
+.pi-replay-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dsw-alias-label-secondary, #545557);
+  font-size: 13px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.pi-replay-select select {
+  max-width: 220px;
+  height: 28px;
+  padding: 0 20px 0 8px;
+  border: none;
+  border-radius: var(--dsw-radius-sm, 8px);
+  outline: none;
+  background-color: transparent;
+  color: var(--dsw-alias-label-secondary, #545557);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  cursor: pointer;
+  appearance: none;
+}
+
+.pi-replay-select select:hover:not(:disabled) {
+  background-color: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.04));
+}
+</style>
