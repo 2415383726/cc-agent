@@ -16,32 +16,42 @@ hljs.registerLanguage('python', python)
 hljs.registerLanguage('typescript', typescript)
 hljs.registerLanguage('yaml', yaml)
 
-const md = new MarkdownIt({
-  html: false,
-  linkify: false,
-  breaks: true,
-  highlight(source, language) {
-    const lang = String(language || '').trim().toLowerCase()
-    if (lang && hljs.getLanguage(lang)) {
-      try {
-        return hljs.highlight(source, { language: lang, ignoreIllegals: true }).value
-      } catch {
-        /* fall through */
+function createMarkdownIt(): MarkdownIt {
+  const instance = new MarkdownIt({
+    html: false,
+    linkify: false,
+    breaks: true,
+    highlight(source, language) {
+      const lang = String(language || '').trim().toLowerCase()
+      if (lang && hljs.getLanguage(lang)) {
+        try {
+          return hljs.highlight(source, { language: lang, ignoreIllegals: true }).value
+        } catch {
+          /* fall through */
+        }
       }
-    }
-    return escapeHtml(source)
-  },
-})
+      return escapeHtml(source)
+    },
+  })
 
-const defaultLinkOpen =
-  md.renderer.rules.link_open ||
-  ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))
+  const defaultLinkOpen =
+    instance.renderer.rules.link_open ||
+    ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))
 
-md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
-  const token = tokens[idx]
-  token.attrSet('target', '_blank')
-  token.attrSet('rel', 'noopener noreferrer')
-  return defaultLinkOpen(tokens, idx, options, env, self)
+  instance.renderer.rules.link_open = (tokens, idx, options, env, self) => {
+    const token = tokens[idx]
+    token.attrSet('target', '_blank')
+    token.attrSet('rel', 'noopener noreferrer')
+    return defaultLinkOpen(tokens, idx, options, env, self)
+  }
+  return instance
+}
+
+const md = createMarkdownIt()
+
+/** 供时间线组件派生带 dsh 代码块/表格包装的渲染器；配置以此处为唯一来源。 */
+export function createTranscriptMarkdown(): MarkdownIt {
+  return createMarkdownIt()
 }
 
 export function renderMarkdown(source: string): string {

@@ -1,12 +1,18 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ReplayController } from './replay/controller'
 import { scenarioById } from './replay/scenarios'
-import { errorText, statusText, toolStatusText } from './projection/labels'
+import { statusText, toolStatusText } from './projection/labels'
 import AppShell from './shell/AppShell.vue'
 import SidebarRail from './shell/SidebarRail.vue'
 import ConversationColumn from './shell/ConversationColumn.vue'
 import ComposerBar from './shell/ComposerBar.vue'
+import AssistantMessage from './timeline/AssistantMessage.vue'
+import NoteRow from './timeline/NoteRow.vue'
+import ReasoningRow from './timeline/ReasoningRow.vue'
+import TerminalRow from './timeline/TerminalRow.vue'
+import UserMessage from './timeline/UserMessage.vue'
+import { ScrollFollow, scrollMetrics } from './timeline/scrollFollow'
 import type {
   ApprovalEntry,
   CompactionEntry,
@@ -23,7 +29,10 @@ import type {
 /*
  * Binding seam: both controllers are framework-agnostic pure TS. This shell is
  * the only Vue-aware layer — it wraps the controller in reactive() and reads
- * view/ui as plain data.
+ * view/ui as plain data. 时间线四类消息条目（用户/助手/思考/终态）由
+ * timeline/ 下的 Harness 同族组件渲染；工具/技能/压缩/问卷/审批仍是占位
+ * （票据 04/05/06 接管）。自动吸底：读者未向上滚离底部时，新内容保持贴底
+ * （timeline/scrollFollow.ts，上游 use-scroll-follow 的 best-effort 平移）。
  */
 const replay = reactive(new ReplayController()) as ReplayController
 
@@ -47,12 +56,46 @@ function onScenarioChange(event: Event): void {
   window.history.replaceState({}, '', `/?replay=${encodeURIComponent(id)}`)
 }
 
+/* ---- 自动吸底跟随 ---- */
+const column = ref<InstanceType<typeof ConversationColumn> | null>(null)
+const follow = new ScrollFollow(true, 80)
+let stopWatch: (() => void) | undefined
+
+function scrollElement(): HTMLElement | null {
+  return (column.value?.scrollBody as HTMLElement | null | undefined) ?? null
+}
+
+function onScroll(): void {
+  const el = scrollElement()
+  if (el) follow.sample(scrollMetrics(el))
+}
+
+onMounted(() => {
+  const el = scrollElement()
+  el?.addEventListener('scroll', onScroll, { passive: true })
+  stopWatch = watch(
+    () => [view.value.entries, view.value.running, view.value.entries[view.value.entries.length - 1]],
+    () => {
+      const target = scrollElement()
+      if (!target || !follow.active) return
+      follow.toBottom(target, scrollMetrics(target))
+    },
+    { deep: true },
+  )
+})
+
+onBeforeUnmount(() => {
+  scrollElement()?.removeEventListener('scroll', onScroll)
+  stopWatch?.()
+})
+
+const isUser = (entry: WorkbenchEntry): boolean =>
+  entry.kind === 'message' && (entry as MessageEntry).role === 'user'
+const isAssistant = (entry: WorkbenchEntry): boolean =>
+  entry.kind === 'message' && (entry as MessageEntry).role === 'assistant'
+
 function entryLabel(entry: WorkbenchEntry): string {
   switch (entry.kind) {
-    case 'message':
-      return (entry as MessageEntry).role === 'user' ? '用户' : '助手'
-    case 'reasoning':
-      return '思考'
     case 'tool':
       return '工具'
     case 'skill':
@@ -63,10 +106,6 @@ function entryLabel(entry: WorkbenchEntry): string {
       return '问卷'
     case 'approval':
       return '审批'
-    case 'terminal':
-      return '终态'
-    case 'note':
-      return '备注'
     default:
       return entry.kind
   }
@@ -98,14 +137,6 @@ function approvalText(entry: ApprovalEntry): string {
   return `${entry.tool} · ${statusText(entry.status)}`
 }
 
-function terminalText(entry: TerminalEntry): string {
-  const terminal = entry.terminal
-  const lines = [statusText(terminal.status)]
-  if (terminal.answer) lines.push(terminal.answer)
-  if (terminal.error?.message) lines.push(errorText(terminal.error.code, terminal.error.message))
-  return lines.join('\n')
-}
-
 function resultText(entry: ToolEntry): string {
   const parts: string[] = []
   if (entry.updates.length) parts.push(entry.updates.join('\n'))
@@ -113,10 +144,11 @@ function resultText(entry: ToolEntry): string {
   return parts.join('\n')
 }
 
-const isUser = (entry: WorkbenchEntry): boolean =>
-  entry.kind === 'message' && (entry as MessageEntry).role === 'user'
-const isAssistant = (entry: WorkbenchEntry): boolean =>
-  entry.kind === 'message' && (entry as MessageEntry).role === 'assistant'
+const isPlaceholder = (entry: WorkbenchEntry): boolean =>
+  entry.kind === 'tool' || entry.kind === 'skill' || entry.kind === 'compaction'
+  || entry.kind === 'question' || entry.kind === 'approval'
+
+const firstEntryTs = computed(() => view.value.entries[0]?.ts)
 </script>
 
 <template>
@@ -124,7 +156,7 @@ const isAssistant = (entry: WorkbenchEntry): boolean =>
     <template #sidebar>
       <SidebarRail />
     </template>
-    <ConversationColumn :title="scenarioTitle">
+    <ConversationColumn ref="column" :title="scenarioTitle">
       <template #actions>
         <label class="pi-replay-select">
           回放场景
@@ -144,60 +176,36 @@ const isAssistant = (entry: WorkbenchEntry): boolean =>
       <p v-if="!view.entries.length">选择一个回放场景查看过程事件。</p>
       <ol v-else aria-label="会话记录">
         <li v-for="entry in view.entries" :key="`${entry.kind}:${entry.id}`">
-          <template v-if="isUser(entry)">
-            <strong>{{ entryLabel(entry) }}</strong>
-            <p>{{ (entry as MessageEntry).text }}</p>
-          </template>
+          <UserMessage v-if="isUser(entry)" :entry="entry as MessageEntry" />
 
-          <template v-else-if="isAssistant(entry)">
-            <strong>{{ entryLabel(entry) }}</strong>
-            <p>{{ (entry as MessageEntry).text }}</p>
-          </template>
+          <AssistantMessage v-else-if="isAssistant(entry)" :entry="entry as MessageEntry" />
 
-          <template v-else-if="entry.kind === 'reasoning'">
-            <strong>{{ entryLabel(entry) }}</strong>
-            <p>{{ (entry as ReasoningEntry).text }}</p>
-          </template>
+          <ReasoningRow v-else-if="entry.kind === 'reasoning'" :entry="entry as ReasoningEntry" />
 
-          <template v-else-if="entry.kind === 'tool'">
-            <strong>{{ entryLabel(entry) }} · {{ (entry as ToolEntry).name }}</strong>
-            <span>{{ toolStatusText((entry as ToolEntry).status) }}</span>
-            <pre>{{ JSON.stringify((entry as ToolEntry).args) }}</pre>
-            <p v-if="resultText(entry as ToolEntry)">{{ resultText(entry as ToolEntry) }}</p>
-          </template>
+          <TerminalRow
+            v-else-if="entry.kind === 'terminal'"
+            :entry="entry as TerminalEntry"
+            :start-ts="firstEntryTs"
+          />
 
-          <template v-else-if="entry.kind === 'skill'">
-            <strong>{{ entryLabel(entry) }}</strong>
-            <p>{{ skillText(entry as SkillEntry) }}</p>
-          </template>
+          <NoteRow v-else-if="entry.kind === 'note'" :entry="entry as NoteEntry" />
 
-          <template v-else-if="entry.kind === 'compaction'">
+          <!-- 工具卡/技能/压缩（票据 04）与问卷/审批卡（票据 05/06）保持占位渲染。 -->
+          <template v-else-if="isPlaceholder(entry)">
             <strong>{{ entryLabel(entry) }}</strong>
-            <p>{{ compactionText(entry as CompactionEntry) }}</p>
-          </template>
-
-          <template v-else-if="entry.kind === 'question'">
-            <strong>{{ entryLabel(entry) }}</strong>
-            <p>{{ questionText(entry as QuestionEntry) }}</p>
-          </template>
-
-          <template v-else-if="entry.kind === 'approval'">
-            <strong>{{ entryLabel(entry) }}</strong>
-            <p>{{ approvalText(entry as ApprovalEntry) }}</p>
-          </template>
-
-          <template v-else-if="entry.kind === 'terminal'">
-            <strong>{{ entryLabel(entry) }}</strong>
-            <p>{{ terminalText(entry as TerminalEntry) }}</p>
-          </template>
-
-          <template v-else-if="entry.kind === 'note'">
-            <strong>{{ entryLabel(entry) }}</strong>
-            <p>{{ (entry as NoteEntry).text }}</p>
+            <template v-if="entry.kind === 'tool'">
+              <span> · {{ (entry as ToolEntry).name }} · {{ toolStatusText((entry as ToolEntry).status) }}</span>
+              <pre>{{ JSON.stringify((entry as ToolEntry).args) }}</pre>
+              <p v-if="resultText(entry as ToolEntry)">{{ resultText(entry as ToolEntry) }}</p>
+            </template>
+            <p v-else-if="entry.kind === 'skill'">{{ skillText(entry as SkillEntry) }}</p>
+            <p v-else-if="entry.kind === 'compaction'">{{ compactionText(entry as CompactionEntry) }}</p>
+            <p v-else-if="entry.kind === 'question'">{{ questionText(entry as QuestionEntry) }}</p>
+            <p v-else-if="entry.kind === 'approval'">{{ approvalText(entry as ApprovalEntry) }}</p>
           </template>
 
           <template v-else>
-            <strong>{{ entryLabel(entry) }}</strong>
+            <strong>{{ entry.kind }}</strong>
           </template>
         </li>
       </ol>

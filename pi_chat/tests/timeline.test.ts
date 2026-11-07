@@ -1,0 +1,299 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import AssistantMessage from '../src/timeline/AssistantMessage.vue'
+import MarkdownContent from '../src/timeline/MarkdownContent.vue'
+import NoteRow from '../src/timeline/NoteRow.vue'
+import ReasoningRow from '../src/timeline/ReasoningRow.vue'
+import TerminalRow from '../src/timeline/TerminalRow.vue'
+import UserMessage from '../src/timeline/UserMessage.vue'
+import { ScrollFollow } from '../src/timeline/scrollFollow'
+import type { MessageEntry, NoteEntry, ReasoningEntry, TerminalEntry } from '../src/projection/transcript'
+
+const BASE_TS = new Date('2026-11-07T10:00:00').getTime()
+
+function messageEntry(partial: Partial<MessageEntry>): MessageEntry {
+  return {
+    id: 'm1',
+    kind: 'message',
+    role: 'assistant',
+    text: '',
+    streaming: false,
+    ts: BASE_TS,
+    ...partial,
+  } as MessageEntry
+}
+
+/* 组件 seam（spec 测试决策 3）：@vue/test-utils + happy-dom 挂载，只断言外显行为。 */
+
+describe('timeline UserMessage（用户气泡）', () => {
+  beforeEach(() => {
+    const writeText = vi.fn(() => Promise.resolve())
+    Object.defineProperty(window.navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    })
+  })
+
+  afterEach(() => {
+    // happy-dom keeps navigator.clipboard across tests; drop the stub again.
+    delete (window.navigator as Partial<Navigator>).clipboard
+  })
+
+  it('渲染右侧气泡文本与时间戳，复制按钮可点击并给出已复制反馈', async () => {
+    const entry = messageEntry({ role: 'user', text: '汇总订单 A-1042，并检查退款政策。' })
+    const wrapper = mount(UserMessage, { props: { entry } })
+    const bubble = wrapper.find('[data-testid="user-bubble"]')
+    expect(bubble.exists()).toBe(true)
+    expect(bubble.text()).toBe('汇总订单 A-1042，并检查退款政策。')
+    // 时间戳行：HH:mm 形式的时钟文案。
+    expect(wrapper.find('[data-testid="user-time"]').text()).toMatch(/^\d{2}:\d{2}$/)
+
+    const copy = wrapper.find('[data-testid="user-copy"]')
+    expect(copy.attributes('aria-label')).toBe('复制')
+    await copy.trigger('click')
+    await flushPromises()
+    expect(copy.attributes('aria-label')).toBe('已复制')
+    expect(window.navigator.clipboard.writeText).toHaveBeenCalledWith('汇总订单 A-1042，并检查退款政策。')
+  })
+
+  it('剪贴板 API 缺失时复制按钮保持可用（best-effort 回退，不抛错）', async () => {
+    delete (window.navigator as Partial<Navigator>).clipboard
+    const entry = messageEntry({ role: 'user', text: '回退路径' })
+    const wrapper = mount(UserMessage, { props: { entry } })
+    await wrapper.find('[data-testid="user-copy"]').trigger('click')
+    await flushPromises()
+    // 无剪贴板宿主不允许崩溃，按钮仍渲染。
+    expect(wrapper.find('[data-testid="user-copy"]').exists()).toBe(true)
+  })
+})
+
+describe('timeline MarkdownContent（助手 markdown）', () => {
+  it('渲染标题、列表与表格（dsh 表格滚动包装）', () => {
+    const wrapper = mount(MarkdownContent, {
+      props: {
+        text: [
+          '# 标题一',
+          '',
+          '- 选项甲',
+          '- 选项乙',
+          '',
+          '| 项目 | 值 |',
+          '| --- | --- |',
+          '| macOS | 27.2 |',
+        ].join('\n'),
+      },
+    })
+    expect(wrapper.find('h1').text()).toBe('标题一')
+    expect(wrapper.findAll('li').length).toBe(2)
+    const table = wrapper.find('[data-testid="md-table"]')
+    expect(table.exists()).toBe(true)
+    expect(table.find('table').exists()).toBe(true)
+  })
+
+  it('代码块带 dsh 横幅与复制钩子，语言标注在 infostring', () => {
+    const wrapper = mount(MarkdownContent, {
+      props: { text: '```python\nprint("hi")\n```' },
+    })
+    const block = wrapper.find('[data-testid="md-code-block"]')
+    expect(block.exists()).toBe(true)
+    expect(block.find('pre code').classes().join(' ')).toContain('language-python')
+    const banner = block.find('[data-code-block-banner]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('python')
+    expect(block.find('[data-code-copy]').exists()).toBe(true)
+  })
+
+  it('点击代码块复制按钮写入剪贴板并反馈已复制', async () => {
+    const writeText = vi.fn(() => Promise.resolve())
+    Object.defineProperty(window.navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    })
+    const wrapper = mount(MarkdownContent, { props: { text: '```bash\necho ok\n```' } })
+    const button = wrapper.find('[data-code-copy]')
+    await button.trigger('click')
+    await flushPromises()
+    expect(writeText).toHaveBeenCalledWith('echo ok\n')
+    expect(button.text()).toBe('已复制')
+    delete (window.navigator as Partial<Navigator>).clipboard
+  })
+
+  it('html:false：原始 HTML 以字面文本呈现，不进入 DOM', () => {
+    const wrapper = mount(MarkdownContent, { props: { text: '前文 <img src=x onerror=alert(1)> 后文' } })
+    expect(wrapper.find('img').exists()).toBe(false)
+    expect(wrapper.text()).toContain('<img src=x onerror=alert(1)>')
+  })
+})
+
+describe('timeline AssistantMessage（助手消息）', () => {
+  it('完整渲染 markdown 文本且不重复', () => {
+    const text = '订单在 12 天前下单，仍在 30 天退款窗口内。'
+    const wrapper = mount(AssistantMessage, {
+      props: { entry: messageEntry({ text, streaming: false }) },
+    })
+    const body = wrapper.find('[data-testid="assistant-body"]')
+    expect(body.text()).toContain('30 天退款窗口内')
+    expect(wrapper.text().split('30 天退款窗口内').length - 1).toBe(1)
+  })
+
+  it('streaming 时显示打字指示行，结束后消失', async () => {
+    const wrapper = mount(AssistantMessage, {
+      props: { entry: messageEntry({ text: '部分回答', streaming: true }) },
+    })
+    const running = wrapper.find('[data-testid="assistant-running"]')
+    expect(running.exists()).toBe(true)
+    expect(running.text()).toContain('深度求索中')
+
+    await wrapper.setProps({ entry: messageEntry({ text: '完整回答', streaming: false }) })
+    expect(wrapper.find('[data-testid="assistant-running"]').exists()).toBe(false)
+  })
+})
+
+describe('timeline ReasoningRow（思考折叠行）', () => {
+  function reasoningEntry(partial: Partial<ReasoningEntry> = {}): ReasoningEntry {
+    return {
+      id: 'r1',
+      kind: 'reasoning',
+      text: '应用政策前，我需要先确认订单状态。\n第二步再读取退款技能文档。',
+      streaming: false,
+      ts: BASE_TS,
+      ...partial,
+    }
+  }
+
+  it('默认收起：显示思考标签与单行摘要，不显示全文', () => {
+    const wrapper = mount(ReasoningRow, { props: { entry: reasoningEntry() } })
+    const toggle = wrapper.find('[data-testid="reasoning-toggle"]')
+    expect(toggle.exists()).toBe(true)
+    expect(toggle.text()).toContain('思考')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.text()).toContain('应用政策前，我需要先确认订单状态。')
+    expect(wrapper.text()).not.toContain('第二步再读取退款技能文档。')
+  })
+
+  it('点击展开显示全文，再次点击收起', async () => {
+    const wrapper = mount(ReasoningRow, { props: { entry: reasoningEntry() } })
+    const toggle = wrapper.find('[data-testid="reasoning-toggle"]')
+    await toggle.trigger('click')
+    expect(wrapper.find('[data-testid="reasoning-toggle"]').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.find('[data-testid="reasoning-body"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('第二步再读取退款技能文档。')
+
+    await wrapper.find('[data-testid="reasoning-toggle"]').trigger('click')
+    expect(wrapper.find('[data-testid="reasoning-toggle"]').attributes('aria-expanded')).toBe('false')
+    expect(wrapper.find('[data-testid="reasoning-body"]').exists()).toBe(false)
+  })
+
+  it('streaming 时摘要取最近完成段落首行，带流式标记', () => {
+    const wrapper = mount(ReasoningRow, {
+      props: {
+        entry: reasoningEntry({
+          streaming: true,
+          text: '第一段已完成。\n\n正在生成的第二段还在输出',
+        }),
+      },
+    })
+    const toggle = wrapper.find('[data-testid="reasoning-toggle"]')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(toggle.text()).toContain('第一段已完成。')
+    expect(toggle.find('[data-streaming]').exists()).toBe(true)
+  })
+})
+
+describe('timeline TerminalRow（终态行）', () => {
+  function terminalEntry(status: string, error: TerminalEntry['terminal']['error'] = null): TerminalEntry {
+    return {
+      id: 'terminal_run1',
+      kind: 'terminal',
+      terminal: { status, answer: '', error, stats: {} },
+      ts: BASE_TS,
+    }
+  }
+
+  it('completed：显示 已完成，用时 X秒 头部行，无状态徽标', () => {
+    const wrapper = mount(TerminalRow, {
+      props: { entry: terminalEntry('completed'), startTs: BASE_TS - 4000 },
+    })
+    expect(wrapper.find('[data-testid="terminal-label"]').text()).toMatch(/^已完成，用时 \d+秒$/)
+    expect(wrapper.find('[data-testid="terminal-badge"]').exists()).toBe(false)
+  })
+
+  it('failed：显示失败徽标与错误文案', () => {
+    const wrapper = mount(TerminalRow, {
+      props: {
+        entry: terminalEntry('failed', { code: 'agent_failed', stage: 'runtime', message: '模型调用失败' }),
+      },
+    })
+    expect(wrapper.find('[data-testid="terminal-label"]').text()).toContain('失败')
+    const badge = wrapper.find('[data-testid="terminal-badge"]')
+    expect(badge.exists()).toBe(true)
+    expect(badge.text()).toBe('失败')
+    expect(wrapper.text()).toContain('Agent 运行失败。')
+  })
+
+  it('stopped：显示已停止徽标', () => {
+    const wrapper = mount(TerminalRow, { props: { entry: terminalEntry('stopped') } })
+    expect(wrapper.find('[data-testid="terminal-badge"]').text()).toBe('已停止')
+  })
+
+  it('budget_exhausted：显示预算耗尽徽标', () => {
+    const wrapper = mount(TerminalRow, { props: { entry: terminalEntry('budget_exhausted') } })
+    expect(wrapper.find('[data-testid="terminal-badge"]').text()).toBe('预算耗尽')
+  })
+
+  it('stats 携带 duration_ms 时优先使用', () => {
+    const wrapper = mount(TerminalRow, {
+      props: {
+        entry: {
+          id: 'terminal_run2',
+          kind: 'terminal',
+          terminal: { status: 'completed', answer: '', error: null, stats: { duration_ms: 10_000 } },
+          ts: BASE_TS,
+        },
+      },
+    })
+    expect(wrapper.find('[data-testid="terminal-label"]').text()).toBe('已完成，用时 10秒')
+  })
+})
+
+describe('timeline scrollFollow（自动吸底）', () => {
+  function fakeScrollport(height: number, scrollHeight: number) {
+    const el = { clientHeight: height, scrollHeight, scrollTop: 0 }
+    return el
+  }
+
+  it('贴底时内容增长保持跟随', () => {
+    const follow = new ScrollFollow(true, 80)
+    const el = fakeScrollport(600, 600)
+    el.scrollTop = el.scrollHeight - el.clientHeight
+    expect(follow.sample({ top: el.scrollTop, height: el.clientHeight, floor: el.scrollHeight - el.clientHeight })).toBe(true)
+    el.scrollHeight = 900
+    follow.toBottom(el, { top: el.scrollTop, height: el.clientHeight, floor: el.scrollHeight - el.clientHeight }, 'instant')
+    expect(el.scrollTop).toBe(300)
+    expect(follow.active).toBe(true)
+  })
+
+  it('用户向上滚动离开底部后停止跟随，回到底部恢复', () => {
+    const follow = new ScrollFollow(true, 80)
+    const el = fakeScrollport(600, 2000)
+    el.scrollTop = 400
+    expect(follow.sample({ top: 400, height: 600, floor: 1400 })).toBe(false)
+    expect(follow.active).toBe(false)
+    expect(follow.sample({ top: 1330, height: 600, floor: 1400 })).toBe(true)
+  })
+})
+
+describe('timeline NoteRow（备注行）', () => {
+  it('渲染备注文本，警告语气可见', () => {
+    const entry: NoteEntry = {
+      id: 'note1',
+      kind: 'note',
+      text: '回放模式：没有发起 Dify 请求或模型调用。',
+      tone: 'info',
+      ts: BASE_TS,
+    }
+    const wrapper = mount(NoteRow, { props: { entry } })
+    expect(wrapper.find('[data-testid="note-row"]').text()).toBe('回放模式：没有发起 Dify 请求或模型调用。')
+    expect(wrapper.find('[data-testid="note-row"]').attributes('data-tone')).toBe('info')
+  })
+})
