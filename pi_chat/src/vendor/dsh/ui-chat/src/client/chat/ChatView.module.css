@@ -294,22 +294,10 @@
   display: initial;
 }
 
-@supports (mask-mode: alpha) and (mask-image: url('')) {
-  @media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
-    .runningWhaleAnimated {
-      display: block;
-      background: currentColor;
-      mask: url('../assets/running-whale@2x.png') center / 100% 100% no-repeat;
-      mask-mode: alpha;
-      /* Keep animated-mask repaints on an icon-sized composited layer. */
-      will-change: transform;
-    }
-
-    .runningWhaleStill {
-      display: none;
-    }
-  }
-}
+/* t09（票 09）: 上游动效鲸鱼位图 ../assets/running-whale@2x.png 为品牌资产，
+   按用户决定不引入（NO brand assets），故整块删除该 @supports 覆盖，
+   避免构建期资源解析告警。上游基础规则保留：.runningWhaleAnimated 恒隐藏，
+   .runningWhaleStill 常显（静态回退），行为与位图缺失时的上游回退一致。 */
 
 .openError {
   color: var(--dsw-alias-state-error-primary);
