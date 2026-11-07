@@ -29,6 +29,8 @@ export class ReplayController implements WorkbenchController {
     error: '',
     conversationId: 'replay',
     conversations: [{ id: 'replay', name: '回放场景', updatedAt: 0 }],
+    conversationsError: '',
+    actionNote: '',
     loadingHistory: false,
     hasMore: false,
     firstId: '',
@@ -143,6 +145,16 @@ export class ReplayController implements WorkbenchController {
 
   async refreshConversations(): Promise<void> {
     /* replay has one fixed conversation */
+  }
+
+  async renameConversation(_id: string, _name: string): Promise<boolean> {
+    this.ui.actionNote = '回放模式不支持重命名会话。'
+    return false
+  }
+
+  async deleteConversation(_id: string): Promise<boolean> {
+    this.ui.actionNote = '回放模式不支持删除会话。'
+    return false
   }
 
   async loadConversation(id: string): Promise<void> {

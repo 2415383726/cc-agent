@@ -1,41 +1,49 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { ReplayController } from './replay/controller'
 import { scenarioById } from './replay/scenarios'
-import { statusText, toolStatusText } from './projection/labels'
+import { DifyController } from './dify/controller'
+import { defaultConfig, saveSessionCredentials } from './dify/config'
+import type { SessionCredentials } from './dify/config'
+/* toolStatusText 不再由本壳引用：状态徽标文案由 timeline/ToolCard 经 projection/toolStatus 取得。 */
+import { statusText } from './projection/labels'
 import AppShell from './shell/AppShell.vue'
 import SidebarRail from './shell/SidebarRail.vue'
 import ConversationColumn from './shell/ConversationColumn.vue'
 import ComposerBar from './shell/ComposerBar.vue'
+import ConnectionForm from './shell/ConnectionForm.vue'
+import LiveConversation from './shell/LiveConversation.vue'
 import AssistantMessage from './timeline/AssistantMessage.vue'
 import NoteRow from './timeline/NoteRow.vue'
 import ReasoningRow from './timeline/ReasoningRow.vue'
 import TerminalRow from './timeline/TerminalRow.vue'
 import UserMessage from './timeline/UserMessage.vue'
 import QuestionCard from './cards/QuestionCard.vue'
+import CompactionRow from './timeline/CompactionRow.vue'
+import SkillRow from './timeline/SkillRow.vue'
+import ToolCard from './timeline/ToolCard.vue'
+import ToolGroupRow from './timeline/ToolGroupRow.vue'
+import { groupTimeline, groupTitle } from './timeline/grouping'
 import { ScrollFollow, scrollMetrics } from './timeline/scrollFollow'
 import type {
   ApprovalEntry,
-  CompactionEntry,
   MessageEntry,
   NoteEntry,
   QuestionEntry,
   ReasoningEntry,
-  SkillEntry,
   TerminalEntry,
-  ToolEntry,
   WorkbenchEntry,
 } from './projection/transcript'
 
 /*
  * Binding seam: both controllers are framework-agnostic pure TS. This shell is
  * the only Vue-aware layer — it wraps the controller in reactive() and reads
- * view/ui as plain data. 时间线四类消息条目（用户/助手/思考/终态）由
- * timeline/ 下的 Harness 同族组件渲染；问卷卡由 cards/QuestionCard.vue 渲染
- * （票据 05，提交走 controller 的 submitAnswers/cancelQuestion，回放本地闭环）；
- * 工具/技能/压缩/审批仍是占位（票据 04/06 接管）。自动吸底：读者未向上滚离
- * 底部时，新内容保持贴底（timeline/scrollFollow.ts，上游 use-scroll-follow
- * 的 best-effort 平移）。
+ * view/ui as plain data. 时间线条目由 timeline/ 下的 Harness 同族组件渲染：
+ * 消息四类（票据 03）+ 工具折叠卡/分组/技能行/压缩行（票据 04）；问卷卡由
+ * cards/QuestionCard.vue 渲染（票据 05，提交走 controller 的
+ * submitAnswers/cancelQuestion，回放本地闭环）；审批卡仍是占位（票据 06 接管）。
+ * 自动吸底：读者未向上滚离底部时，新内容保持贴底
+ * （timeline/scrollFollow.ts，上游 use-scroll-follow 的 best-effort 平移）。
  */
 const replay = reactive(new ReplayController()) as ReplayController
 
@@ -48,8 +56,62 @@ const view = computed(() => replay.view)
 const scenarioTitle = computed(
   () => replay.scenarios.find((scenario) => scenario.id === selectedId.value)?.title || 'Pi Chat',
 )
-/* composer 草稿只停留在本地（回放不发消息）；发送逻辑留待后续票据。 */
+/* composer 草稿只停留在本地（回放不发消息）；实时模式发送由 DifyController 承接。 */
 const draft = ref('')
+
+/* 实时模式（票 07）：默认仍是回放；点「连接 Dify」惰性创建 DifyController。 */
+const mode = ref<'replay' | 'live'>('replay')
+const live = shallowRef<DifyController | null>(null)
+const liveDraft = ref('')
+
+const modeBadge = computed(() => {
+  if (mode.value === 'replay') return '回放模式'
+  const controller = live.value
+  return controller?.ui.connected ? '实时模式' : '实时模式（未连接）'
+})
+
+const liveTitle = computed(() => {
+  if (mode.value === 'replay') return scenarioTitle.value
+  const controller = live.value
+  if (!controller) return 'Pi Chat'
+  if (!controller.ui.conversationId) return '新会话'
+  const found = controller.ui.conversations.find((item) => item.id === controller.ui.conversationId)
+  return found?.name || '当前会话'
+})
+
+const liveInteractive = computed(
+  () => mode.value === 'live' && Boolean(live.value?.ui.connected) && !live.value?.ui.running,
+)
+
+function enterLive(): void {
+  if (!live.value) {
+    const config = defaultConfig()
+    const controller = reactive(new DifyController(config)) as DifyController
+    live.value = controller
+    if (config.apiKey) void controller.refreshConversations()
+  }
+  mode.value = 'live'
+}
+
+function backToReplay(): void {
+  mode.value = 'replay'
+}
+
+async function onConnect(credentials: SessionCredentials): Promise<void> {
+  const controller = live.value
+  if (!controller) return
+  controller.updateConfig({ ...credentials })
+  saveSessionCredentials({ ...credentials })
+  await controller.refreshConversations()
+}
+
+async function onLiveSend(): Promise<void> {
+  const controller = live.value
+  if (!controller) return
+  const text = liveDraft.value
+  liveDraft.value = ''
+  await controller.send(text)
+}
 
 function onScenarioChange(event: Event): void {
   const id = (event.target as HTMLSelectElement).value
@@ -97,14 +159,13 @@ const isUser = (entry: WorkbenchEntry): boolean =>
 const isAssistant = (entry: WorkbenchEntry): boolean =>
   entry.kind === 'message' && (entry as MessageEntry).role === 'assistant'
 
+/* 连续 tool/skill/compaction 折入可折叠组（票据 04）；分组与组头标题拼装是纯函数。 */
+const segments = computed(() => groupTimeline(view.value.entries, view.value.running))
+const groupActivity = (segment: Extract<typeof segments.value[number], { kind: 'tool-group' }>): string =>
+  segment.running ? segment.counts[0]?.kind ?? 'tools' : segment.counts[0]?.kind ?? 'thinking'
+
 function entryLabel(entry: WorkbenchEntry): string {
   switch (entry.kind) {
-    case 'tool':
-      return '工具'
-    case 'skill':
-      return '技能'
-    case 'compaction':
-      return '上下文压缩'
     case 'question':
       return '问卷'
     case 'approval':
@@ -114,34 +175,11 @@ function entryLabel(entry: WorkbenchEntry): string {
   }
 }
 
-function skillText(entry: SkillEntry): string {
-  if (entry.action === 'read') {
-    return `${entry.skill} · 读取 ${entry.path || ''}`
-  }
-  return `${entry.skill} · 已激活`
-}
-
-function compactionText(entry: CompactionEntry): string {
-  const parts: string[] = []
-  if (typeof entry.tokensBefore === 'number') parts.push(`压缩前 ${entry.tokensBefore} tokens`)
-  if (typeof entry.summaryChars === 'number') parts.push(`摘要 ${entry.summaryChars} 字符`)
-  return parts.join(' · ') || (entry.phase === 'start' ? '开始压缩' : '压缩完成')
-}
-
 function approvalText(entry: ApprovalEntry): string {
   return `${entry.tool} · ${statusText(entry.status)}`
 }
 
-function resultText(entry: ToolEntry): string {
-  const parts: string[] = []
-  if (entry.updates.length) parts.push(entry.updates.join('\n'))
-  if (entry.result) parts.push(entry.result)
-  return parts.join('\n')
-}
-
-const isPlaceholder = (entry: WorkbenchEntry): boolean =>
-  entry.kind === 'tool' || entry.kind === 'skill' || entry.kind === 'compaction'
-  || entry.kind === 'approval'
+const isPlaceholder = (entry: WorkbenchEntry): boolean => entry.kind === 'approval'
 
 const firstEntryTs = computed(() => view.value.entries[0]?.ts)
 </script>
@@ -149,71 +187,113 @@ const firstEntryTs = computed(() => view.value.entries[0]?.ts)
 <template>
   <AppShell>
     <template #sidebar>
-      <SidebarRail />
+      <SidebarRail :controller="mode === 'live' ? live : null" />
     </template>
-    <ConversationColumn ref="column" :title="scenarioTitle">
+    <ConversationColumn ref="column" :title="liveTitle" :badge="modeBadge">
       <template #actions>
-        <label class="pi-replay-select">
-          回放场景
-          <select :value="selectedId" aria-label="回放场景" @change="onScenarioChange">
-            <option v-for="scenario in replay.scenarios" :key="scenario.id" :value="scenario.id">
-              {{ scenario.title }}
-            </option>
-          </select>
-        </label>
+        <template v-if="mode === 'live'">
+          <button type="button" class="pi-mode-button" data-testid="back-replay" @click="backToReplay">回放模式</button>
+          <button
+            v-if="live && live.ui.running"
+            type="button"
+            class="pi-mode-button"
+            data-testid="live-stop"
+            @click="live.stop()"
+          >
+            停止
+          </button>
+        </template>
+        <template v-else>
+          <button type="button" class="pi-mode-button" data-testid="enter-live" @click="enterLive">连接 Dify</button>
+          <label class="pi-replay-select">
+            回放场景
+            <select :value="selectedId" aria-label="回放场景" @change="onScenarioChange">
+              <option v-for="scenario in replay.scenarios" :key="scenario.id" :value="scenario.id">
+                {{ scenario.title }}
+              </option>
+            </select>
+          </label>
+        </template>
       </template>
 
-      <p v-if="replay.ui.error" role="alert">{{ replay.ui.error }}</p>
-      <ul v-if="view.warnings.length" aria-label="警告">
-        <li v-for="warning in view.warnings" :key="warning">{{ warning }}</li>
-      </ul>
+      <ConnectionForm
+        v-if="mode === 'live' && live && !live.ui.connected"
+        @connect="onConnect"
+      />
+      <LiveConversation
+        v-else-if="mode === 'live' && live"
+        :controller="live"
+      />
+      <template v-else>
+        <p v-if="replay.ui.error" role="alert">{{ replay.ui.error }}</p>
+        <ul v-if="view.warnings.length" aria-label="警告">
+          <li v-for="warning in view.warnings" :key="warning">{{ warning }}</li>
+        </ul>
 
       <p v-if="!view.entries.length">选择一个回放场景查看过程事件。</p>
       <ol v-else class="pi-timeline" aria-label="会话记录">
-        <li v-for="entry in view.entries" :key="`${entry.kind}:${entry.id}`">
-          <UserMessage v-if="isUser(entry)" :entry="entry as MessageEntry" />
+        <template v-for="segment in segments" :key="segment.kind === 'tool-group' ? segment.id : `${segment.entry.kind}:${segment.entry.id}`">
+          <li v-if="segment.kind === 'single'">
+            <UserMessage v-if="isUser(segment.entry)" :entry="segment.entry as MessageEntry" />
 
-          <AssistantMessage v-else-if="isAssistant(entry)" :entry="entry as MessageEntry" />
+            <AssistantMessage v-else-if="isAssistant(segment.entry)" :entry="segment.entry as MessageEntry" />
 
-          <ReasoningRow v-else-if="entry.kind === 'reasoning'" :entry="entry as ReasoningEntry" />
+            <ReasoningRow v-else-if="segment.entry.kind === 'reasoning'" :entry="segment.entry as ReasoningEntry" />
 
-          <TerminalRow
-            v-else-if="entry.kind === 'terminal'"
-            :entry="entry as TerminalEntry"
-            :start-ts="firstEntryTs"
-          />
+            <TerminalRow
+              v-else-if="segment.entry.kind === 'terminal'"
+              :entry="segment.entry as TerminalEntry"
+              :start-ts="firstEntryTs"
+            />
 
-          <NoteRow v-else-if="entry.kind === 'note'" :entry="entry as NoteEntry" />
+            <NoteRow v-else-if="segment.entry.kind === 'note'" :entry="segment.entry as NoteEntry" />
 
-          <!-- 问卷卡（票据 05）：作答/跳过/取消提交为 interaction JSON（回放本地闭环）。 -->
-          <QuestionCard
-            v-else-if="entry.kind === 'question'"
-            :entry="entry as QuestionEntry"
-            @submit="(answers) => replay.submitAnswers(entry as QuestionEntry, answers)"
-            @cancel="replay.cancelQuestion(entry as QuestionEntry)"
-          />
+            <!-- 问卷卡（票据 05）：作答/跳过/取消提交为 interaction JSON（回放本地闭环）。 -->
+            <QuestionCard
+              v-else-if="segment.entry.kind === 'question'"
+              :entry="segment.entry as QuestionEntry"
+              @submit="(answers) => replay.submitAnswers(segment.entry as QuestionEntry, answers)"
+              @cancel="replay.cancelQuestion(segment.entry as QuestionEntry)"
+            />
 
-          <!-- 工具卡/技能/压缩（票据 04）与审批卡（票据 06）保持占位渲染。 -->
-          <template v-else-if="isPlaceholder(entry)">
-            <strong>{{ entryLabel(entry) }}</strong>
-            <template v-if="entry.kind === 'tool'">
-              <span> · {{ (entry as ToolEntry).name }} · {{ toolStatusText((entry as ToolEntry).status) }}</span>
-              <pre>{{ JSON.stringify((entry as ToolEntry).args) }}</pre>
-              <p v-if="resultText(entry as ToolEntry)">{{ resultText(entry as ToolEntry) }}</p>
+            <!-- 审批卡（票据 06）保持占位渲染。 -->
+            <template v-else-if="isPlaceholder(segment.entry)">
+              <strong>{{ entryLabel(segment.entry) }}</strong>
+              <p v-if="segment.entry.kind === 'approval'">{{ approvalText(segment.entry as ApprovalEntry) }}</p>
             </template>
-            <p v-else-if="entry.kind === 'skill'">{{ skillText(entry as SkillEntry) }}</p>
-            <p v-else-if="entry.kind === 'compaction'">{{ compactionText(entry as CompactionEntry) }}</p>
-            <p v-else-if="entry.kind === 'approval'">{{ approvalText(entry as ApprovalEntry) }}</p>
-          </template>
 
-          <template v-else>
-            <strong>{{ entry.kind }}</strong>
-          </template>
-        </li>
+            <template v-else>
+              <strong>{{ segment.entry.kind }}</strong>
+            </template>
+          </li>
+
+          <!-- 工具活动组（票据 04）：连续 tool/skill/compaction 折入同一折叠组。 -->
+          <li v-else>
+            <ToolGroupRow
+              :label="groupTitle(segment.counts, segment.running)"
+              :activity="groupActivity(segment)"
+              :running="segment.running"
+            >
+              <template v-for="member in segment.entries" :key="`${member.kind}:${member.id}`">
+                <ToolCard v-if="member.kind === 'tool'" :entry="member" />
+                <SkillRow v-else-if="member.kind === 'skill'" :entry="member" />
+                <CompactionRow v-else-if="member.kind === 'compaction'" :entry="member" />
+              </template>
+            </ToolGroupRow>
+          </li>
+        </template>
       </ol>
+      </template>
 
       <template #composer>
-        <ComposerBar v-model="draft" />
+        <ComposerBar
+          v-if="mode === 'live'"
+          v-model="liveDraft"
+          :interactive="liveInteractive"
+          :busy="Boolean(live?.ui.running)"
+          @send="onLiveSend"
+        />
+        <ComposerBar v-else v-model="draft" />
       </template>
     </ConversationColumn>
   </AppShell>
@@ -268,5 +348,25 @@ const firstEntryTs = computed(() => view.value.entries[0]?.ts)
 
 .pi-replay-select select:hover:not(:disabled) {
   background-color: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.04));
+}
+
+/* 组件自有（非 vendor）：headerActions 里的模式切换按钮，几何对齐 28px 图标行。 */
+.pi-mode-button {
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--dsw-radius-sm, 8px);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, #545557);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pi-mode-button:hover {
+  background-color: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.04));
+  color: var(--dsw-alias-label-primary, #0b0b0c);
 }
 </style>
