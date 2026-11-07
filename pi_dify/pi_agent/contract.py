@@ -35,6 +35,12 @@ TERMINAL_STATUSES = frozenset(
 MAX_EVENT_BYTES = 24_000
 MAX_RESULT_CHARS = 8_000
 MAX_ARGUMENT_CHARS = 4_000
+# Streaming deltas are the content stream of a turn (text/reasoning chunks):
+# they never count against the structural event budget — a text-heavy run
+# otherwise loses its tail (message.end included) and the workbench shows an
+# answer cut off mid-text. The flood ceiling is a last-resort bound only.
+DELTA_EVENT_TYPES = frozenset({"message.delta", "reasoning.delta"})
+MAX_DELTA_EVENTS = 50_000
 _SECRET_PATTERNS = (
     re.compile(r"(?i)\b(authorization\s*:\s*)(bearer\s+)?[^\s\"']+"),
     re.compile(r"(?i)\b(api[_-]?key|access[_-]?token|secret|password)\s*[=:]\s*[^\s,;\"']+"),
@@ -105,6 +111,7 @@ class DisplayEvents:
     # tool's own lint caps it well below this envelope.
     max_visual_bytes: int = 131_072
     dropped: int = 0
+    delta_events: int = 0
 
     def make(self, event_type: str, **fields: Any) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -150,6 +157,18 @@ class DisplayEvents:
         return True
 
     def record(self, event: dict[str, Any]) -> dict[str, Any] | None:
+        # Delta events are the content stream of a turn: dropping one truncates
+        # the visible answer mid-text (and past the cap the tail events —
+        # message.end included — would vanish with it). They bypass the
+        # structural budget; the per-event envelope bounds each, the run's own
+        # budgets bound how many can exist, and a generous flood ceiling stays
+        # as a last resort.
+        if event.get("type") in DELTA_EVENT_TYPES:
+            if self.delta_events >= MAX_DELTA_EVENTS:
+                self.dropped += 1
+                return None
+            self.delta_events += 1
+            return event
         if not self.allow():
             return None
         self.emitted += 1

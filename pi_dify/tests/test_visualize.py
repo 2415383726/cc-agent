@@ -247,3 +247,50 @@ class VisualEventBudgetTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DisplayEventBudgetTests(unittest.TestCase):
+    """display_max_events 只约束结构事件；delta 是内容流，永不因预算丢尾。"""
+
+    def _events(self, **kwargs):
+        from pi_agent.contract import DisplayEvents
+
+        return DisplayEvents(run_id="run_budget", **kwargs)
+
+    def test_deltas_bypass_the_structural_cap(self):
+        events = self._events(max_events=5)
+        recorded = []
+        for _ in range(20):
+            event = events.make("message.delta", message_id="a1", delta="x")
+            out = events.record(event)
+            if out is not None:
+                recorded.append(out)
+        self.assertEqual(len(recorded), 20)
+        self.assertEqual(events.delta_events, 20)
+        self.assertEqual(events.emitted, 0)
+
+    def test_message_end_survives_after_delta_flood(self):
+        events = self._events(max_events=5)
+        for _ in range(300):
+            events.record(events.make("message.delta", delta="x"))
+        end = events.record(events.make("message.end", message_id="a1", text="done", stop_reason="stop"))
+        self.assertIsNotNone(end)
+        state = events.record(events.make("tool.end", tool_call_id="c1", name="t", status="ok"))
+        self.assertIsNotNone(state)
+
+    def test_structural_events_still_capped(self):
+        events = self._events(max_events=3)
+        kept = 0
+        for _ in range(6):
+            out = events.record(events.make("tool.end", tool_call_id="c", name="t", status="ok"))
+            if out is not None:
+                kept += 1
+        self.assertEqual(kept, 3)
+        self.assertEqual(events.dropped, 3)
+
+    def test_delta_flood_ceiling(self):
+        from pi_agent.contract import MAX_DELTA_EVENTS
+
+        events = self._events()
+        events.delta_events = MAX_DELTA_EVENTS
+        self.assertIsNone(events.record(events.make("message.delta", delta="x")))
