@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { WorkbenchController } from '../dify/controller'
-import { errorText, statusText, toolStatusText } from '../projection/labels'
+import { errorText, formatFileSize, statusText, toolStatusText } from '../projection/labels'
 import type {
   ApprovalEntry,
   CompactionEntry,
@@ -118,6 +118,7 @@ function bodyText(entry: WorkbenchEntry): string {
 <template>
   <div class="pi-live">
     <p v-if="ui.error" role="alert" class="pi-live-error">{{ ui.error }}</p>
+    <p v-if="ui.stoppedNote" role="status" class="pi-live-error" data-testid="stopped-note">{{ ui.stoppedNote }}</p>
     <ul v-if="view.warnings.length" aria-label="警告" class="pi-live-warnings">
       <li v-for="warning in view.warnings" :key="warning">{{ warning }}</li>
     </ul>
@@ -137,6 +138,20 @@ function bodyText(entry: WorkbenchEntry): string {
     <ol v-else aria-label="会话记录" class="pi-live-list">
       <li v-for="entry in view.entries" :key="`${entry.kind}:${entry.id}`">
         <strong>{{ entryLabel(entry) }}<template v-if="entry.kind === 'tool'"> · {{ (entry as ToolEntry).name }}</template></strong>
+        <!-- 附件安全元数据（票 08）：只展示名称/类型/大小，不提供内容访问。 -->
+        <div
+          v-if="entry.kind === 'message' && (entry as MessageEntry).files?.length"
+          class="pi-live-files"
+        >
+          <span
+            v-for="file in (entry as MessageEntry).files"
+            :key="file.id || file.name"
+            class="pi-live-file"
+            data-testid="message-file-chip"
+          >
+            {{ file.name || file.id }} · {{ file.mimeType || file.type || '文件' }} · {{ formatFileSize(file.size) }}
+          </span>
+        </div>
         <pre v-if="entry.kind === 'tool'">{{ JSON.stringify((entry as ToolEntry).args) }}</pre>
         <span v-if="entry.kind === 'tool'">{{ toolStatusText((entry as ToolEntry).status) }}</span>
         <p>{{ bodyText(entry) }}</p>
@@ -212,6 +227,27 @@ function bodyText(entry: WorkbenchEntry): string {
   font-size: 14px;
   line-height: 22px;
   color: var(--dsw-alias-label-primary);
+}
+
+/* 组件自有（非 vendor）：消息附件安全元数据 chips（名称/类型/大小）。 */
+.pi-live-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.pi-live-file {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-sm);
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
 }
 
 .pi-live-list p {

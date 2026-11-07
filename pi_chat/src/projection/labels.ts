@@ -66,3 +66,22 @@ export function toolStatusText(status: string): string {
   }
   return labels[status] || status
 }
+
+/**
+ * 附件 chip 的安全元数据标签：只格式化字节数（二进制单位），未知大小如实
+ * 显示「未知大小」；不读文件内容，也不会暴露 URL。
+ */
+export function formatFileSize(size: number | undefined | null): string {
+  if (size === undefined || size === null || Number.isNaN(Number(size))) return '未知大小'
+  const value = Number(size)
+  if (value <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let amount = value
+  let unit = 0
+  while (amount >= 1024 && unit < units.length - 1) {
+    amount /= 1024
+    unit += 1
+  }
+  const rounded = unit === 0 ? String(amount) : amount.toFixed(1)
+  return `${rounded} ${units[unit]}`
+}

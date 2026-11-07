@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SCHEMA } from '../src/contract/display'
+import { formatFileSize } from '../src/projection/labels'
 import {
   applyEvent,
   mergeFinalAnswer,
@@ -106,5 +107,21 @@ describe('transcript projection', () => {
     expect(view.terminal?.status).toBe('awaiting_user')
     applyEvent(view, event('run.state', { status: 'state_save_failed', answer: 'save failed' }))
     expect(view.terminal?.status).toBe('state_save_failed')
+  })
+})
+
+describe('附件安全元数据标签（formatFileSize）', () => {
+  it('字节、KB、MB、GB 按二进制单位换算并去掉多余的 .0', () => {
+    expect(formatFileSize(0)).toBe('0 B')
+    expect(formatFileSize(512)).toBe('512 B')
+    expect(formatFileSize(2048)).toBe('2.0 KB')
+    expect(formatFileSize(1536)).toBe('1.5 KB')
+    expect(formatFileSize(5 * 1024 * 1024)).toBe('5.0 MB')
+    expect(formatFileSize(3.5 * 1024 * 1024 * 1024)).toBe('3.5 GB')
+  })
+
+  it('未知大小显示「未知大小」，不猜测', () => {
+    expect(formatFileSize(undefined)).toBe('未知大小')
+    expect(formatFileSize(Number.NaN)).toBe('未知大小')
   })
 })

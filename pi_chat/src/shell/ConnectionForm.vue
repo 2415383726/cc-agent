@@ -4,11 +4,21 @@ import { defaultConfig, parseInputs } from '../dify/config'
 import type { SessionCredentials } from '../dify/config'
 
 /*
- * 实时模式的最小连接表单（票 07）：服务地址 / API Key / 用户标识 / 应用输入 JSON。
+ * 实时模式的最小连接表单（票 07/08）：服务地址 / API Key / 用户标识 / 应用输入 JSON。
  * 预填来自部署配置与会话凭据（defaultConfig）；提交时在本地校验并 emit connect。
- * 样式用 --dsw-* 令牌，跟随 dsh 主题。
+ * 票 08 收尾：连接失败（conversationsError）时显示「连接失败…重试」提示；已连接时
+ * 提供「收起」（emit close，父级收起表单）。
  */
-const emit = defineEmits<{ connect: [credentials: SessionCredentials] }>()
+const props = withDefaults(
+  defineProps<{
+    /** 最近一次连接失败的兜底信息（空串视为无）。 */
+    connectionError?: string
+    /** 已连接：显示「收起」按钮。 */
+    connected?: boolean
+  }>(),
+  { connectionError: '', connected: false },
+)
+const emit = defineEmits<{ connect: [credentials: SessionCredentials]; close: [] }>()
 
 const initial = defaultConfig()
 const baseUrl = ref(initial.baseUrl || '/v1')
@@ -62,7 +72,19 @@ function submit(): void {
       <textarea v-model="inputsText" rows="3" data-testid="form-inputs" spellcheck="false" />
     </label>
     <p v-if="error" class="pi-connect-error" role="alert">{{ error }}</p>
+    <p v-if="props.connectionError" class="pi-connect-error" role="alert" data-testid="connect-failed">
+      连接失败：{{ props.connectionError }}。请检查服务地址与 API Key 后重试；也可在左侧会话列表点「重试」。
+    </p>
     <div class="pi-connect-actions">
+      <button
+        v-if="props.connected"
+        type="button"
+        class="pi-connect-collapse"
+        data-testid="connect-collapse"
+        @click="emit('close')"
+      >
+        收起
+      </button>
       <button type="button" class="pi-connect-submit" data-testid="connect-submit" @click="submit">
         连接
       </button>
@@ -144,6 +166,26 @@ function submit(): void {
 .pi-connect-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
+}
+
+.pi-connect-collapse {
+  height: 34px;
+  padding: 0 16px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-md);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .pi-connect-collapse:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+    color: var(--dsw-alias-label-primary);
+  }
 }
 
 .pi-connect-submit {

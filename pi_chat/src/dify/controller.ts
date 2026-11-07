@@ -116,7 +116,8 @@ export class DifyController implements WorkbenchController {
       const uploaded = await uploadFile(this.config, file)
       return uploaded
     } catch (error) {
-      this.ui.error = safeError(error)
+      // 上传失败与列表操作同路：写 actionNote 兜底提示（侧栏可见），不污染错误横幅。
+      this.ui.actionNote = `附件上传失败：${safeError(error)}`
       return null
     }
   }
