@@ -27,6 +27,7 @@ import { groupTimeline, groupTitle } from './timeline/grouping'
 import { ScrollFollow, scrollMetrics } from './timeline/scrollFollow'
 import type {
   ApprovalEntry,
+  FileRef,
   MessageEntry,
   NoteEntry,
   QuestionEntry,
@@ -63,6 +64,13 @@ const draft = ref('')
 const mode = ref<'replay' | 'live'>('replay')
 const live = shallowRef<DifyController | null>(null)
 const liveDraft = ref('')
+/* 票 08：连接表单收尾——未连接时常显，连接成功收起，「连接设置」可再展开。 */
+const formOpen = ref(false)
+const showForm = computed(() => {
+  const controller = live.value
+  if (mode.value !== 'live' || !controller) return false
+  return !controller.ui.connected || formOpen.value
+})
 
 const modeBadge = computed(() => {
   if (mode.value === 'replay') return '回放模式'
@@ -103,14 +111,15 @@ async function onConnect(credentials: SessionCredentials): Promise<void> {
   controller.updateConfig({ ...credentials })
   saveSessionCredentials({ ...credentials })
   await controller.refreshConversations()
+  // 连接失败（列表刷新报错）时表单保持展开显示重试提示；成功即收起。
+  formOpen.value = Boolean(controller.ui.conversationsError)
 }
 
-async function onLiveSend(): Promise<void> {
+/* 票 08：composer 提交完整 payload（文本 + 附件），草稿由 ComposerBar 清空。 */
+async function onLiveSend(text: string, files: FileRef[]): Promise<void> {
   const controller = live.value
   if (!controller) return
-  const text = liveDraft.value
-  liveDraft.value = ''
-  await controller.send(text)
+  await controller.send(text, files)
 }
 
 function onScenarioChange(event: Event): void {
@@ -176,14 +185,15 @@ const firstEntryTs = computed(() => view.value.entries[0]?.ts)
       <template #actions>
         <template v-if="mode === 'live'">
           <button type="button" class="pi-mode-button" data-testid="back-replay" @click="backToReplay">回放模式</button>
+          <!-- 停止按钮已移入 composer（票 08）：只在运行中渲染，停止 best-effort 由控制器承接。 -->
           <button
-            v-if="live && live.ui.running"
+            v-if="live?.ui.connected"
             type="button"
             class="pi-mode-button"
-            data-testid="live-stop"
-            @click="live.stop()"
+            data-testid="open-connect-form"
+            @click="formOpen = true"
           >
-            停止
+            连接设置
           </button>
         </template>
         <template v-else>
@@ -199,14 +209,18 @@ const firstEntryTs = computed(() => view.value.entries[0]?.ts)
         </template>
       </template>
 
-      <ConnectionForm
-        v-if="mode === 'live' && live && !live.ui.connected"
-        @connect="onConnect"
-      />
-      <LiveConversation
-        v-else-if="mode === 'live' && live"
-        :controller="live"
-      />
+      <!-- 实时分支用真实元素作根（多子节点的 template v-if 分支在切换模式时
+           fragment 卸载不稳定）；连接表单展开时叠加在会话视图上方，未连接时常显。 -->
+      <div v-if="mode === 'live' && live" class="pi-live-stack">
+        <ConnectionForm
+          v-if="showForm"
+          :connection-error="live.ui.conversationsError || ''"
+          :connected="Boolean(live.ui.connected)"
+          @connect="onConnect"
+          @close="formOpen = false"
+        />
+        <LiveConversation :controller="live" />
+      </div>
       <template v-else>
         <p v-if="replay.ui.error" role="alert">{{ replay.ui.error }}</p>
         <ul v-if="view.warnings.length" aria-label="警告">
@@ -277,7 +291,11 @@ const firstEntryTs = computed(() => view.value.entries[0]?.ts)
           v-model="liveDraft"
           :interactive="liveInteractive"
           :busy="Boolean(live?.ui.running)"
+          :stoppable="Boolean(live && (live.ui.running || live.ui.stopping))"
+          :stopping="Boolean(live?.ui.stopping)"
+          :upload="live ? (file: File) => live.upload(file) : undefined"
           @send="onLiveSend"
+          @stop="live?.stop()"
         />
         <ComposerBar v-else v-model="draft" />
       </template>
@@ -289,6 +307,12 @@ const firstEntryTs = computed(() => view.value.entries[0]?.ts)
 /* 组件自有（非 vendor）：时间线列表。上游 ChatView 的 flow 列（容器查询轴 +
    行间 16px）在本应用由该列表承担；宽度对齐 --dsh-chat-content-width，
    使 vendored 的 .md-table-wide 断行 CSS 在同一宽度轴上生效。 */
+.pi-live-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .pi-timeline {
   list-style: none;
   margin: 0 auto;

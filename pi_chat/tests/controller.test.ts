@@ -212,6 +212,29 @@ describe('DifyController', () => {
     expect(controller.view.entries.some((entry) => entry.kind === 'note')).toBe(true)
   })
 
+  it('附件上传成功：返回 FileRef（仅安全元数据），失败：写入 actionNote 而非置错误横幅', async () => {
+    const controller = new DifyController(config)
+    const file = new File(['pdf-bytes'], '报告.pdf', { type: 'application/pdf' })
+    ;(transport.uploadFile as any).mockResolvedValue({
+      id: 'file_1',
+      name: '报告.pdf',
+      type: 'document',
+      mimeType: 'application/pdf',
+      size: 9,
+    })
+    const uploaded = await controller.upload(file)
+    expect(uploaded).toMatchObject({ id: 'file_1', name: '报告.pdf', mimeType: 'application/pdf', size: 9 })
+    expect(controller.ui.actionNote).toBe('')
+    expect(controller.ui.error).toBe('')
+
+    ;(transport.uploadFile as any).mockRejectedValue(new Error('File Too Large'))
+    const failed = await controller.upload(file)
+    expect(failed).toBeNull()
+    expect(controller.ui.actionNote).toContain('附件上传失败')
+    expect(controller.ui.actionNote).toContain('File Too Large')
+    expect(controller.ui.error).toBe('')
+  })
+
   it('ignores unsupported display versions but keeps Dify text', async () => {
     mockStream([
       {
