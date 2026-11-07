@@ -451,7 +451,7 @@ describe('pi_chat 实时模式：附件、停止与连接表单收尾（票 08�
     await wrapper.find('[data-testid="connect-submit"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="connection-form"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('暂无消息')
+    expect(wrapper.text()).toContain('你好，有什么可以帮忙的？')
 
     // 「连接设置」再展开；已连接表单带「收起」按钮，点击后关闭
     await wrapper.find('[data-testid="open-connect-form"]').trigger('click')
