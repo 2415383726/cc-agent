@@ -34,7 +34,8 @@ const props = withDefaults(
 )
 const emit = defineEmits<{ send: [text: string, files: FileRef[]]; stop: [] }>()
 const draft = defineModel<string>({ default: '' })
-const placeholder = '发消息或创建任务，/ 调用指令，@ 文件或对话'
+/* P3-1：占位文案不宣传超出本应用范围的特性（无指令/文件提及语法）。 */
+const placeholder = '发消息'
 
 const composing = ref(false)
 const textArea = ref<HTMLTextAreaElement | null>(null)

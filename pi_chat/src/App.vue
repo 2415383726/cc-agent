@@ -12,38 +12,17 @@ import ConversationColumn from './shell/ConversationColumn.vue'
 import ComposerBar from './shell/ComposerBar.vue'
 import ConnectionForm from './shell/ConnectionForm.vue'
 import LiveConversation from './shell/LiveConversation.vue'
-import AssistantMessage from './timeline/AssistantMessage.vue'
-import NoteRow from './timeline/NoteRow.vue'
-import ReasoningRow from './timeline/ReasoningRow.vue'
-import TerminalRow from './timeline/TerminalRow.vue'
-import UserMessage from './timeline/UserMessage.vue'
-import QuestionCard from './cards/QuestionCard.vue'
-import ApprovalCard from './cards/ApprovalCard.vue'
-import CompactionRow from './timeline/CompactionRow.vue'
-import SkillRow from './timeline/SkillRow.vue'
-import ToolCard from './timeline/ToolCard.vue'
-import ToolGroupRow from './timeline/ToolGroupRow.vue'
-import { groupTimeline, groupTitle } from './timeline/grouping'
+import TranscriptView from './timeline/TranscriptView.vue'
 import { ScrollFollow, scrollMetrics } from './timeline/scrollFollow'
-import type {
-  ApprovalEntry,
-  FileRef,
-  MessageEntry,
-  NoteEntry,
-  QuestionEntry,
-  ReasoningEntry,
-  TerminalEntry,
-  WorkbenchEntry,
-} from './projection/transcript'
+import type { FileRef } from './projection/transcript'
 
 /*
  * Binding seam: both controllers are framework-agnostic pure TS. This shell is
  * the only Vue-aware layer — it wraps the controller in reactive() and reads
- * view/ui as plain data. 时间线条目由 timeline/ 下的 Harness 同族组件渲染：
- * 消息四类（票据 03）+ 工具折叠卡/分组/技能行/压缩行（票据 04）；问卷卡由
- * cards/QuestionCard.vue 渲染（票据 05），审批卡由 cards/ApprovalCard.vue
- * 渲染（票据 06，提交均走 controller 的 inputs.interaction 通道，回放本地闭环）。
- * 自动吸底：读者未向上滚离底部时，新内容保持贴底
+ * view/ui as plain data. 时间线条目由共享 TranscriptView 渲染（ADR-0010：回放
+ * 与实时用同一契约与组件，不做第二个渲染器）：回放传 ReplayController 的本地
+ * 闭环回调，实时经 LiveConversation 传 DifyController 的 inputs.interaction
+ * 通道。自动吸底：读者未向上滚离底部时，新内容保持贴底
  * （timeline/scrollFollow.ts，上游 use-scroll-follow 的 best-effort 平移）。
  */
 const replay = reactive(new ReplayController()) as ReplayController
@@ -122,6 +101,18 @@ async function onLiveSend(text: string, files: FileRef[]): Promise<void> {
   await controller.send(text, files)
 }
 
+/* P3-4：上传失败的即时反馈贴近 composer 附件行；actionNote 兜底提示仍留在侧栏。 */
+const composerNote = ref('')
+
+async function onLiveUpload(file: File): Promise<FileRef | null> {
+  const controller = live.value
+  if (!controller) return null
+  composerNote.value = ''
+  const uploaded = await controller.upload(file)
+  if (!uploaded) composerNote.value = controller.ui.actionNote || '附件上传失败'
+  return uploaded
+}
+
 function onScenarioChange(event: Event): void {
   const id = (event.target as HTMLSelectElement).value
   replay.loadScenario(id)
@@ -131,6 +122,11 @@ function onScenarioChange(event: Event): void {
 }
 
 /* ---- 自动吸底跟随 ---- */
+/* P2-2：跟随「当前模式」的视图条目——回放跟 replay.view，实时跟 live.view
+   （此前只监视回放视图，live 流式条目不触发吸底）。 */
+const activeEntries = computed(() =>
+  mode.value === 'live' ? live.value?.view.entries ?? [] : view.value.entries,
+)
 const column = ref<InstanceType<typeof ConversationColumn> | null>(null)
 const follow = new ScrollFollow(true, 80)
 let stopWatch: (() => void) | undefined
@@ -148,7 +144,11 @@ onMounted(() => {
   const el = scrollElement()
   el?.addEventListener('scroll', onScroll, { passive: true })
   stopWatch = watch(
-    () => [view.value.entries, view.value.running, view.value.entries[view.value.entries.length - 1]],
+    () => [
+      activeEntries.value,
+      activeEntries.value[activeEntries.value.length - 1],
+      activeEntries.value.length,
+    ],
     () => {
       const target = scrollElement()
       if (!target || !follow.active) return
@@ -162,18 +162,6 @@ onBeforeUnmount(() => {
   scrollElement()?.removeEventListener('scroll', onScroll)
   stopWatch?.()
 })
-
-const isUser = (entry: WorkbenchEntry): boolean =>
-  entry.kind === 'message' && (entry as MessageEntry).role === 'user'
-const isAssistant = (entry: WorkbenchEntry): boolean =>
-  entry.kind === 'message' && (entry as MessageEntry).role === 'assistant'
-
-/* 连续 tool/skill/compaction 折入可折叠组（票据 04）；分组与组头标题拼装是纯函数。 */
-const segments = computed(() => groupTimeline(view.value.entries, view.value.running))
-const groupActivity = (segment: Extract<typeof segments.value[number], { kind: 'tool-group' }>): string =>
-  segment.running ? segment.counts[0]?.kind ?? 'tools' : segment.counts[0]?.kind ?? 'thinking'
-
-const firstEntryTs = computed(() => view.value.entries[0]?.ts)
 </script>
 
 <template>
@@ -228,64 +216,28 @@ const firstEntryTs = computed(() => view.value.entries[0]?.ts)
         </ul>
 
       <p v-if="!view.entries.length">选择一个回放场景查看过程事件。</p>
-      <ol v-else class="pi-timeline" aria-label="会话记录">
-        <template v-for="segment in segments" :key="segment.kind === 'tool-group' ? segment.id : `${segment.entry.kind}:${segment.entry.id}`">
-          <li v-if="segment.kind === 'single'">
-            <UserMessage v-if="isUser(segment.entry)" :entry="segment.entry as MessageEntry" />
-
-            <AssistantMessage v-else-if="isAssistant(segment.entry)" :entry="segment.entry as MessageEntry" />
-
-            <ReasoningRow v-else-if="segment.entry.kind === 'reasoning'" :entry="segment.entry as ReasoningEntry" />
-
-            <TerminalRow
-              v-else-if="segment.entry.kind === 'terminal'"
-              :entry="segment.entry as TerminalEntry"
-              :start-ts="firstEntryTs"
-            />
-
-            <NoteRow v-else-if="segment.entry.kind === 'note'" :entry="segment.entry as NoteEntry" />
-
-            <!-- 问卷卡（票据 05）：作答/跳过/取消提交为 interaction JSON（回放本地闭环）。 -->
-            <QuestionCard
-              v-else-if="segment.entry.kind === 'question'"
-              :entry="segment.entry as QuestionEntry"
-              @submit="(answers) => replay.submitAnswers(segment.entry as QuestionEntry, answers)"
-              @cancel="replay.cancelQuestion(segment.entry as QuestionEntry)"
-            />
-
-            <!-- 审批卡（票据 06）：批准/拒绝（含 scope）提交为 interaction JSON（回放本地闭环）。 -->
-            <ApprovalCard
-              v-else-if="segment.entry.kind === 'approval'"
-              :entry="segment.entry as ApprovalEntry"
-              @submit="
-                (decision, scope) => replay.submitApproval(segment.entry as ApprovalEntry, decision, scope)
-              "
-            />
-
-            <template v-else>
-              <strong>{{ segment.entry.kind }}</strong>
-            </template>
-          </li>
-
-          <!-- 工具活动组（票据 04）：连续 tool/skill/compaction 折入同一折叠组。 -->
-          <li v-else>
-            <ToolGroupRow
-              :label="groupTitle(segment.counts, segment.running)"
-              :activity="groupActivity(segment)"
-              :running="segment.running"
-            >
-              <template v-for="member in segment.entries" :key="`${member.kind}:${member.id}`">
-                <ToolCard v-if="member.kind === 'tool'" :entry="member" />
-                <SkillRow v-else-if="member.kind === 'skill'" :entry="member" />
-                <CompactionRow v-else-if="member.kind === 'compaction'" :entry="member" />
-              </template>
-            </ToolGroupRow>
-          </li>
-        </template>
-      </ol>
+      <!-- 共享时间线渲染器：与实时分支同一契约与组件（ADR-0010）。 -->
+      <TranscriptView
+        v-else
+        :entries="view.entries"
+        :running="view.running"
+        :outputs="view.outputs"
+        :on-question-submit="(entry, answers) => replay.submitAnswers(entry, answers)"
+        :on-question-cancel="(entry) => replay.cancelQuestion(entry)"
+        :on-approval-submit="(entry, decision, scope) => replay.submitApproval(entry, decision, scope)"
+      />
       </template>
 
       <template #composer>
+        <!-- P3-4：上传失败即时提示（附件行上方），与侧栏 actionNote 同源互补。 -->
+        <p
+          v-if="mode === 'live' && composerNote"
+          class="pi-composer-note"
+          data-testid="composer-action-note"
+          role="status"
+        >
+          {{ composerNote }}
+        </p>
         <ComposerBar
           v-if="mode === 'live'"
           v-model="liveDraft"
@@ -293,7 +245,7 @@ const firstEntryTs = computed(() => view.value.entries[0]?.ts)
           :busy="Boolean(live?.ui.running)"
           :stoppable="Boolean(live && (live.ui.running || live.ui.stopping))"
           :stopping="Boolean(live?.ui.stopping)"
-          :upload="live ? (file: File) => live.upload(file) : undefined"
+          :upload="onLiveUpload"
           @send="onLiveSend"
           @stop="live?.stop()"
         />
@@ -304,29 +256,20 @@ const firstEntryTs = computed(() => view.value.entries[0]?.ts)
 </template>
 
 <style>
-/* 组件自有（非 vendor）：时间线列表。上游 ChatView 的 flow 列（容器查询轴 +
-   行间 16px）在本应用由该列表承担；宽度对齐 --dsh-chat-content-width，
-   使 vendored 的 .md-table-wide 断行 CSS 在同一宽度轴上生效。 */
+/* 组件自有（非 vendor）：实时分支的会话栈（连接表单叠加在会话视图上方）。 */
 .pi-live-stack {
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
-.pi-timeline {
-  list-style: none;
-  margin: 0 auto;
-  padding: 24px 16px 16px;
-  width: 100%;
-  max-width: var(--dsh-chat-content-width, min(100% - 32px, 920px));
-  container-type: inline-size;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.pi-timeline > li {
-  min-width: 0;
+/* 组件自有（非 vendor）：composer 附件行上方的即时提示（上传失败等）。 */
+.pi-composer-note {
+  margin: 0 0 6px;
+  padding: 0 4px;
+  color: var(--dsw-alias-state-error-primary, #b3261e);
+  font-size: 12px;
+  line-height: 18px;
 }
 
 /* 组件自有（非 vendor）：headerActions 里的回放场景选择器，令牌着色的 caption 行。 */

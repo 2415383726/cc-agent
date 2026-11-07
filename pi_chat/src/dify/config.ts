@@ -12,16 +12,16 @@ export interface DeploymentConfig {
   inputs?: Record<string, unknown>
 }
 
-const SESSION_KEY = 'pi-workbench-session-credentials'
+const SESSION_KEY = 'pi-chat-session-credentials'
 
 declare global {
   interface Window {
-    __PI_WORKBENCH__?: DeploymentConfig
+    __PI_CHAT__?: DeploymentConfig
   }
 }
 
 export function defaultConfig(): WorkbenchConfig {
-  const deployment = typeof window !== 'undefined' ? window.__PI_WORKBENCH__ || {} : {}
+  const deployment = typeof window !== 'undefined' ? window.__PI_CHAT__ || {} : {}
   const stored = readSessionCredentials()
   return {
     baseUrl: stored.baseUrl || deployment.baseUrl || '/v1',
