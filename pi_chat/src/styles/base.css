@@ -1,0 +1,8 @@
+/*
+ * 文档级浅色底：仅固定画布与文字颜色（spec 决策「浅色主题」）。
+ * 组件视觉由后续票据的 ui-theme 令牌与 CSS Modules 接管。
+ */
+body {
+  background: #ffffff;
+  color: #111111;
+}
