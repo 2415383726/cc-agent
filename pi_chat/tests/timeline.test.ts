@@ -311,12 +311,12 @@ describe('timeline NoteRow（备注行）', () => {
     const entry: NoteEntry = {
       id: 'note1',
       kind: 'note',
-      text: '回放模式：没有发起 Dify 请求或模型调用。',
+      text: '连接已中断：本轮结果可能不完整。',
       tone: 'info',
       ts: BASE_TS,
     }
     const wrapper = mount(NoteRow, { props: { entry } })
-    expect(wrapper.find('[data-testid="note-row"]').text()).toBe('回放模式：没有发起 Dify 请求或模型调用。')
+    expect(wrapper.find('[data-testid="note-row"]').text()).toBe('连接已中断：本轮结果可能不完整。')
     expect(wrapper.find('[data-testid="note-row"]').attributes('data-tone')).toBe('info')
   })
 })

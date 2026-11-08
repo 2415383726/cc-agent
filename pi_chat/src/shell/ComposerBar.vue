@@ -27,7 +27,7 @@ const props = withDefaults(
     stoppable?: boolean
     /** 停止请求已发出但流未结束：停止按钮禁用并显示「停止中…」。 */
     stopping?: boolean
-    /** 上传单个附件；缺省时「+」保持禁用占位（回放模式）。 */
+    /** 上传单个附件；缺省时「+」保持禁用占位（未连接）。 */
     upload?: (file: File) => Promise<FileRef | null>
   }>(),
   { interactive: false, busy: false, stoppable: false, stopping: false },
@@ -185,8 +185,8 @@ watch(draft, () => nextTick(autoGrow))
             type="button"
             :class="css.add"
             data-testid="composer-add"
-            :aria-label="upload ? '添加附件' : '附件（回放模式不可用）'"
-            :title="upload ? '添加附件' : '附件（回放模式不可用）'"
+            :aria-label="upload ? '添加附件' : '附件（不可用）'"
+            :title="upload ? '添加附件' : '附件（不可用）'"
             :disabled="!canPick"
             @click="pickFiles"
           >
@@ -194,7 +194,7 @@ watch(draft, () => nextTick(autoGrow))
               <path d="M8 2.75v10.5M2.75 8h10.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
             </svg>
           </button>
-          <!-- 隐藏 file input 只在交互态渲染；回放模式连 DOM 都不存在。 -->
+          <!-- 隐藏 file input 只在交互态渲染；未连接时连 DOM 都不存在。 -->
           <input
             v-if="upload"
             ref="fileInput"
@@ -227,8 +227,8 @@ watch(draft, () => nextTick(autoGrow))
             type="button"
             :class="css.primary"
             data-testid="composer-send"
-            :aria-label="interactive ? '发送' : '发送（回放模式占位）'"
-            :title="interactive ? '发送（Enter）' : '发送（回放模式占位）'"
+            :aria-label="interactive ? '发送' : '发送（不可用）'"
+            :title="interactive ? '发送（Enter）' : '发送（不可用）'"
             :disabled="!canSend"
             @click="onSendClick"
           >

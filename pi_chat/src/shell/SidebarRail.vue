@@ -208,8 +208,8 @@ function cancelDelete(): void {
 
     <div v-if="wide" :class="css.scrollRegion">
       <div :class="css.scrollArea" aria-label="会话列表">
-        <div v-if="!controller" class="pi-list-status" data-testid="replay-notice">
-          回放模式：连接 Dify 后展示会话历史。
+        <div v-if="!controller" class="pi-list-status" data-testid="disconnected-notice">
+          未连接：连接 Dify 后展示会话历史。
         </div>
         <template v-else>
           <div
@@ -357,7 +357,7 @@ function cancelDelete(): void {
 </template>
 
 <style>
-/* 组件自有（非 vendor）：列表状态行（回放提示/空态/加载失败重试）与操作兜底
+/* 组件自有（非 vendor）：列表状态行（未连接提示/空态/加载失败重试）与操作兜底
    提示，令牌着色；几何对齐 ui-workspace 的 searchStatus（10px 12px 12px 字）。 */
 .pi-list-status {
   display: flex;

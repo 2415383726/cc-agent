@@ -2,7 +2,7 @@
 import type { NoteEntry } from '../projection/transcript'
 
 /*
- * 备注行（abort 通知、回放提示等活动注记）。上游无一对一组件——按 Harness
+ * 备注行（abort 通知、连接提示等活动注记）。上游无一对一组件——按 Harness
  * 行语言以组件自有样式实现：caption 级 tertiary 文本行，语气经 data-tone
  * 着色（warning → 警示色、error → 错误色）。
  */

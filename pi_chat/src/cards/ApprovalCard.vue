@@ -25,7 +25,7 @@ import type { ApprovalEntry } from '../projection/transcript'
  * - 审批是独立于问卷的待交互类型：阻断优先（waiting 时 warn strip 常驻），
  *   提交中全卡禁用；
  * - 决定只有批准/拒绝两条路，走 controller.submitApproval 的
- *   inputs.interaction 协议（回放本地闭环）；卡面没有第三条关闭/放弃通道
+ *   inputs.interaction 协议；卡面没有第三条关闭/放弃通道
  *   （CardFrame closable=false）——误触关闭不能代替一次明确决定；
  * - 决策后只读回显：rejected/cancelled 是「未执行」非执行态；
  * - 保存态恢复的 waiting 卡直接可操作：恢复 ≠ 授权，授权只来自本卡按钮。

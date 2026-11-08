@@ -30,11 +30,10 @@ import type {
 } from '../projection/transcript'
 
 /*
- * 共享时间线渲染器（ADR-0010「回放必须用同一契约与组件，不做第二个渲染器」）：
- * 回放分支与实时分支都渲染本组件。纯展示——只接收投影视图模型
- * （entries/running/outputs）与交互回调 props，不持有任何控制器：
- * 回放传 ReplayController 的本地闭环回调，实时传 DifyController 的
- * inputs.interaction 通道（问卷作答/审批授权从此在 live 模式可交互）。
+ * 共享时间线渲染器（live 与历史恢复同一契约与组件，不做第二个渲染器）：
+ * 纯展示——只接收投影视图模型（entries/running/outputs）与交互回调 props，
+ * 不持有任何控制器：交互回调直接转接 DifyController 的
+ * inputs.interaction 通道（问卷作答/审批授权可交互）。
  *
  * 回合折叠（对齐 DeepSeek Harness 完成态行为）：回合闭合后过程行
  * （思考/工具组）默认折叠进「已完成，用时 X 秒」头，文本原位可见；
@@ -262,7 +261,7 @@ const turnTail = (turn: TurnView): { text: string; time: number } | null => {
   min-width: 0;
 }
 
-/* 组件自有（非 vendor）：输出文件列表（回放无输出时不渲染；链接经协议护栏）。 */
+/* 组件自有（非 vendor）：输出文件列表（无输出时不渲染；链接经协议护栏）。 */
 .pi-running-row {
   list-style: none;
   margin: 4px 0 0;

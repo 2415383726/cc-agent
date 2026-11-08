@@ -10,8 +10,7 @@ import type { TurnRailItem } from '../timeline/rail'
  * .header（titleRow：titleCluster + headerActions）→ .body → .scrollBody（时间线
  * 滚动区，default slot）→ .composerSeat（composer 槽）。data-phase="active" 激活
  * 上游的 sticky composer 座位与渐变遮罩；宽度轴变量（--dsh-chat-content-width 等）
- * 随 .body 类生效。模式徽标/场景选择由父级通过 actions 槽注入 headerActions；
- * badge 文案由模式决定（回放/实时），置空则不渲染。
+ * 随 .body 类生效。连接设置由父级通过 actions 槽注入 headerActions。
  * scrollBody 经 defineExpose 暴露给父级，供自动吸底跟随使用。
  * 回合导航轨（对齐上游 TurnNavigator 挂载点）：scrollBody 内首个子元素
  * （data-conversation-scroll 的 sticky 零高带）；带高两变量
@@ -20,7 +19,6 @@ import type { TurnRailItem } from '../timeline/rail'
  */
 const props = defineProps<{
   title?: string
-  badge?: string | null
   railItems?: TurnRailItem[]
   /** 未跟随尾部时显示「回到底部」浮动按钮（上游 toBottomSlot 的开关）。 */
   toBottomVisible?: boolean
@@ -137,7 +135,6 @@ watch(
       <div :class="css.titleRow">
         <div :class="css.titleCluster">
           <div :class="[css.crumb, css.crumbCurrent]">{{ title || 'Pi Chat' }}</div>
-          <span v-if="badge" class="pi-replay-badge" data-testid="mode-badge">{{ badge }}</span>
         </div>
         <div :class="css.headerActions">
           <slot name="actions" />
@@ -191,20 +188,5 @@ watch(
    [data-chat-following-tail] 语义在 scrollBody 自身生效（本结构无 .root 中转）。 */
 [data-conversation-scroll]:has([data-chat-following-tail]) {
   overflow-anchor: none;
-}
-
-/* 组件自有（非 vendor）：回放徽标 chip，令牌着色（caption 底、caption 字）。 */
-.pi-replay-badge {
-  display: inline-flex;
-  align-items: center;
-  flex: none;
-  height: 22px;
-  padding: 0 8px;
-  border-radius: var(--dsw-radius-sm, 8px);
-  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.04));
-  color: var(--dsw-alias-label-secondary, #545557);
-  font-size: 12px;
-  line-height: 18px;
-  white-space: nowrap;
 }
 </style>

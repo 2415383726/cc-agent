@@ -138,9 +138,9 @@ describe('SidebarRail 侧栏会话列表', () => {
     expect(wrapper.find('[data-testid="action-note"]').text()).toContain('重命名失败')
   })
 
-  it('无控制器（回放基线）：显示回放提示，新会话按钮禁用', async () => {
+  it('无控制器（组件级兜底）：显示未连接提示，新会话按钮禁用', async () => {
     const wrapper = mount(SidebarRail, { props: { controller: null } })
-    expect(wrapper.find('[data-testid="replay-notice"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="disconnected-notice"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="new-conversation"]').attributes('disabled')).toBeDefined()
     expect(wrapper.find('[data-testid="conversation-item"]').exists()).toBe(false)
   })

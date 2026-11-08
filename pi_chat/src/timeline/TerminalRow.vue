@@ -116,7 +116,7 @@ const chevron = computed(() =>
 
 <style>
 /* 组件自有（非 vendor）：状态徽标与失败错误行，令牌着色。
-   上游 TurnProcessNodeView 不带徽标；徽标沿用回放徽标的 caption chip 语言。 */
+   上游 TurnProcessNodeView 不带徽标；徽标沿用模式徽标的 caption chip 语言。 */
 .pi-terminal-badge {
   flex: none;
   display: inline-flex;

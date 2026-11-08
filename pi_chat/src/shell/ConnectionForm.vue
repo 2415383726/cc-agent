@@ -4,7 +4,7 @@ import { defaultConfig, parseInputs } from '../dify/config'
 import type { SessionCredentials } from '../dify/config'
 
 /*
- * 实时模式的最小连接表单（票 07/08）：服务地址 / API Key / 用户标识 / 应用输入 JSON。
+ * 最小连接表单（票 07/08）：服务地址 / API Key / 用户标识 / 应用输入 JSON。
  * 预填来自部署配置与会话凭据（defaultConfig）；提交时在本地校验并 emit connect。
  * 票 08 收尾：连接失败（conversationsError）时显示「连接失败…重试」提示；已连接时
  * 提供「收起」（emit close，父级收起表单）。
@@ -53,7 +53,7 @@ function submit(): void {
   <form class="pi-connect" data-testid="connection-form" @submit.prevent="submit">
     <h2 class="pi-connect-title">连接 Dify</h2>
     <p class="pi-connect-hint">
-      填写 Dify 应用（服务型 API）凭据后进入实时模式；凭据只保存在本页会话中。
+      填写 Dify 应用（服务型 API）凭据后开始对话；凭据只保存在本页会话中。
     </p>
     <label class="pi-connect-field">
       <span>服务地址</span>

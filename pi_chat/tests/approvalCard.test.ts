@@ -10,9 +10,8 @@ const BASE_TS = (() => {
   return today.getTime()
 })()
 
-/* 审批夹具平移自回放 approval 场景的 approval.requested 事件与 pi_workbench
-   components.test.ts 审批半区（tool/arguments/source/scope_options），id 契约
-   与 pi_dify pending 交互一致。 */
+/* 审批夹具沿用 pi_dify pending 交互契约（tool/arguments/source/scope_options），
+   id 契约与 pi_dify pending 交互一致。 */
 function approvalEntry(partial: Partial<ApprovalEntry> = {}): ApprovalEntry {
   return {
     id: 'approval_apv_replay_1',

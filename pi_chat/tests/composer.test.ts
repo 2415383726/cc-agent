@@ -213,7 +213,7 @@ describe('ComposerBar Enter / IME / busy', () => {
     expect(wrapper.emitted('send')).toHaveLength(1)
   })
 
-  it('非交互（未连接/回放）时「+」为禁用占位且不渲染 file input', () => {
+  it('非交互（未连接）时「+」为禁用占位且不渲染 file input', () => {
     const wrapper = mount(ComposerBar, { props: {} })
     expect(wrapper.find('[data-testid="composer-add"]').attributes('disabled')).toBeDefined()
     expect(wrapper.find('input[type="file"]').exists()).toBe(false)

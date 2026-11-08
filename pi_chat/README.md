@@ -1,9 +1,6 @@
 # pi_chat
 
-Pi Harness 显示层的 Vue 3 + Vite 重建（自 MIT 许可的 DeepSeek Harness 做减法移植展示层，数据层自 pi_workbench 平移）。支持两种模式：
-
-- **回放模式**：三场景（流程 / 问卷 / 审批）静态回放，同一契约、投影与组件，零网络请求。
-- **实时模式**：连接真实 Dify（服务型 API）进行流式对话，凭据只保存在本页 `sessionStorage`。
+Pi Harness 显示层的 Vue 3 + Vite 重建（自 MIT 许可的 DeepSeek Harness 做减法移植展示层，数据层自 pi_workbench 平移）。连接真实 Dify（服务型 API）进行流式对话，凭据只保存在本页 `sessionStorage`。
 
 ## 开发
 
@@ -14,7 +11,7 @@ npm run test     # vitest 单测（happy-dom）
 npm run build    # 产物构建
 ```
 
-## 实时模式手动冒烟清单（票 08）
+## 手动冒烟清单（票 08）
 
 > 准备：`npm run dev` 打开页面；准备一个真实 Dify「服务型 API」应用的地址与 API Key。
 > **凭据只通过页面表单填写**（保存于 sessionStorage，关闭标签页即失效）；切勿把任何 Key 写进代码、测试或提交记录。
@@ -24,7 +21,7 @@ npm run build    # 产物构建
 
 | 步骤 | 预期 |
 | --- | --- |
-| 头部点「连接 Dify」进入实时模式 | 徽标显示「实时模式（未连接）」，连接表单出现 |
+| 打开页面（未连接） | 连接表单常显 |
 | 不填 API Key 直接点「连接」 | 表单内红字提示「请填写服务地址与 API Key」，不发请求 |
 | 应用输入填入非法 JSON（如 `{bad`）后点「连接」 | 表单内红字显示 JSON 解析错误，不发请求 |
 | 应用输入填入 `[1, 2]` 后点「连接」 | 提示「应用输入必须是 JSON 对象。」 |
@@ -63,7 +60,7 @@ npm run build    # 产物构建
 
 | 步骤 | 预期 |
 | --- | --- |
-| 点 composer 左下「+」 | 打开系统文件选择器（可多选；未连接 / 回放模式下为禁用占位） |
+| 点 composer 左下「+」 | 打开系统文件选择器（可多选；未连接时为禁用占位） |
 | 选择文件 | 请求 `POST /files/upload`；上传中 composer 显示「上传中…」chip，期间禁止再次选择与发送 |
 | 上传成功 | 待发送区出现附件 chip：**仅文件名 / 类型 / 大小**（如 `报告.pdf · application/pdf · 2.0 KB`），可点「×」移除 |
 | 输入文字并发送 | 请求体 `files` 以 `transfer_method: "local_file"` + 上传 id 传入；发送后草稿与 chips 清空；消息区用户气泡展示同一份安全元数据 |
@@ -107,21 +104,21 @@ npm run build    # 产物构建
 
 ## 删除门执行清单（票 09 阶段 2 · 交接文档）
 
-> 本清单是删除门的唯一执行依据：阶段 1 已完成 check:static 移植（`scripts/check-static.mjs` + `npm run check:static`）、whale 品牌资产清理（构建零告警）与回放三场景证据重制（`docs/evidence/09-replay-*.png`）。**✅ 阶段 2 已于 2026-11-07 执行**：live 冒烟通过（连接/流式/问卷闭环/重命名/删除/停止，证据 `docs/evidence/10-live-*.png`）后删除了 `pi_workbench/` 并改写 AGENTS.md 条款。
+> 本清单是删除门的唯一执行依据：阶段 1 已完成 check:static 移植（`scripts/check-static.mjs` + `npm run check:static`）、whale 品牌资产清理（构建零告警）与证据重制（`docs/evidence/`）。**✅ 阶段 2 已于 2026-11-07 执行**：live 冒烟通过（连接/流式/问卷闭环/重命名/删除/停止，证据 `docs/evidence/10-live-*.png`）后删除了 `pi_workbench/` 并改写 AGENTS.md 条款。
 
 1. **前置确认（全部满足才继续）**
-   - `cd pi_chat && npm run test` 四条 seam（投影 / 控制器 / 组件 / 回放）全部通过；
+   - `cd pi_chat && npm run test` 三条 seam（投影 / 控制器 / 组件）全部通过；
    - `cd pi_chat && npm run build && npm run check:static` 零告警、零违例，产出 `dist/static-report.json`；
-   - 用户按上方「实时模式手动冒烟清单（票 08）」完成 live 冒烟：流式对话、停止、附件上传、问卷、审批、历史切换 / 重命名 / 删除全部通过；
-   - 证据落位核对：`docs/evidence/` 中 09-replay-process / 09-replay-questionnaire / 09-replay-approval 三张截图与 live 截图可对照旧证据。
+   - 用户按上方「手动冒烟清单（票 08）」完成 live 冒烟：流式对话、停止、附件上传、问卷、审批、历史切换 / 重命名 / 删除全部通过；
+   - 证据落位核对：`docs/evidence/` 中 live 截图可对照。
 
 2. **删除旧项目**：`git rm -r pi_workbench/`（含其 docs/evidence 与 scripts/check-static.mjs——机制已平移至 `pi_chat/scripts/`）。
 
 3. **改写 AGENTS.md** 的 pi_workbench 条款为 pi_chat 条款：
    - `pi_workbench/` 项目条目改为 `pi_chat/`（静态 Vue 3 显示层，消费 `piagent.display.v1`）；
    - 「Runtime boundaries」中 `pi_workbench/src/dify/controller.ts` → `pi_chat/src/dify/controller.ts`、`src/projection/transcript.ts` → `pi_chat/src/projection/transcript.ts`；
-   - **逐字保留回放不变量表述**：「Replay must use the same contract and components, not a second renderer.」（回放必须用同一契约与组件，不做第二个渲染器）；
-   - 「Tests」一节中 `pi_workbench/tests/` 条目改为 `pi_chat/tests/`（contract / projection / controller / components / replay / history / staticScan）；开发命令改为 `npm run test`、`npm run build`、`npm run check:static`（在 `pi_chat/` 下）。
+   - **保留单一渲染器不变量**：「Replay must use the same contract and components, not a second renderer.」（历史恢复与实时必须用同一契约与组件，不做第二个渲染器）；
+   - 「Tests」一节中 `pi_workbench/tests/` 条目改为 `pi_chat/tests/`（contract / projection / controller / components / history / staticScan）；开发命令改为 `npm run test`、`npm run build`、`npm run check:static`（在 `pi_chat/` 下）。
 
 4. **同步根 README.md**：`pi_workbench/` 项目简介、构建命令（`cd pi_workbench && …`）与文档链接全部指向 `pi_chat/`；确认仓库内无其他 pi_workbench 残留引用（`grep -rn "pi_workbench" --exclude-dir=node_modules --exclude-dir=.git .`）。
 

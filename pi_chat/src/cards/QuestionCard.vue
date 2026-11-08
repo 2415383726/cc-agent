@@ -27,7 +27,7 @@ import type { Question, QuestionEntry, QuestionOption } from '../projection/tran
  * 作答后只读回显（上游 review 卡：同一卡面锁定重放记录）。
  *
  * 提交通道偏离上游：上游经 waterfall/rpc 双通道 settle；本应用 emit('submit')
- * 交给 controller（Dify：新轮次 inputs.interaction JSON；回放：本地闭环）。
+ * 交给 controller（新轮次 inputs.interaction JSON）。
  * 问卷作答不是工具授权——审批语义严格归票据 06。
  *
  * 其余有意偏离（上游 wire 无对应物，均有注释）：
@@ -44,7 +44,7 @@ const emit = defineEmits<{
 }>()
 
 const questions = computed<Question[]>(() => props.entry.questionnaire.questions || [])
-/* 上游 review 卡：已落定的调用回放记录，同一卡面锁定、无提交通道。 */
+/* 上游 review 卡：已落定的调用记录，同一卡面锁定、无提交通道。 */
 const review = computed<Record<string, string | string[]> | undefined>(() =>
   props.entry.status === 'waiting' ? undefined : props.entry.answers ?? {},
 )

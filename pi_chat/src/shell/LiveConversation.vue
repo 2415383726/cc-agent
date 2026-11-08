@@ -6,9 +6,9 @@ import TranscriptView from '../timeline/TranscriptView.vue'
 
 /*
  * 实时会话状态视图（票 07）：只承担真实状态接线——错误、停止说明、警告、
- * 「更早」分页与空态。时间线条目由共享 TranscriptView 渲染（ADR-0010：
- * 回放与实时用同一契约与组件，本组件不再有第二套时间线渲染路径）；问卷/
- * 审批回调直接转接 DifyController 的 inputs.interaction 通道。
+ * 「更早」分页与空态。时间线条目由共享 TranscriptView 渲染（本组件不再有
+ * 第二套时间线渲染路径）；问卷/审批回调直接转接 DifyController 的
+ * inputs.interaction 通道。
  * 空态渲染居中 hero（HeroShell 蓝图，无品牌徽标）。
  */
 const props = defineProps<{ controller: WorkbenchController }>()

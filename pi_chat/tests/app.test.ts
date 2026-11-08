@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import App from '../src/App.vue'
 
-const fetchSpy = vi.fn(() => Promise.reject(new Error('回放模式不允许网络请求')))
+const fetchSpy = vi.fn(() => Promise.reject(new Error('unexpected network request')))
 
 function jsonResponse(body: unknown, status = 200): Response {
   return {
@@ -81,7 +81,6 @@ function useLiveFetch(options: {
 
 /** 只做 UI 步骤：fetch 桩由各用例先经 useLiveFetch 设置（避免覆盖路由）。 */
 async function enterConnectedLive(wrapper: ReturnType<typeof mount>) {
-  await wrapper.find('[data-testid="enter-live"]').trigger('click')
   await wrapper.find('[data-testid="form-api-key"]').setValue('app-live-key')
   await wrapper.find('[data-testid="connect-submit"]').trigger('click')
   await flushPromises()
@@ -91,54 +90,18 @@ beforeEach(() => {
   fetchSpy.mockClear()
   vi.stubGlobal('fetch', fetchSpy)
   window.history.replaceState({}, '', '/')
-  // 票 07 的连接测试会写入会话凭据；清空避免用例间串味（凭据惰性自动连线会抢跑表单步骤）。
+  // 票 07 的连接测试会写入会话凭据；清空避免用例间串味（凭据自动续连会抢跑表单步骤）。
   window.sessionStorage.clear()
 })
 
-describe('pi_chat replay shell', () => {
-  it('默认渲染 process 场景，回放标注可见，且零网络请求', async () => {
+describe('pi_chat 接线', () => {
+  it('默认显示连接表单与空会话列表（未连接）', async () => {
     const wrapper = mount(App)
     await flushPromises()
-    expect(wrapper.text()).toContain('回放模式')
-    // 完成态回合默认折叠：过程行（工具卡）藏进终态头，文本与技能名仍可见
-    const header = wrapper.find('[data-testid="terminal-row"]')
-    expect(header.exists()).toBe(true)
-    expect(header.attributes('aria-expanded')).toBe('false')
-    expect(wrapper.text()).toContain('已完成')
-    await header.trigger('click')
-    expect(wrapper.text()).toContain('lookup_order')
-    expect(wrapper.text()).toContain('refund-policy')
-    expect(fetchSpy).not.toHaveBeenCalled()
-  })
-
-  it('三个场景都在回放清单中可选，切换即渲染对应场景', async () => {
-    const wrapper = mount(App)
-    await flushPromises()
-    const select = wrapper.find('select')
-    const optionText = select.findAll('option').map((option) => option.text())
-    expect(optionText.some((text) => text.includes('工具、技能与压缩'))).toBe(true)
-    expect(optionText.some((text) => text.includes('问卷暂停与答复'))).toBe(true)
-    expect(optionText.some((text) => text.includes('工具审批与未知写操作'))).toBe(true)
-
-    await select.setValue('questionnaire')
-    await flushPromises()
-    // 票据 05 后问卷场景渲染完整问卷卡：第 1 题眉题（question.header）与题干可见。
-    expect(wrapper.text()).toContain('订单')
-    expect(wrapper.text()).toContain('要退款的是哪个订单？')
-
-    await select.setValue('approval')
-    await flushPromises()
-    expect(wrapper.text()).toContain('delete_record')
-    expect(wrapper.text()).toContain('等待审批')
-    expect(fetchSpy).not.toHaveBeenCalled()
-  })
-
-  it('?replay=<id> URL 参数选择对应场景', async () => {
-    window.history.replaceState({}, '', '/?replay=approval')
-    const wrapper = mount(App)
-    await flushPromises()
-    expect(wrapper.text()).toContain('delete_record')
-    expect(wrapper.text()).toContain('等待审批')
+    expect(wrapper.find('[data-testid="connection-form"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="mode-badge"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="conversation-item"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('暂无历史会话')
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
@@ -146,127 +109,14 @@ describe('pi_chat replay shell', () => {
     const wrapper = mount(App)
     await flushPromises()
     expect(wrapper.find('[data-zone="sidebar"]').exists()).toBe(true)
-    const timeline = wrapper.find('[data-zone="timeline"]')
-    expect(timeline.exists()).toBe(true)
-    expect(timeline.find('[aria-label="会话记录"]').exists()).toBe(true)
-    const composer = wrapper.find('[data-zone="composer"]')
-    expect(composer.exists()).toBe(true)
+    expect(wrapper.find('[data-zone="timeline"]').exists()).toBe(true)
+    expect(wrapper.find('[data-zone="composer"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('新会话')
-    expect(wrapper.text()).toContain('回放模式')
-  })
-
-  it('composer 可输入文本，发送为禁用占位，输入不发网络请求', async () => {
-    const wrapper = mount(App)
-    await flushPromises()
-    const textarea = wrapper.find('[data-zone="composer"] textarea')
-    expect(textarea.exists()).toBe(true)
-    expect(textarea.attributes('disabled')).toBeUndefined()
-    await textarea.setValue('你好，pi chat')
-    expect((textarea.element as HTMLTextAreaElement).value).toBe('你好，pi chat')
-    expect(wrapper.text()).not.toContain('回放模式不允许网络请求')
-
-    const send = wrapper.find('[data-zone="composer"] [data-testid="composer-send"]')
-    expect(send.exists()).toBe(true)
-    expect(send.attributes('disabled')).toBeDefined()
-    expect(fetchSpy).not.toHaveBeenCalled()
-  })
-
-  it('问卷回放可完整交互：作答、翻页、跳过、提交全程本地闭环', async () => {
-    const wrapper = mount(App)
-    await flushPromises()
-    const select = wrapper.find('select')
-    await select.setValue('questionnaire')
-    await flushPromises()
-
-    // 第 1 题（必填单选）：选第二个选项，自动翻页。
-    await wrapper.findAll('[role="radio"]')[1].trigger('click')
-    expect(wrapper.find('[data-testid="question-progress"]').text()).toBe('2 / 3')
-    // 第 2 题（multi，min1/max2）：勾选两项后翻页。
-    const checkboxes = wrapper.findAll('[role="checkbox"]')
-    await checkboxes[0].trigger('click')
-    await checkboxes[1].trigger('click')
-    await wrapper.find('[data-testid="question-primary"]').trigger('click')
-    expect(wrapper.find('[data-testid="question-progress"]').text()).toBe('3 / 3')
-    // 第 3 题（text 选填）：跳过即提交。
-    await wrapper.findAll('button').find((button) => button.text() === '跳过')!.trigger('click')
-
-    // 回放闭环：question.answered 落记录 → 卡片只读回显 + 用户答复气泡 + 回放终态。
-    await flushPromises()
-    expect(wrapper.find('[data-testid="question-review-status"]').text()).toBe('已回答')
-    expect(wrapper.text()).toContain('谢谢，问卷已提交')
-    expect(wrapper.text()).toContain('订单 B-2099')
-    expect(wrapper.text()).toContain('到货损坏, 商品错误')
-    expect(fetchSpy).not.toHaveBeenCalled()
-  })
-
-  it('问卷取消走回放本地闭环并渲染取消态', async () => {
-    const wrapper = mount(App)
-    await flushPromises()
-    const select = wrapper.find('select')
-    await select.setValue('questionnaire')
-    await flushPromises()
-    await wrapper.find('[data-testid="card-close"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-testid="question-review-status"]').text()).toBe('已取消')
-    expect(fetchSpy).not.toHaveBeenCalled()
-  })
-
-  it('审批回放批准路径闭环：阻断态可操作，scope 随决定提交，卡片回显已批准', async () => {
-    const wrapper = mount(App)
-    await flushPromises()
-    await wrapper.find('select').setValue('approval')
-    await flushPromises()
-    // 等待态：阻断提示醒目，scope 默认 once，卡可直接操作（工具名/参数可见）。
-    expect(wrapper.find('[data-testid="approval-blocked"]').text()).toContain('阻断')
-    expect(wrapper.find('[data-testid="approval-args"]').text()).toContain('"record": "stale-14"')
-    expect(wrapper.find('[data-testid="approval-scope-once"]').attributes('aria-checked')).toBe('true')
-    // 切到 session 后批准：scope 随决定一并提交。
-    await wrapper.find('[data-testid="approval-scope-session"]').trigger('click')
-    await wrapper.find('[data-testid="approval-approve"]').trigger('click')
-    await flushPromises()
-    // 回放闭环：卡片只读回显已批准（本会话范围），终态落记录。
-    expect(wrapper.find('[data-testid="approval-echo"]').text()).toContain('已批准')
-    expect(wrapper.find('[data-testid="approval-echo"]').text()).toContain('本会话范围')
-    expect(wrapper.find('[data-testid="approval-approve"]').exists()).toBe(false)
-    // 终态行（已完成）+ 助手收尾消息落记录；terminal.answer 不直接进 DOM（与问卷流同款）。
-    expect(wrapper.text()).toContain('回放模式下已应用审批')
-    expect(wrapper.text()).toContain('已完成')
-    expect(fetchSpy).not.toHaveBeenCalled()
-  })
-
-  it('审批回放拒绝路径闭环：卡片呈现未执行非执行态', async () => {
-    const wrapper = mount(App)
-    await flushPromises()
-    await wrapper.find('select').setValue('approval')
-    await flushPromises()
-    await wrapper.find('[data-testid="approval-reject"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.text()).toContain('已拒绝')
-    expect(wrapper.find('[data-testid="approval-echo"]').text()).toContain('未执行')
-    expect(wrapper.find('[data-testid="approval-approve"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="approval-reject"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('操作已被拒绝，没有产生变更。')
-    expect(fetchSpy).not.toHaveBeenCalled()
-  })
-})
-
-describe('pi_chat 实时模式接线', () => {
-  it('默认仍是回放模式；进入实时模式后显示连接表单与实时徽标', async () => {
-    const wrapper = mount(App)
-    await flushPromises()
-    expect(wrapper.text()).toContain('回放模式')
-    await wrapper.find('[data-testid="enter-live"]').trigger('click')
-    expect(wrapper.find('[data-testid="connection-form"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('实时模式')
-    // 侧栏切到实时控制器：无凭据时列表为空态
-    expect(wrapper.find('[data-testid="conversation-item"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('暂无历史会话')
   })
 
   it('连接表单校验：缺 API Key 提示；填写后提交触发会话列表刷新（失败有兜底态）', async () => {
     const wrapper = mount(App)
     await flushPromises()
-    await wrapper.find('[data-testid="enter-live"]').trigger('click')
     const form = wrapper.find('[data-testid="connection-form"]')
     await form.find('[data-testid="connect-submit"]').trigger('click')
     expect(wrapper.text()).toContain('请填写服务地址与 API Key')
@@ -281,25 +131,9 @@ describe('pi_chat 实时模式接线', () => {
     expect(wrapper.text()).toContain('重试')
   })
 
-  it('实时模式可切回回放模式，回放内容不受影响', async () => {
+  it('composer 可发送：点击发送即发起 Dify 请求', async () => {
     const wrapper = mount(App)
     await flushPromises()
-    await wrapper.find('[data-testid="enter-live"]').trigger('click')
-    expect(wrapper.find('[data-testid="connection-form"]').exists()).toBe(true)
-    await wrapper.find('[data-testid="back-replay"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.text()).toContain('回放模式')
-    // 回放内容不受影响：折叠头在，展开后过程行如常
-    expect(wrapper.find('[data-testid="terminal-row"]').exists()).toBe(true)
-    await wrapper.find('[data-testid="terminal-row"]').trigger('click')
-    expect(wrapper.text()).toContain('lookup_order')
-    expect(wrapper.find('[data-testid="connection-form"]').exists()).toBe(false)
-  })
-
-  it('实时模式 composer 可发送：点击发送即发起 Dify 请求', async () => {
-    const wrapper = mount(App)
-    await flushPromises()
-    await wrapper.find('[data-testid="enter-live"]').trigger('click')
     await wrapper.find('[data-testid="form-api-key"]').setValue('app-test-key')
     await wrapper.find('[data-testid="connect-submit"]').trigger('click')
     await flushPromises()
@@ -315,7 +149,7 @@ describe('pi_chat 实时模式接线', () => {
   })
 })
 
-describe('pi_chat 实时模式：附件、停止与连接表单收尾（票 08）', () => {
+describe('pi_chat：附件、停止与连接表单收尾（票 08）', () => {
   async function pickComposerFile(wrapper: ReturnType<typeof mount>, file: File): Promise<void> {
     const input = wrapper.find('[data-testid="composer-file-input"]')
     Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
@@ -333,7 +167,6 @@ describe('pi_chat 实时模式：附件、停止与连接表单收尾（票 08�
           { event: 'message_end', conversation_id: 'conv_live' },
         ]),
     })
-    await wrapper.find('[data-testid="enter-live"]').trigger('click')
     await wrapper.find('[data-testid="form-api-key"]').setValue('app-live-key')
     await wrapper.find('[data-testid="connect-submit"]').trigger('click')
     await flushPromises()
@@ -373,7 +206,6 @@ describe('pi_chat 实时模式：附件、停止与连接表单收尾（票 08�
     const wrapper = mount(App)
     await flushPromises()
     useLiveFetch({ upload: new Error('File Too Large') })
-    await wrapper.find('[data-testid="enter-live"]').trigger('click')
     await wrapper.find('[data-testid="form-api-key"]').setValue('app-live-key')
     await wrapper.find('[data-testid="connect-submit"]').trigger('click')
     await flushPromises()
@@ -433,7 +265,6 @@ describe('pi_chat 实时模式：附件、停止与连接表单收尾（票 08�
     const wrapper = mount(App)
     await flushPromises()
     const { counts } = useLiveFetch({})
-    await wrapper.find('[data-testid="enter-live"]').trigger('click')
     await wrapper.find('[data-testid="form-api-key"]').setValue('app-live-key')
     // JSON 语法错误：显示解析错误且不发起任何网络请求
     await wrapper.find('[data-testid="form-inputs"]').setValue('{bad json')
@@ -466,7 +297,6 @@ describe('pi_chat 实时模式：附件、停止与连接表单收尾（票 08�
     const wrapper = mount(App)
     await flushPromises()
     useLiveFetch({ conversations: new Error('Unauthorized') })
-    await wrapper.find('[data-testid="enter-live"]').trigger('click')
     await wrapper.find('[data-testid="form-api-key"]').setValue('app-live-key')
     await wrapper.find('[data-testid="connect-submit"]').trigger('click')
     await flushPromises()
@@ -482,7 +312,7 @@ describe('pi_chat 实时模式：附件、停止与连接表单收尾（票 08�
   })
 })
 
-describe('pi_chat 实时模式：共享时间线渲染器（ADR-0010 同一契约与组件）', () => {
+describe('pi_chat：共享时间线渲染器（ADR-0010 同一契约与组件）', () => {
   function agentLog(type: string, seq: number, fields: Record<string, unknown>): unknown {
     return {
       event: 'agent_log',
