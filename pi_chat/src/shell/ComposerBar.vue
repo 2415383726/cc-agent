@@ -81,6 +81,25 @@ function trySend(): void {
   pendingFiles.value = []
 }
 
+/* 修饰键加速发送（上游 keymap 的 Ctrl/Cmd+Enter → accelerated submit）。 */
+function onKeydown(event: KeyboardEvent): void {
+  /* IME 组词期的 Enter 属于输入法确认，不拦截也不发送。 */
+  if (event.isComposing || composing.value) return
+  /* 按住 Enter 连发由 event.repeat 拦截（上游 input/editor keymap 同款守卫）。 */
+  if (event.repeat) return
+  /* key 大小写不敏感（真实内核 'Enter'，合成事件可能 'enter'）。 */
+  const key = event.key.toLowerCase()
+  if ((event.metaKey || event.ctrlKey) && key === 'enter') {
+    event.preventDefault()
+    trySend()
+    return
+  }
+  if (key === 'enter' && !event.shiftKey) {
+    event.preventDefault()
+    trySend()
+  }
+}
+
 function onStop(): void {
   emit('stop')
 }
@@ -137,7 +156,7 @@ watch(draft, () => nextTick(autoGrow))
             :aria-disabled="false"
             @compositionstart="composing = true"
             @compositionend="composing = false"
-            @keydown.enter.exact.prevent="trySend"
+            @keydown="onKeydown"
           />
           <!-- 上游以 CSS 在 IME 组词期隐藏占位（.input[data-composer-composing] +
                .placeholder）；此处在组词期直接不渲染，可观察行为一致。 -->
@@ -158,6 +177,7 @@ watch(draft, () => nextTick(autoGrow))
             :class="css.add"
             data-testid="composer-add"
             :aria-label="upload ? '添加附件' : '附件（回放模式不可用）'"
+            :title="upload ? '添加附件' : '附件（回放模式不可用）'"
             :disabled="!canPick"
             @click="pickFiles"
           >
@@ -183,10 +203,15 @@ watch(draft, () => nextTick(autoGrow))
             :class="[css.primary, 'pi-composer-stop']"
             data-testid="composer-stop"
             :aria-label="stopping ? '停止中' : '停止'"
+            :title="stopping ? '停止中…' : '停止'"
             :disabled="stopping"
             @click="onStop"
           >
-            <span class="pi-composer-stop-label">{{ stopping ? '停止中…' : '停止' }}</span>
+            <!-- 蓝色圆形停止钮内是 16px 圆角方块字形（上游 InputBar.tsx 同款），
+                 文案只进 aria-label/title，避免塞满 34px 圆。 -->
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
+              <rect x="3.5" y="3.5" width="9" height="9" rx="2" fill="currentColor" />
+            </svg>
           </button>
           <button
             v-else
@@ -194,6 +219,7 @@ watch(draft, () => nextTick(autoGrow))
             :class="css.primary"
             data-testid="composer-send"
             :aria-label="interactive ? '发送' : '发送（回放模式占位）'"
+            :title="interactive ? '发送（Enter）' : '发送（回放模式占位）'"
             :disabled="!canSend"
             @click="trySend"
           >
@@ -277,10 +303,8 @@ watch(draft, () => nextTick(autoGrow))
   }
 }
 
-/* 停止按钮沿用发送按钮的几何（.primary 类），文字位图换中文标签。 */
-.pi-composer-stop-label {
-  font-size: 12px;
-  line-height: 16px;
-  white-space: nowrap;
+/* 停止按钮沿用发送按钮的几何（.primary 类），字形为 16px 圆角方块（同上游）。 */
+.pi-composer-stop svg {
+  pointer-events: none;
 }
 </style>

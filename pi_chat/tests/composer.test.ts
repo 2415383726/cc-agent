@@ -177,13 +177,29 @@ describe('ComposerBar Enter / IME / busy', () => {
     expect(busy.emitted('stop')).toHaveLength(1)
   })
 
-  it('停止请求已发出（stopping）时停止按钮显示「停止中…」并禁用', async () => {
+  it('停止请求已发出（stopping）时停止按钮禁用且为方块字形', async () => {
     const wrapper = mount(ComposerBar, {
       props: { interactive: false, busy: true, stoppable: true, stopping: true },
     })
     const stop = wrapper.find('[data-testid="composer-stop"]')
-    expect(stop.text()).toContain('停止中…')
+    // 停止钮内是 16px 圆角方块字形（上游 InputBar 同款）；文案只进 aria-label。
+    expect(stop.find('svg rect').exists()).toBe(true)
+    expect(stop.attributes('aria-label')).toBe('停止中')
     expect(stop.attributes('disabled')).toBeDefined()
+  })
+
+  it('按住 Enter 连发（event.repeat）不重复发送', async () => {
+    const wrapper = mount(ComposerBar, { props: { interactive: true } })
+    await wrapper.find('textarea').setValue('只发一次')
+    await wrapper.find('textarea').trigger('keydown', { key: 'Enter', repeat: true })
+    expect(wrapper.emitted('send')).toBeUndefined()
+  })
+
+  it('Ctrl/Cmd+Enter 加速发送', async () => {
+    const wrapper = mount(ComposerBar, { props: { interactive: true } })
+    await wrapper.find('textarea').setValue('加速')
+    await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
+    expect(wrapper.emitted('send')).toHaveLength(1)
   })
 
   it('非交互（未连接/回放）时「+」为禁用占位且不渲染 file input', () => {

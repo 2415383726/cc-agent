@@ -76,6 +76,10 @@ const visibleSegments = (turn: TurnView) =>
 const groupActivity = (segment: { kind: 'tool-group'; running: boolean; counts: { kind: string }[] }): string =>
   segment.running ? segment.counts[0]?.kind ?? 'tools' : segment.counts[0]?.kind ?? 'thinking'
 
+/* 非最终回合的回合尾 hover 才显现 actions（上游 data-actions-reveal='hover'，
+   vendored MessageIconActions.module.css 的 @media(hover:hover) 规则生效）。 */
+const isLastTurn = (turn: TurnView): boolean => turns.value[turns.value.length - 1]?.id === turn.id
+
 /* 输出文件链接（P3-3）：绑定前校验协议（http/https/相对引用），拒绝的退化为纯文本。 */
 const outputLinks = computed(() =>
   (props.outputs ?? []).map((file) => ({ file, href: safeOutputHref(file.url) })),
@@ -106,9 +110,11 @@ const turnTail = (turn: TurnView): { text: string; time: number } | null => {
 <template>
   <ol class="pi-timeline" aria-label="会话记录">
     <template v-for="turn in turns" :key="turn.id">
-      <!-- 回合开头的用户消息（折叠头之前，始终可见）；首条承担回合锚点 -->
+      <!-- 回合开头的用户消息（折叠头之前，始终可见）；首条承担回合锚点。
+           data-chat-flow-kind：更早的用户行 actions hover 才显现（vendored
+           :has(~ …) 规则要求行元素为兄弟节点）。 -->
       <template v-for="(segment, leadIndex) in turn.lead" :key="`lead:${segment.entry.kind}:${segment.entry.id}`">
-        <li :data-turn-anchor="leadIndex === 0 ? turn.id : undefined">
+        <li :data-turn-anchor="leadIndex === 0 ? turn.id : undefined" data-chat-flow-kind="user">
           <UserMessage :entry="segment.entry as MessageEntry" />
         </li>
       </template>
@@ -126,7 +132,11 @@ const turnTail = (turn: TurnView): { text: string; time: number } | null => {
       </li>
 
       <template v-for="(segment, segmentIndex) in visibleSegments(turn)" :key="segment.kind === 'tool-group' ? segment.id : `${segment.entry.kind}:${segment.entry.id}`">
-        <li v-if="segment.kind === 'single'" :data-turn-anchor="turn.lead.length === 0 && !turn.header && segmentIndex === 0 ? turn.id : undefined">
+        <li
+          v-if="segment.kind === 'single'"
+          :data-turn-anchor="turn.lead.length === 0 && !turn.header && segmentIndex === 0 ? turn.id : undefined"
+          :data-chat-flow-kind="isUser(segment.entry) ? 'user' : undefined"
+        >
           <UserMessage v-if="isUser(segment.entry)" :entry="segment.entry as MessageEntry" />
 
           <AssistantMessage v-else-if="isAssistant(segment.entry)" :entry="segment.entry as MessageEntry" />
@@ -185,8 +195,14 @@ const turnTail = (turn: TurnView): { text: string; time: number } | null => {
         </li>
       </template>
 
-      <!-- 回合尾（上游 TurnTailNodeView）：闭合回合助手文本后的 copy + 时钟行。 -->
-      <li v-if="turnTail(turn)" :class="tailCss.root" data-testid="turn-tail">
+      <!-- 回合尾（上游 TurnTailNodeView）：闭合回合助手文本后的 copy + 时钟行。
+           非最终回合 hover 才显现（data-actions-reveal='hover'）。 -->
+      <li
+        v-if="turnTail(turn)"
+        :class="tailCss.root"
+        data-testid="turn-tail"
+        :data-actions-reveal="isLastTurn(turn) ? undefined : 'hover'"
+      >
         <MessageActions
           :text="turnTail(turn)!.text"
           :time="turnTail(turn)!.time"

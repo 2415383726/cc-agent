@@ -49,6 +49,7 @@ async function onCopy(): Promise<void> {
       type="button"
       :class="actionsCss.action"
       :aria-label="copyLabel"
+      :title="copyLabel"
       data-testid="user-copy"
       @click="onCopy"
     >

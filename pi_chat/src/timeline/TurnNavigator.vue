@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import css from '../vendor/dsh/ui-chat/src/client/chat/TurnNavigator.module.css'
+import { smoothScrollTo } from './smoothScroll'
 import type { TurnRailItem } from './rail'
 
 /*
@@ -44,6 +45,9 @@ const previewIndex = computed(() =>
 )
 const preview = computed(() => (previewIndex.value >= 0 ? props.items[previewIndex.value] : null))
 
+/** 刻度带总高（与 .marks 一致：items*10 + 2）——渐隐阈值必须用同一总数。 */
+const marksTotal = computed(() => marksHeight.value + RAIL_INSET_PX * 2 - TURN_SPACING_PX)
+
 function onScroll(): void {
   const el = scroller.value
   if (!el) return
@@ -73,7 +77,8 @@ onBeforeUnmount(() => {
 })
 
 /* 上游 scrollToIndex 的 if-needed 语义：激活刻度中心落在渐隐带内不动，
-   否则居中；首次放置（无尺寸）与 reduced-motion 用瞬时滚动。 */
+   否则居中；首次放置（会话切换）用瞬时滚动，同会话内平滑跟随
+   （smoothScrollTo 在不执行程序化平滑的内核上自动退化为瞬时）。 */
 function followActive(behavior: 'auto' | 'smooth'): void {
   const el = scroller.value
   if (!el || activeIndex.value < 0 || viewHeight.value <= 0) return
@@ -82,7 +87,9 @@ function followActive(behavior: 'auto' | 'smooth'): void {
   const bottom = center + FADE_PX
   if (top >= el.scrollTop && bottom <= el.scrollTop + viewHeight.value) return
   const target = Math.max(0, Math.min(el.scrollHeight - viewHeight.value, center - viewHeight.value / 2))
-  if (target !== el.scrollTop) el.scrollTo({ top: target, behavior })
+  if (target === el.scrollTop) return
+  if (behavior === 'auto') el.scrollTop = target
+  else smoothScrollTo(el, target)
 }
 
 let lastItemCount = -1
@@ -133,7 +140,7 @@ function navigate(item: TurnRailItem): void {
         :class="[
           css.scroller,
           scrollTop > 1 && css.fadeTop,
-          scrollTop < marksHeight + RAIL_INSET_PX * 2 - viewHeight - 1 && css.fadeBottom,
+          scrollTop < marksTotal - viewHeight - 1 && css.fadeBottom,
         ]"
         @scroll="onScroll"
       >
@@ -150,6 +157,7 @@ function navigate(item: TurnRailItem): void {
             type="button"
             :aria-label="markLabel(item)"
             :aria-current="item.id === activeId ? 'true' : undefined"
+            :aria-describedby="preview !== null && item.id === previewId ? 'turn-nav-preview' : undefined"
             :data-testid="`turn-mark-${index}`"
             @pointermove="previewId = item.id"
             @focus="previewId = item.id"
@@ -160,6 +168,7 @@ function navigate(item: TurnRailItem): void {
       </div>
       <div
         v-if="preview !== null"
+        id="turn-nav-preview"
         role="tooltip"
         :class="css.preview"
         :style="{ '--turn-preview-center': `${previewCenter}px` }"

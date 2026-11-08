@@ -497,3 +497,37 @@ describe('TranscriptView 回合尾（助手文本后的 copy + 时钟行）', ()
     expect(anchors[0].attributes('data-turn-anchor')).toBe('turn:0:u1')
   })
 })
+
+describe('回合尾 hover 揭示（上游 data-actions-reveal）', () => {
+  function twoTurnEntries(): WorkbenchEntry[] {
+    const terminal = (id: string, ts: number) =>
+      ({
+        id,
+        kind: 'terminal',
+        terminal: { status: 'completed', answer: '', error: null, stats: {} },
+        ts,
+      }) as TerminalEntry
+    return [
+      { id: 'u1', kind: 'message', role: 'user', text: '第一问', streaming: false, ts: BASE_TS } as MessageEntry,
+      messageEntry({ id: 'a1', role: 'assistant', text: '第一答。', ts: BASE_TS + 1000 }),
+      terminal('t_run1', BASE_TS + 2000),
+      { id: 'u2', kind: 'message', role: 'user', text: '第二问', streaming: false, ts: BASE_TS + 3000 } as MessageEntry,
+      messageEntry({ id: 'a2', role: 'assistant', text: '第二答。', ts: BASE_TS + 4000 }),
+      terminal('t_run2', BASE_TS + 5000),
+    ]
+  }
+
+  it('非最终回合尾带 data-actions-reveal="hover"，最终回合尾不带', () => {
+    const wrapper = mount(TranscriptView, { props: { entries: twoTurnEntries(), running: false } })
+    const tails = wrapper.findAll('[data-testid="turn-tail"]')
+    expect(tails).toHaveLength(2)
+    expect(tails[0].attributes('data-actions-reveal')).toBe('hover')
+    expect(tails[1].attributes('data-actions-reveal')).toBeUndefined()
+  })
+
+  it('用户消息行带 data-chat-flow-kind="user"（更早行 hover 揭示的兄弟选择器锚点）', () => {
+    const wrapper = mount(TranscriptView, { props: { entries: twoTurnEntries(), running: false } })
+    const userRows = wrapper.findAll('[data-chat-flow-kind="user"]')
+    expect(userRows.length).toBe(2)
+  })
+})

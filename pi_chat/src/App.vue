@@ -135,8 +135,11 @@ const turnRailItems = computed<TurnRailItem[]>(() => deriveRailItems(activeEntri
 const sidebarCollapsed = ref(false)
 
 const column = ref<InstanceType<typeof ConversationColumn> | null>(null)
-const follow = new ScrollFollow(true, 80)
+/* 阈值对齐上游 FOLLOW_THRESHOLD（24px）：滚离底部超过 24px 即暂停跟随。 */
+const follow = new ScrollFollow(true, 24)
 let stopWatch: (() => void) | undefined
+/* 回到底部按钮可见性 = 未处于跟随尾部的状态（上游 toBottomSlot 的开关）。 */
+const showToBottom = ref(false)
 
 function scrollElement(): HTMLElement | null {
   return (column.value?.scrollBody as HTMLElement | null | undefined) ?? null
@@ -144,12 +147,48 @@ function scrollElement(): HTMLElement | null {
 
 function onScroll(): void {
   const el = scrollElement()
-  if (el) follow.sample(scrollMetrics(el))
+  if (el) showToBottom.value = !follow.sample(scrollMetrics(el))
+}
+
+/* scrollend 结算未竟动画（停在目标外则释放跟随）；内核不支持时用防抖兜底。 */
+let settleTimer: number | null = null
+function onScrollSettle(): void {
+  const el = scrollElement()
+  if (!el) return
+  if (settleTimer !== null) window.clearTimeout(settleTimer)
+  settleTimer = window.setTimeout(() => {
+    settleTimer = null
+    showToBottom.value = !follow.settle(scrollMetrics(el))
+  }, 150)
+}
+
+function onReaderGesture(): void {
+  const el = scrollElement()
+  if (el) follow.interrupt(el, scrollMetrics(el))
+}
+
+function returnToBottom(): void {
+  const el = scrollElement()
+  if (!el) return
+  follow.toBottom(el, scrollMetrics(el), 'smooth')
+  showToBottom.value = false
+}
+
+/* ---- 响应式自动折叠（对齐上游 columns.ts SIDEBAR_AUTO_COLLAPSE：<1024px 收拢） ---- */
+let collapseQuery: MediaQueryList | null = null
+function onCollapseQuery(event: MediaQueryListEvent): void {
+  sidebarCollapsed.value = event.matches
 }
 
 onMounted(() => {
   const el = scrollElement()
   el?.addEventListener('scroll', onScroll, { passive: true })
+  if ('onscrollend' in window) el?.addEventListener('scrollend', onScrollSettle, { passive: true })
+  el?.addEventListener('wheel', onReaderGesture, { passive: true })
+  el?.addEventListener('touchstart', onReaderGesture, { passive: true })
+  collapseQuery = window.matchMedia('(max-width: 1023.98px)')
+  sidebarCollapsed.value = collapseQuery.matches
+  collapseQuery.addEventListener('change', onCollapseQuery)
   stopWatch = watch(
     () => [
       activeEntries.value,
@@ -166,7 +205,13 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  scrollElement()?.removeEventListener('scroll', onScroll)
+  const el = scrollElement()
+  el?.removeEventListener('scroll', onScroll)
+  if ('onscrollend' in window) el?.removeEventListener('scrollend', onScrollSettle)
+  el?.removeEventListener('wheel', onReaderGesture)
+  el?.removeEventListener('touchstart', onReaderGesture)
+  collapseQuery?.removeEventListener('change', onCollapseQuery)
+  if (settleTimer !== null) window.clearTimeout(settleTimer)
   stopWatch?.()
 })
 </script>
@@ -180,7 +225,14 @@ onBeforeUnmount(() => {
         @toggle="sidebarCollapsed = !sidebarCollapsed"
       />
     </template>
-    <ConversationColumn ref="column" :title="liveTitle" :badge="modeBadge" :rail-items="turnRailItems">
+    <ConversationColumn
+      ref="column"
+      :title="liveTitle"
+      :badge="modeBadge"
+      :rail-items="turnRailItems"
+      :to-bottom-visible="showToBottom"
+      @to-bottom="returnToBottom"
+    >
       <template #actions>
         <template v-if="mode === 'live'">
           <button type="button" class="pi-mode-button" data-testid="back-replay" @click="backToReplay">回放模式</button>

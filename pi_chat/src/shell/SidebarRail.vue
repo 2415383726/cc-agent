@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { WorkbenchController } from '../dify/controller'
 import type { DifyConversation } from '../dify/transport'
 import { relativeTimeLabel } from '../projection/relativeTime'
-import { iconSvg } from '../timeline/icons'
+import { iconSvg, whaleTailSvg } from '../timeline/icons'
 import css from '../vendor/dsh/ui-sidebar/src/client/SidebarRoot.module.css'
 import rows from '../vendor/dsh/ui-workspace/src/client/rows/Rows.module.css'
 
@@ -58,6 +58,7 @@ watch(
 
 onBeforeUnmount(() => {
   if (settleTimer !== undefined) window.clearTimeout(settleTimer)
+  cancelLinger()
 })
 
 /* 宽 = 抽屉展开或折叠淡出未 settle（内容仍挂载、冻结宽度、整列淡出）。 */
@@ -67,8 +68,31 @@ const rootClass = computed(() => [
   !wide.value && css.collapsed,
   !wide.value && animateRail.value && css.railIn,
   props.collapsed && wide.value && css.fading,
+  /* .quietBars 把滚动条 thumb 重绑为透明：指针不在列内时列表无滚动条，
+     进入即现、离开后再驻留 SCROLLBAR_LINGER_MS 才隐（上游 SidebarRoot 同款）。 */
+  !pointerInside.value && css.quietBars,
 ])
 const toggleLabel = computed(() => (props.collapsed ? '展开侧栏' : '折叠侧栏'))
+
+/* ---- 滚动条跟随指针（上游 SCROLLBAR_LINGER_MS 语义平移） ---- */
+const SCROLLBAR_LINGER_MS = 2000
+const pointerInside = ref(false)
+let lingerTimer: number | undefined
+
+function armLinger(): void {
+  if (lingerTimer !== undefined) return
+  lingerTimer = window.setTimeout(() => {
+    lingerTimer = undefined
+    pointerInside.value = false
+  }, SCROLLBAR_LINGER_MS)
+}
+
+function cancelLinger(): void {
+  if (lingerTimer !== undefined) {
+    window.clearTimeout(lingerTimer)
+    lingerTimer = undefined
+  }
+}
 
 /* 相对时间的时钟：30s 步进让「4分钟」这类标签保持新鲜。 */
 const now = ref(Date.now())
@@ -142,18 +166,27 @@ function cancelDelete(): void {
 </script>
 
 <template>
-  <div :class="rootClass" :style="wide ? { width: `${SIDEBAR_WIDTH}px` } : undefined">
-    <!-- logoRow：票面裁剪品牌区，仅承载折叠开关（展开态右缘、导轨态首位）。 -->
+  <div
+    :class="rootClass"
+    :style="wide ? { width: `${SIDEBAR_WIDTH}px` } : undefined"
+    @pointerenter="cancelLinger(); pointerInside = true"
+    @pointerleave="armLinger()"
+  >
+    <!-- logoRow：票面裁剪品牌区，仅承载折叠开关（展开态右缘、导轨态首位）。
+         导轨态静止为鲸尾标（主墨、无悬停圆），悬停换出 panel 图标——展开
+         供能提示（vendored .panelIcon/.railMark 互换 CSS 原样生效）。 -->
     <div :class="css.logoRow">
       <button
         type="button"
         :class="[css.iconButton, css.toggle]"
         data-testid="sidebar-toggle"
         :aria-label="toggleLabel"
+        :title="toggleLabel"
         :aria-expanded="!collapsed"
         @click="emit('toggle')"
       >
-        <span aria-hidden="true" v-html="iconSvg('panel-left', wide ? 16 : 18)" />
+        <span v-if="!wide" :class="css.railMark" aria-hidden="true" v-html="whaleTailSvg()" />
+        <span :class="css.panelIcon" aria-hidden="true" v-html="iconSvg('panel-left', wide ? 16 : 18)" />
       </button>
     </div>
 
@@ -161,7 +194,8 @@ function cancelDelete(): void {
       type="button"
       :class="css.newSession"
       data-testid="new-conversation"
-      :aria-label="wide ? undefined : '新会话'"
+      :aria-label="'新会话'"
+      :title="'新会话'"
       :disabled="!controller"
       @click="controller?.newConversation()"
     >
@@ -261,6 +295,7 @@ function cancelDelete(): void {
                     :class="rows.iconButton"
                     data-testid="rename-button"
                     aria-label="重命名会话"
+                    title="重命名"
                     @click="startRename(item)"
                   >
                     <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden>
@@ -278,6 +313,7 @@ function cancelDelete(): void {
                     :class="rows.iconButton"
                     data-testid="delete-button"
                     aria-label="删除会话"
+                    title="删除"
                     @click="askDelete(item)"
                   >
                     <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden>
@@ -304,6 +340,8 @@ function cancelDelete(): void {
           </p>
         </template>
       </div>
+      <!-- 列表底部渐隐（vendored .scrollFade；collapsed 态由 CSS 隐藏）。 -->
+      <span :class="css.scrollFade" aria-hidden="true" />
     </div>
   </div>
 </template>

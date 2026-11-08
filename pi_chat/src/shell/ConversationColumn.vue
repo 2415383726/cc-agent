@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import css from '../vendor/dsh/ui-conversation/src/client/skeleton/ConversationRoot.module.css'
 import TurnNavigator from '../timeline/TurnNavigator.vue'
+import { smoothScrollTo } from '../timeline/smoothScroll'
 import type { TurnRailItem } from '../timeline/rail'
 
 /*
@@ -21,7 +22,11 @@ const props = defineProps<{
   title?: string
   badge?: string | null
   railItems?: TurnRailItem[]
+  /** 未跟随尾部时显示「回到底部」浮动按钮（上游 toBottomSlot 的开关）。 */
+  toBottomVisible?: boolean
 }>()
+
+const emit = defineEmits<{ toBottom: [] }>()
 
 const scrollBody = ref<HTMLElement | null>(null)
 const composerSeat = ref<HTMLElement | null>(null)
@@ -65,8 +70,9 @@ onBeforeUnmount(() => {
 })
 
 /* ---- 回合导航：scrollspy（激活回合）+ 跳转（对齐 scrollToTurn 的 24px 落点） ----
-   激活回合 = 视口上缘 120px 内最近的回合锚点（读者位置）；跳转 = 锚点顶部
-   落在滚动体顶部下方 24px（上游 use-chat-viewport align(row, 24, turn)）。 */
+   激活回合 = 视口上缘 min(96px, 视口高 20%) 内最近的回合锚点（读者位置，
+   对齐上游 use-chat-viewport 的 ACTIVE_ROW_INSET）；跳转 = 锚点顶部落在滚动体
+   顶部下方 24px（上游 use-chat-viewport align(row, 24, turn)）。 */
 const activeTurnId = ref<string | null>(null)
 
 function anchorElements(): HTMLElement[] {
@@ -81,10 +87,11 @@ function sampleActiveTurn(): void {
   spyFrame = null
   const scroller = scrollBody.value
   if (scroller === null) return
+  const probe = Math.min(96, scroller.clientHeight * 0.2)
   const scrollerTop = scroller.getBoundingClientRect().top
   let current: string | null = null
   for (const anchor of anchorElements()) {
-    if (anchor.getBoundingClientRect().top - scrollerTop <= 120) current = anchor.dataset.turnAnchor ?? null
+    if (anchor.getBoundingClientRect().top - scrollerTop <= probe) current = anchor.dataset.turnAnchor ?? null
     else break
   }
   activeTurnId.value = current
@@ -103,7 +110,7 @@ function navigateToTurn(item: TurnRailItem): void {
   /* 相对滚动体的几何位置用 rect 差值计算，不依赖 offsetParent 定位链。 */
   const delta = anchor.getBoundingClientRect().top - scroller.getBoundingClientRect().top
   const target = Math.max(0, scroller.scrollTop + delta - 24)
-  scroller.scrollTo({ top: target, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+  smoothScrollTo(scroller, target)
 }
 
 onMounted(() => {
@@ -145,9 +152,30 @@ watch(
           :active-id="activeTurnId"
           @navigate="navigateToTurn"
         />
-        <main :class="css.viewArea">
+        <!-- data-chat-following-tail：跟随中禁用 UA 滚动锚定（上游语义，
+             vendored 规则以 :has(.root[data-chat-following-tail]) 命中 scroller）。 -->
+        <main :class="css.viewArea" :data-chat-following-tail="toBottomVisible ? undefined : ''">
           <slot />
         </main>
+        <!-- 回到底部浮动按钮（DOM 蓝图：ChatView.tsx toBottomSlot；scroller 内
+             sticky 悬浮于 composer 座位上方，vendored .toBottomSlot/.toBottom 生效）。 -->
+        <div v-if="toBottomVisible" :class="css.toBottomSlot" data-testid="to-bottom-slot">
+          <button
+            type="button"
+            :class="css.toBottom"
+            aria-label="回到底部"
+            title="回到底部"
+            data-testid="to-bottom"
+            @click="emit('toBottom')"
+          >
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden>
+              <path
+                d="M3.2 6.1a.7.7 0 0 1 .99-.03L8 9.6l3.81-3.53a.7.7 0 1 1 .95 1.03l-4.28 3.97a.7.7 0 0 1-.95 0L3.23 7.1a.7.7 0 0 1-.03-.99Z"
+                fill="currentColor"
+              />
+            </svg>
+          </button>
+        </div>
       </div>
       <div ref="composerSeat" :class="css.composerSeat" data-zone="composer">
         <div :class="css.composerStack">
@@ -159,6 +187,12 @@ watch(
 </template>
 
 <style>
+/* 组件自有（非 vendor）：跟随中禁用 UA 滚动锚定——上游 ChatView.module.css 的
+   [data-chat-following-tail] 语义在 scrollBody 自身生效（本结构无 .root 中转）。 */
+[data-conversation-scroll]:has([data-chat-following-tail]) {
+  overflow-anchor: none;
+}
+
 /* 组件自有（非 vendor）：回放徽标 chip，令牌着色（caption 底、caption 字）。 */
 .pi-replay-badge {
   display: inline-flex;
