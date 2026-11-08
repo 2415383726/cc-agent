@@ -47,6 +47,26 @@ class DoubleEncodedInputsTests(unittest.TestCase):
         config = RuntimeConfig.from_value(json.dumps(json.dumps({"thinking_tags": True})))
         self.assertIs(config.thinking_tags, True)
 
+    def test_files_accept_dify_string_cast(self) -> None:
+        from pi_agent.config import _parse_files
+
+        item = {
+            "id": None,
+            "type": "document",
+            "filename": "a.txt",
+            "mime_type": "text/plain",
+            "size": 76,
+            "url": "/files/x",
+        }
+        # Dify casts array[file] into a string param with str(value).
+        self.assertEqual(_parse_files(str([item]))[0]["filename"], "a.txt")
+        self.assertEqual(_parse_files(json.dumps([item]))[0]["mime_type"], "text/plain")
+        self.assertEqual(_parse_files([item])[0]["size"], 76)
+
+    def test_thinking_tags_enabled_by_default(self) -> None:
+        self.assertIs(RuntimeConfig.from_value("").thinking_tags, True)
+        self.assertIs(RuntimeConfig.from_value('{"thinking_tags": false}').thinking_tags, False)
+
     def test_non_object_interaction_still_rejected(self) -> None:
         from pi_agent.errors import PiError
 

@@ -151,7 +151,7 @@ projection, including user-activated skill messages.
   "approval_timeout_seconds": 0,
   "mcp_tools_exclude": [],
   "state_max_encoded_bytes": 190000,
-  "thinking_tags": false
+  "thinking_tags": true
 }
 ```
 
@@ -161,8 +161,11 @@ window is rejected without a useless summarization; history overflow compacts
 and retries once with a continuation message, preserving the current user
 request and every completed tool result without replaying a tool.
 
-`thinking_tags` defaults to `false`: only provider reasoning fields are shown as
-reasoning. Set it to `true` only for providers that emit literal `<think>` tags.
+`thinking_tags` defaults to `true`: literal `<think>` blocks in model content
+are split into reasoning events (with Dify provider marker comments stripped).
+Providers that already send a separate reasoning field are unaffected. Set it
+to `false` only when the application must treat literal `<think>` tags as
+content.
 `approval_timeout_seconds` defaults to 0 (no expiry); a positive value makes an
 approval expire and be rejected before execution.
 

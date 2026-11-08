@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 from dataclasses import dataclass, field, fields
 from typing import Any
@@ -85,7 +86,7 @@ class RuntimeConfig:
     tool_stream_mode: str = "delta"
     stream_mode: str = "stream"
     stream_fallback: bool = True
-    thinking_tags: bool = False
+    thinking_tags: bool = True
     preserve_reasoning_content: bool = False
     compaction_enabled: bool = True
     compaction_reserve_tokens: int = 16_384
@@ -322,19 +323,32 @@ def parse_request(parameters: dict[str, Any]) -> RequestContext:
     )
 
 
+def _load_file_payload(value: str) -> Any:
+    """Decode a files payload from JSON or a Python literal.
+
+    Dify casts an ``array[file]`` into a string parameter with ``str(value)``,
+    which yields single-quoted Python literals that ``json.loads`` rejects; the
+    attachment metadata would then silently disappear.
+    """
+    for loader in (json.loads, ast.literal_eval):
+        try:
+            return loader(value)
+        except (ValueError, SyntaxError):
+            continue
+    return None
+
+
 def _parse_files(value: Any) -> list[dict[str, Any]]:
     if value is None or (isinstance(value, str) and not value.strip()):
         return []
     payload = value
     if isinstance(value, str):
-        try:
-            payload = json.loads(value)
-        except json.JSONDecodeError:
+        payload = _load_file_payload(value)
+        if payload is None:
             return []
     if isinstance(payload, str):
-        try:
-            payload = json.loads(payload)
-        except json.JSONDecodeError:
+        payload = _load_file_payload(payload)
+        if payload is None:
             return []
     if isinstance(payload, dict):
         payload = payload.get("files") or payload.get("data") or []

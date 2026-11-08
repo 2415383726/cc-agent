@@ -24,11 +24,12 @@ parameters:
     required: false
     label: {en_US: Dify tools, zh_Hans: Dify 工具}
   - name: files
-    type: string
+    type: files
     required: false
-    label: {en_US: Files JSON, zh_Hans: 文件 JSON}
-    template:
-      enabled: true
+    label: {en_US: Files, zh_Hans: 文件}
+    help:
+      en_US: Attachment metadata only; map sys.files here.
+      zh_Hans: 仅附件元数据；映射 sys.files。
   - name: instruction
     type: string
     required: false
@@ -91,6 +92,14 @@ parameters:
     label: {en_US: App ID, zh_Hans: 应用 ID}
     template:
       enabled: true
+output_schema:
+  type: object
+  properties:
+    agent_state:
+      type: string
+      description:
+        en_US: Encoded Pi conversation state to write back into the conversation variable.
+        zh_Hans: 回写会话变量的编码 Pi 会话状态。
 extra:
   python:
     source: strategies/pi_agent_dify.py

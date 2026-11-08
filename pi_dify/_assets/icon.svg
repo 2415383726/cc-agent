@@ -1,5 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Pi Agent">
-  <rect width="64" height="64" rx="12" fill="#101820"/>
-  <path d="M18 39c-4-4-4-11 0-15s11-4 15 0l-5 5c-1-1-4-1-5 0-2 2-2 5 0 7 1 1 4 1 5 0l5 5c-4 4-11 4-15-2z" fill="#6EE7B7"/>
-  <path d="M35 39c-4-4-4-11 0-15s11-4 15 0l-5 5c-1-1-4-1-5 0-2 2-2 5 0 7 1 1 4 1 5 0l5 5c-4 4-11 4-15-2z" fill="#60A5FA"/>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+  <path fill="#F09082" d="M165.29 165.29H517.36V400H400V282.65H165.29Z"/>
+  <path fill="#4D9ABF" d="M165.29 282.65H282.65V400H400V517.36H282.65V634.72H165.29Z"/>
+  <path fill="#F1BE58" d="M517.36 400H634.72V634.72H517.36Z"/>
 </svg>
