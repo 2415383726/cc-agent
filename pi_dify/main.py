@@ -6,6 +6,16 @@ sys.path.append("../..")
 from dify_plugin import DifyPluginEnv, Plugin
 
 try:
+    from pi_agent.runtime import install_atomic_stdout
+except ImportError:  # pragma: no cover - packaged runtime keeps the package root on sys.path
+    install_atomic_stdout = None  # type: ignore[assignment]
+
+# Pi runs own an OS thread each (see RunStream); without this the SDK's separate
+# write/flush calls can merge two JSON frames into a single line.
+if install_atomic_stdout is not None:
+    install_atomic_stdout()
+
+try:
     from dotenv import load_dotenv
 except Exception:  # pragma: no cover - dotenv may be absent in packaged runtimes
     load_dotenv = None

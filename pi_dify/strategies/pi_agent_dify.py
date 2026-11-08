@@ -28,6 +28,13 @@ logger.setLevel(logging.INFO)
 if plugin_logger_handler is not None and plugin_logger_handler not in logger.handlers:
     logger.addHandler(plugin_logger_handler)
 
+# Runtime diagnostics must reach the same daemon-visible channel as the strategy
+# logger; a bare getLogger().exception() would go to stderr and vanish.
+runtime_logger = logging.getLogger("pi_dify.runtime")
+runtime_logger.setLevel(logging.INFO)
+if plugin_logger_handler is not None and plugin_logger_handler not in runtime_logger.handlers:
+    runtime_logger.addHandler(plugin_logger_handler)
+
 
 class PiAgentStrategy(AgentStrategy):
     def _invoke(self, parameters: dict[str, Any]) -> Generator[AgentInvokeMessage, None, None]:
@@ -42,7 +49,7 @@ class PiAgentStrategy(AgentStrategy):
                 yield self._dispatch(message)
         except Exception:
             # Never leak a traceback or provider text into the Dify stream.
-            logger.error("pi_dify strategy failed")
+            logger.exception("pi_dify strategy failed")
             yield self._log(
                 "Pi agent failed",
                 {
@@ -118,6 +125,16 @@ class PiAgentStrategy(AgentStrategy):
         return self.create_log_message(label=label, data=data, status=status)
 
 
+def _files_kind(value: Any) -> str:
+    """Shape of the files parameter, for diagnosing host-side casting."""
+    if value in (None, ""):
+        return "empty"
+    if isinstance(value, list):
+        head = value[0] if value else None
+        return f"list[{type(head).__name__}]{repr(head)[:80]}"
+    return f"{type(value).__name__}:{repr(value)[:80]}"
+
+
 def _parameter_summary(parameters: dict[str, Any]) -> dict[str, Any]:
     inputs = parameters.get("inputs") if isinstance(parameters.get("inputs"), dict) else {}
     tools = parameters.get("tools") if isinstance(parameters.get("tools"), list) else []
@@ -129,6 +146,7 @@ def _parameter_summary(parameters: dict[str, Any]) -> dict[str, Any]:
         "query_len": len(str(parameters.get("query") or "")),
         "tools_count": len(tools),
         "files_present": bool(parameters.get("files") or inputs.get("files")),
+        "files_kind": _files_kind(parameters.get("files") or inputs.get("files")),
         "state_present": bool(parameters.get("agent_state") or inputs.get("agent_state")),
         "interaction_present": bool(parameters.get("interaction") or inputs.get("interaction")),
         "skills_present": bool(parameters.get("app_skills_yaml") or inputs.get("app_skills_yaml")),

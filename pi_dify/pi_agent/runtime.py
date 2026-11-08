@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+import sys
+
 import asyncio
-import queue
+import collections
 import threading
 import time
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -54,21 +58,125 @@ from .tools import ToolRuntime
 _SENTINEL = object()
 
 
+def _stdlib_original(module_name: str, attribute: str) -> Any:
+    """Return the stdlib implementation behind a gevent monkey patch.
+
+    The Dify plugin host calls ``gevent.monkey.patch_all()`` on import. Gevent
+    greenlets share their OS thread's asyncio running-loop state, so a second
+    concurrent run dies with "asyncio.run() cannot be called from a running
+    event loop". Runs are therefore hosted on a genuine OS thread; the bridge
+    primitives must then be the thread-safe stdlib ones, because gevent
+    primitives may not cross OS threads.
+    """
+    try:
+        from gevent import monkey  # type: ignore[import-not-found]
+    except Exception:
+        return None
+    saved = getattr(monkey, "saved", None)
+    if not isinstance(saved, dict):
+        return None
+    return saved.get(module_name, {}).get(attribute)
+
+
+def _start_worker_thread(target: Any) -> None:
+    """Start ``target`` on a genuine OS thread.
+
+    ``threading.Thread.start`` is not enough: the host's patch also replaces
+    ``_thread.start_new_thread``, so even a pre-patch Thread body would run as a
+    greenlet inside the hub thread and inherit that thread's asyncio state.
+    """
+    start = _stdlib_original("_thread", "start_new_thread")
+    if start is None:
+        threading.Thread(target=target, name="pi-dify-run", daemon=True).start()
+        return
+    start(target, ())
+
+
+def install_atomic_stdout() -> None:
+    """Make each stdout frame an atomic write+flush.
+
+    The SDK emits one JSON frame per response with separate ``write``/``flush``
+    calls. That is safe while everything runs on the host greenlet, but a Pi run
+    owns its own OS thread for asyncio, so two threads can interleave and merge
+    two frames into one line, which the daemon then rejects as malformed JSON.
+    """
+    stream = sys.stdout
+    if getattr(stream, "_pi_atomic", False):
+        logging.getLogger("pi_dify.runtime").info("atomic stdout already installed")
+        return
+    allocate_lock = _stdlib_original("_thread", "allocate_lock")
+    lock = allocate_lock() if allocate_lock is not None else threading.Lock()
+
+    class _AtomicStdout:
+        _pi_atomic = True
+
+        def write(self, data: str) -> int:
+            with lock:
+                written = stream.write(data)
+                stream.flush()
+            return len(data) if written is None else written
+
+        def flush(self) -> None:
+            with lock:
+                stream.flush()
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(stream, name)
+
+    wrapper = _AtomicStdout()
+    sys.stdout = wrapper  # type: ignore[assignment]
+    # Handlers captured the original stream at import time; rebind them so log
+    # lines share the same frame lock as protocol responses.
+    for logger_name in ("", "pi_dify.runtime"):
+        for handler in logging.getLogger(logger_name).handlers:
+            if isinstance(handler, logging.StreamHandler) and getattr(
+                handler, "stream", None
+            ) is stream:
+                handler.setStream(wrapper)
+    logging.getLogger("pi_dify.runtime").info(
+        "atomic stdout installed (real_lock=%s, stream=%s)",
+        allocate_lock is not None,
+        type(stream).__name__,
+    )
+    # Belt and braces: the SDK writer is the only protocol frame producer, so
+    # locking it also covers any path that holds a different stream object.
+    try:
+        from dify_plugin.core.server.stdio.response_writer import (  # type: ignore[import-not-found]
+            StdioResponseWriter,
+        )
+
+        def _atomic_write(self: Any, data: str) -> None:
+            with lock:
+                stream.write(data)
+                stream.flush()
+
+        StdioResponseWriter.write = _atomic_write  # type: ignore[method-assign]
+        logging.getLogger("pi_dify.runtime").info("sdk stdio writer locked")
+    except Exception:
+        logging.getLogger("pi_dify.runtime").info("sdk stdio writer patch unavailable")
+
+
 class RunStream:
     """Synchronous iterator over a background asyncio run.
 
     Dify's AgentStrategy API is a sync generator. The Pi harness is async, so one
-    request owns one worker thread and one event loop; the Dify session is only
+    request owns one OS thread and one event loop; the Dify session is only
     touched on that thread. Closing the iterator cooperatively aborts the run.
+
+    Items cross from the run thread to the consuming greenlet through a deque
+    polled with a cooperative sleep: a stdlib ``queue.Queue.get`` would block the
+    host's gevent hub, while gevent's own queue cannot be used across threads.
     """
+
+    POLL_SECONDS = 0.01
 
     def __init__(self, runtime: PiAgentRuntime, parameters: dict[str, Any]):
         self._runtime = runtime
         self._parameters = parameters
-        self._queue: queue.Queue[Any] = queue.Queue()
+        self._items: collections.deque[Any] = collections.deque()
         self.run_id = f"run_{uuid4().hex[:20]}"
         self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._target, name="pi-dify-run", daemon=True)
+        self._finished = False
         self._started = False
 
     def __iter__(self) -> RunStream:
@@ -77,33 +185,60 @@ class RunStream:
     def __next__(self) -> dict[str, Any]:
         if not self._started:
             self._started = True
-            self._thread.start()
-        item = self._queue.get()
-        if item is _SENTINEL:
-            raise StopIteration
-        if isinstance(item, BaseException):
-            raise item
-        return item
+            _start_worker_thread(self._target)
+        while True:
+            try:
+                item = self._items.popleft()
+            except IndexError:
+                if self._finished:
+                    raise StopIteration from None
+                # Cooperative under the host's gevent patch, a plain sleep otherwise.
+                time.sleep(self.POLL_SECONDS)
+                continue
+            if item is _SENTINEL:
+                raise StopIteration
+            if isinstance(item, BaseException):
+                raise item
+            return item
+
+    def _emit(self, item: Any) -> None:
+        # deque.append is atomic under the GIL and safe across OS threads.
+        self._items.append(item)
 
     def _target(self) -> None:
         try:
             asyncio.run(
                 self._runtime.execute_async(
-                    self._parameters, self._queue.put, self._stop, run_id=self.run_id
+                    self._parameters, self._emit, self._stop, run_id=self.run_id
                 )
             )
         except BaseException:
-            self._queue.put(
+            # Crash diagnostics: the strategy emits safe failure events downstream,
+            # so without this log the root cause never reaches any surface. The
+            # traceback goes into the message body because the daemon-visible
+            # formatter only renders record.getMessage().
+            logging.getLogger("pi_dify.runtime").error(
+                "pi_dify run %s crashed in worker thread:\n%s",
+                self.run_id,
+                traceback.format_exc(),
+            )
+            self._emit(
                 _safe_failure_message("agent_failed", "runtime", run_id=self.run_id, seq=10**9)
             )
-            self._queue.put({"type": "text", "content": "The Pi agent run failed."})
+            self._emit({"type": "text", "content": "The Pi agent run failed."})
         finally:
-            self._queue.put(_SENTINEL)
+            self._emit(_SENTINEL)
+            self._finished = True
 
     def close(self) -> None:
         self._stop.set()
-        if self._thread.is_alive():
-            self._thread.join(timeout=5.0)
+        if not self._started:
+            return
+        # Never join from a greenlet: a blocking join would stall the host's hub
+        # for the whole timeout, so wait cooperatively instead.
+        deadline = time.monotonic() + 5.0
+        while not self._finished and time.monotonic() < deadline:
+            time.sleep(0.05)
 
 
 @dataclass(slots=True)
@@ -209,6 +344,14 @@ class PiAgentRuntime:
                 request, state, setup, events, emit, ledger, decision_input=decision
             )
         except PiError as exc:
+            logging.getLogger("pi_dify.runtime").error(
+                "pi_dify run %s hit PiError: %s (code=%s stage=%s)\n%s",
+                events.run_id if events else "",
+                exc.message,
+                exc.code,
+                exc.stage,
+                traceback.format_exc(),
+            )
             if request is not None and events is not None and ledger is not None:
                 await self._fail(request, state, events, emit, ledger, exc)
             else:
@@ -221,6 +364,11 @@ class PiAgentRuntime:
                     )
                 )
         except Exception:
+            logging.getLogger("pi_dify.runtime").error(
+                "pi_dify run %s failed in execute_async:\n%s",
+                events.run_id if events else "",
+                traceback.format_exc(),
+            )
             if request is not None and events is not None and ledger is not None:
                 await self._fail(
                     request,
