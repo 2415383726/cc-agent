@@ -73,12 +73,24 @@ VISUALIZE_SCHEMA: dict[str, Any] = {
 
 # Document-skeleton tags are rejected: the frame document owns them.
 _SKELETON_RE = re.compile(r"<!doctype\s+html|<html[\s>]|<head[\s>]|<body[\s>]", re.IGNORECASE)
-# External references of any shape: attributes, CSS url(), @import.
+# External references of any shape: attributes, CSS url(), @import. Anchors
+# (<a href>) are stripped first — only resource-loading attributes are checked.
+_ANCHOR_TAG_RE = re.compile(r"</?a\b[^>]*>", re.IGNORECASE)
 _EXTERNAL_ATTR_RE = re.compile(
     r"""(?:src|href|poster|data)\s*=\s*["']?\s*(?:https?:)?//""", re.IGNORECASE
 )
 _EXTERNAL_CSS_RE = re.compile(r"""url\(\s*["']?\s*(?:https?:)?//""", re.IGNORECASE)
-_EXTERNAL_IMPORT_RE = re.compile(r"@import\b", re.IGNORECASE)
+# Only remote @import targets are rejected; `@import url(data:…)` is inline
+# content and allowed like any data: URI.
+_EXTERNAL_IMPORT_RE = re.compile(r"@import\b[^;]*(?:https?:)?//", re.IGNORECASE)
+# Relative resource URLs pass the external check but the frame CSP silently
+# blocks them — warn so the model inlines the resource instead (reference
+# VZ106).
+_RELATIVE_RESOURCE_RE = re.compile(
+    r"""(?:src|href|poster|data)\s*=\s*["']\s*"""
+    r"""(?!data:|blob:|about:|javascript:|mailto:|tel:|#|https?:|//)(?:\.{1,2}/|/)?[\w@%+-]""",
+    re.IGNORECASE,
+)
 # Network APIs: the frame CSP blocks them; rejecting at lint time saves a
 # wasted render and teaches the contract.
 _NETWORK_API_RE = re.compile(
@@ -86,7 +98,35 @@ _NETWORK_API_RE = re.compile(
     r"\bnavigator\.sendBeacon\b",
     re.IGNORECASE,
 )
-_FORM_RE = re.compile(r"<form[\s>]", re.IGNORECASE)
+# VZ008: only forms that try to submit (action / method=post / formaction) are
+# an error; a bare <form> used as layout is legal.
+_FORM_ACTION_RE = re.compile(r"<form\b[^>]*\baction\s*=", re.IGNORECASE)
+_FORM_POST_RE = re.compile(r"""<form\b[^>]*\bmethod\s*=\s*["']?post\b""", re.IGNORECASE)
+_FORMACTION_RE = re.compile(r"\bformaction\s*=", re.IGNORECASE)
+# VZ009: a fragment-declared color-scheme flips every light-dark() against the
+# host theme; the frame document already carries the host scheme.
+_COLOR_SCHEME_CSS_RE = re.compile(r"color-scheme\s*:", re.IGNORECASE)
+_COLOR_SCHEME_JS_RE = re.compile(r"\.style\.colorScheme\s*=(?!=)", re.IGNORECASE)
+_COLOR_SCHEME_META_RE = re.compile(r"""<meta[^>]*name\s*=\s*["']?color-scheme""", re.IGNORECASE)
+# VZ010: document.currentScript is null/ambiguous in the settled card; find
+# roots by id instead.
+_CURRENT_SCRIPT_RE = re.compile(r"\bcurrentScript\b")
+# VZ108: browser storage throws inside the sandboxed opaque-origin frame and
+# stops the card's script dead.
+_STORAGE_RE = re.compile(r"\blocalStorage\b|\bsessionStorage\b|\bindexedDB\b|\bdocument\.cookie\b")
+# VZ004: escape sequences that only appear in markup when it was JSON-escaped.
+_ESCAPED_ATTR_RE = re.compile(r"""\b[\w-]+\s*=\s*(?:\\"|\\')""")
+_ESCAPED_SCRIPT_LEAD_RE = re.compile(r"<script\b[^>]*>\s*\\[nr]", re.IGNORECASE)
+_ESCAPE_SEQ_RE = re.compile(r"\\[nrt]")
+# VZ101 (warn): hard-coded colours ignore the host theme. Scanned only inside
+# style blocks, style attributes and JS colour writes so prose never trips it.
+_STYLE_BLOCK_RE = re.compile(r"<style\b[^>]*>(.*?)</style>", re.IGNORECASE | re.DOTALL)
+_STYLE_ATTR_RE = re.compile(r"""style\s*=\s*["']([^"']*)["']""", re.IGNORECASE)
+_JS_COLOR_WRITE_RE = re.compile(
+    r"""(?:fillStyle|strokeStyle|\.style\.[\w-]+)\s*=\s*["'`]([^"'`]*)["'`]"""
+)
+_HEX_COLOR_RE = re.compile(r"#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})\b", re.IGNORECASE)
+_COLOR_FN_RE = re.compile(r"\b(?:rgba?|hsla?)\s*\(", re.IGNORECASE)
 
 
 class FragmentLint:
@@ -97,46 +137,138 @@ class FragmentLint:
         self.max_bytes = max_bytes
 
     def check(self, fragment: str) -> tuple[int, list[str]]:
-        """Return (char_size, warnings); raise PiError on any error finding."""
+        """Return (char_size, warnings); raise PiError on any error finding.
+
+        Coded rules ported from Nagi-ovo/dsh-visualize ``src/lint.ts``
+        (BSD-3-Clause): the code in each message is stable, so the model can
+        match the exact rule it broke without re-reading the skill.
+        """
         text = fragment or ""
         size = len(text)
         if size == 0:
-            raise PiError(message="invalid visualization: `fragment` is empty")
+            raise PiError(message="[VZ001] invalid visualization: `fragment` is empty")
         if size > self.max_chars:
             raise PiError(
-                message=f"invalid visualization: fragment is {size} chars, over the "
-                f"{self.max_chars}-char limit; split the content or simplify the card"
+                message=f"[VZ002] invalid visualization: fragment is {size} chars, over the "
+                f"{self.max_chars}-char limit; shrink the inline data first (fewer rows, "
+                "coarser buckets, fewer decimals)"
             )
         encoded = len(text.encode("utf-8"))
         if encoded > self.max_bytes:
             raise PiError(
-                message=f"invalid visualization: fragment is {encoded} UTF-8 bytes, over the "
-                f"{self.max_bytes}-byte limit; inline less content per card"
+                message=f"[VZ002] invalid visualization: fragment is {encoded} UTF-8 bytes, "
+                f"over the {self.max_bytes}-byte limit; inline less content per card"
             )
+        # VZ004 first: a JSON-escaped fragment fails confusingly later, so name
+        # it at the gate.
+        self._check_escaped_markup(text)
         if _SKELETON_RE.search(text):
             raise PiError(
-                message="invalid visualization: the fragment must be inline markup — "
-                "<!doctype>/<html>/<head>/<body> are supplied by the card"
+                message="[VZ003] invalid visualization: the fragment contains a document-skeleton "
+                "tag — write only the inline body; the card supplies "
+                "<!doctype>/<html>/<head>/<body>"
             )
-        if _EXTERNAL_ATTR_RE.search(text) or _EXTERNAL_CSS_RE.search(text) or _EXTERNAL_IMPORT_RE.search(text):
+        body = _ANCHOR_TAG_RE.sub("", text)
+        if (
+            _EXTERNAL_ATTR_RE.search(body)
+            or _EXTERNAL_CSS_RE.search(body)
+            or _EXTERNAL_IMPORT_RE.search(body)
+        ):
             raise PiError(
-                message="invalid visualization: external resources are rejected in this "
-                "deployment (intranet-only); inline every script, style, font, "
-                "and image (data: URIs are accepted)"
+                message="[VZ005] invalid visualization: external resources are rejected in this "
+                "deployment (intranet-only) — inline every script, style, font, and "
+                "image (data: URIs are accepted)"
             )
         if _NETWORK_API_RE.search(text):
             raise PiError(
-                message="invalid visualization: network APIs (fetch/XHR/WebSocket/"
-                "EventSource/sendBeacon) are rejected — the card cannot reach "
-                "any server"
+                message="[VZ007] invalid visualization: network APIs (fetch/XHR/WebSocket/"
+                "EventSource/sendBeacon) are blocked inside the card and fail without an "
+                "error — inline the data in the script as a literal instead"
             )
-        warnings: list[str] = []
-        if _FORM_RE.search(text):
-            warnings.append(
-                "warning: <form> submission is blocked by the card's CSP; use "
-                "buttons with inline script handlers instead"
+        if (
+            _FORM_ACTION_RE.search(text)
+            or _FORM_POST_RE.search(text)
+            or _FORMACTION_RE.search(text)
+        ):
+            raise PiError(
+                message="[VZ008] invalid visualization: form submission is blocked inside the "
+                "card — drop action/method/formaction and handle input in a submit "
+                "listener that calls event.preventDefault()"
             )
+        if (
+            _COLOR_SCHEME_CSS_RE.search(text)
+            or _COLOR_SCHEME_JS_RE.search(text)
+            or _COLOR_SCHEME_META_RE.search(text)
+        ):
+            raise PiError(
+                message="[VZ009] invalid visualization: the fragment declares color-scheme, "
+                "which flips every light-dark() against the host theme — delete it; the "
+                "card document already carries the host scheme"
+            )
+        if _CURRENT_SCRIPT_RE.search(text):
+            raise PiError(
+                message="[VZ010] invalid visualization: document.currentScript is used to "
+                "locate the root — give the root element a unique id and find it with "
+                "document.getElementById(...)"
+            )
+        warnings = self._check_warnings(text, body)
         return size, warnings
+
+    def _check_escaped_markup(self, text: str) -> None:
+        """VZ004: three precise signals of a JSON-escaped fragment."""
+        if _ESCAPED_ATTR_RE.search(text):
+            raise PiError(
+                message="[VZ004] invalid visualization: the markup is string-escaped "
+                "(attribute quoted as \\\") — send the markup itself, with real \" quotes "
+                "and real line breaks, not a JSON-escaped rendition of it"
+            )
+        hits = 0
+        for match in _ESCAPE_SEQ_RE.finditer(text):
+            before = text[: match.start()]
+            after = text[match.end() :]
+            adjacent_to_tag = (
+                re.search(r"[<>](?:\\[nrt]|\s)*$", before) is not None
+                or re.match(r"(?:\\[nrt]|\s)*[<>]", after) is not None
+            )
+            if adjacent_to_tag:
+                hits += 1
+        if hits >= 2 or _ESCAPED_SCRIPT_LEAD_RE.search(text):
+            raise PiError(
+                message="[VZ004] invalid visualization: the markup is string-escaped "
+                "(literal \\\\n where a real line break belongs) — send the markup itself, "
+                "not a JSON-escaped rendition of it"
+            )
+
+    def _check_warnings(self, text: str, body: str) -> list[str]:
+        """Non-fatal findings: relative URLs, sandbox-fatal storage, raw colours."""
+        warnings: list[str] = []
+        if _RELATIVE_RESOURCE_RE.search(body):
+            warnings.append(
+                "warning [VZ106]: relative resource URLs cannot resolve inside the sandboxed "
+                "card — inline the resource (data: URLs work)"
+            )
+        storage = sorted({m.group(0) for m in _STORAGE_RE.finditer(text)})
+        if storage:
+            names = ", ".join(storage[:3])
+            warnings.append(
+                f"warning [VZ108]: {names} throw inside the sandboxed card and stop the "
+                "script — keep state in the fragment's own variables instead"
+            )
+        colour_pools = [m.group(1) for m in _STYLE_BLOCK_RE.finditer(text)]
+        colour_pools += [m.group(1) for m in _STYLE_ATTR_RE.finditer(text)]
+        colour_pools += [m.group(1) for m in _JS_COLOR_WRITE_RE.finditer(text)]
+        examples: list[str] = []
+        for pool in colour_pools:
+            examples += [m.group(0) for m in _HEX_COLOR_RE.finditer(pool)]
+            if _COLOR_FN_RE.search(pool):
+                examples.append("rgb()/hsl()")
+        if examples:
+            unique = list(dict.fromkeys(examples))
+            warnings.append(
+                f"warning [VZ101]: hard-coded colour ({', '.join(unique[:3])}) ignores the "
+                "host theme — use a theme variable (var(--foreground), var(--viz-series-1), …)"
+            )
+        return warnings
 
 
 def resolve_mode(value: Any) -> str:
@@ -167,14 +299,18 @@ def visualize_outcome(arguments: dict[str, Any], max_fragment_chars: int) -> dic
     title = str(arguments.get("title") or "").strip() or DEFAULT_TITLE
     if len(title) > 80:
         title = title[:80]
-    size, warnings = lint.check(fragment)
+    _size, warnings = lint.check(fragment)
     visual = {
         "fragment": fragment,
         "title": title,
         "mode": mode,
         "size_bytes": len(fragment.encode("utf-8")),
     }
-    text = f'Rendered "{title}" as an {mode} card ({size} chars). The user sees the interactive card in the conversation.'
+    article = "an" if mode[0] in "aeiou" else "a"
+    text = (
+        f'Rendered "{title}" as {article} {mode} card '
+        f"({visual['size_bytes']} bytes). The user sees the interactive card in the conversation."
+    )
     if warnings:
         text = f"{text} " + " ".join(warnings)
     return {

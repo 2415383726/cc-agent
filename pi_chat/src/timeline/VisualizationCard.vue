@@ -23,7 +23,9 @@ const MIN_HEIGHT = 48
 /** 高度上限；超出上限卡内滚动（对齐上游 HEIGHT_CAP）。 */
 const HEIGHT_CAP: Record<string, number> = { inline: 800, wide: 1200 }
 
-const height = ref(280)
+/* 初始高度与上游一致（48px 最小值）：帧内 reporter 在脚本末尾同步上报一次，
+   首帧即抬升，避免占位闪烁。 */
+const height = ref(MIN_HEIGHT)
 const frame = ref<HTMLElement | null>(null)
 
 const reportToken = computed(() => props.entry.callId || props.entry.id)

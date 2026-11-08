@@ -21,11 +21,13 @@
 
 import { FRAME_CSS } from './frame-css.ts'
 
-/** The frame document's Content-Security-Policy (zero-network). */
+/** The frame document's Content-Security-Policy (zero-network). `data:` URIs
+ * are self-contained inline content — no network fetch — so they stay usable
+ * like the upstream frame, minus the CDN allowlist. */
 export const FRAME_CSP = [
   "default-src 'none'",
-  "script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:",
-  "style-src 'unsafe-inline' blob:",
+  "script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data:",
+  "style-src 'unsafe-inline' blob: data:",
   'img-src blob: data:',
   "font-src blob: data:",
   'media-src blob: data:',

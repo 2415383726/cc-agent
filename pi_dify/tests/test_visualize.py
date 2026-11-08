@@ -3,6 +3,10 @@
 import unittest
 from types import SimpleNamespace
 
+from pi_agent.contract import DisplayEvents
+from pi_agent.errors import PiError
+from pi_agent.observer import DisplayObserver
+from pi_agent.tools import build_specs
 from pi_agent.visualize import (
     MAX_FRAGMENT_BYTES,
     MAX_FRAGMENT_CHARS,
@@ -10,17 +14,10 @@ from pi_agent.visualize import (
     resolve_mode,
     visualize_outcome,
 )
-from pi_agent.contract import DisplayEvents
-from pi_agent.errors import PiError
-from pi_agent.observer import DisplayObserver
-from pi_agent.tools import build_specs
 
 
 def make_config(**overrides):
-    base = {
-        "display_result_chars": 8_000,
-        "visualize_max_fragment_chars": MAX_FRAGMENT_CHARS,
-    }
+    base = {"display_result_chars": 8_000, "visualize_max_fragment_chars": MAX_FRAGMENT_CHARS}
     base.update(overrides)
     return SimpleNamespace(**base)
 
@@ -85,10 +82,92 @@ class FragmentLintTests(unittest.TestCase):
                 self.lint.check(bad)
             self.assertIn("network APIs", str(ctx.exception))
 
-    def test_form_submission_is_a_warning(self):
-        size, warnings = self.lint.check("<form action=\"#\"><input></form>")
+    def test_plain_form_is_legal(self):
+        """A bare <form> used as layout does not warn (reference VZ008 scope)."""
+        _, warnings = self.lint.check("<form><input></form>")
+        self.assertEqual(warnings, [])
+
+    def test_form_submission_variants_are_errors(self):
+        for markup in [
+            '<form action="#"><input></form>',
+            '<form method="post"><input></form>',
+            '<button formaction="/go">go</button>',
+        ]:
+            with self.assertRaises(PiError) as ctx:
+                self.lint.check(markup)
+            self.assertIn("[VZ008]", str(ctx.exception))
+
+    def test_anchor_hrefs_are_allowed(self):
+        """<a href> is not a resource load; outbound links do not trip VZ005."""
+        _, warnings = self.lint.check('<a href="https://example.com">docs</a>')
+        self.assertEqual(warnings, [])
+
+    def test_data_import_passes_but_remote_import_fails(self):
+        _, warnings = self.lint.check("<style>@import url(data:text/css,body{color:red})</style>")
+        self.assertEqual(warnings, [])
+        with self.assertRaises(PiError) as ctx:
+            self.lint.check("<style>@import url(\"https://evil.example/x.css\")</style>")
+        self.assertIn("[VZ005]", str(ctx.exception))
+
+    def test_relative_resource_url_warns(self):
+        for markup in [
+            '<img src="chart.png" alt="c">',
+            '<link href="./theme.css">',
+            '<img src="/a.png">',
+        ]:
+            with self.subTest(markup=markup):
+                _, warnings = self.lint.check(markup)
+                self.assertEqual(len(warnings), 1)
+                self.assertIn("[VZ106]", warnings[0])
+
+    def test_storage_api_warns(self):
+        _, warnings = self.lint.check("<script>localStorage.setItem('k', 'v')</script>")
         self.assertEqual(len(warnings), 1)
-        self.assertIn("<form>", warnings[0])
+        self.assertIn("[VZ108]", warnings[0])
+        self.assertIn("localStorage", warnings[0])
+
+    def test_hardcoded_colour_warns_with_examples(self):
+        _, warnings = self.lint.check(
+            '<div style="color:#1a73e8"><style>.a{border-color:#f00}</style></div>'
+        )
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("[VZ101]", warnings[0])
+        self.assertIn("#1a73e8", warnings[0])
+
+    def test_prose_does_not_trip_colour_warning(self):
+        _, warnings = self.lint.check("<p>Read the #docs section.</p>")
+        self.assertEqual(warnings, [])
+
+    def test_color_scheme_is_rejected(self):
+        for markup in [
+            "<style>:root { color-scheme: dark }</style>",
+            "<script>el.style.colorScheme = 'dark'</script>",
+            '<meta name="color-scheme" content="dark">',
+        ]:
+            with self.assertRaises(PiError) as ctx:
+                self.lint.check(markup)
+            self.assertIn("[VZ009]", str(ctx.exception))
+
+    def test_current_script_is_rejected(self):
+        with self.assertRaises(PiError) as ctx:
+            self.lint.check("<script>const root = document.currentScript.parentElement</script>")
+        self.assertIn("[VZ010]", str(ctx.exception))
+
+    def test_escaped_markup_is_rejected(self):
+        for markup in [
+            '<div class=\\"card\\">x</div>',
+            "<div>one</div>\\n\\n<div>two</div>",
+            "<script>\\nvar x = 1</script>",
+        ]:
+            with self.assertRaises(PiError) as ctx:
+                self.lint.check(markup)
+            self.assertIn("[VZ004]", str(ctx.exception))
+
+    def test_real_newlines_and_js_escapes_pass(self):
+        _, warnings = self.lint.check(
+            '<div class="card">\n  <p>line</p>\n</div>\n<script>var s = "a\\nb"</script>'
+        )
+        self.assertEqual(warnings, [])
 
     def test_data_uris_and_inline_resources_pass(self):
         _, warnings = self.lint.check(
@@ -114,7 +193,9 @@ class ResolveModeTests(unittest.TestCase):
 
 class VisualizeOutcomeTests(unittest.TestCase):
     def test_ok_outcome_keeps_model_text_short_and_projects_visual(self):
-        fragment = "<div id=\"v\"><script>document.getElementById('v').textContent = 'ok';</script></div>"
+        fragment = (
+            "<div id=\"v\"><script>document.getElementById('v').textContent = 'ok';</script></div>"
+        )
         outcome = visualize_outcome(
             {"fragment": fragment, "title": "  排序演示  ", "mode": "wide"},
             max_fragment_chars=MAX_FRAGMENT_CHARS,
@@ -140,9 +221,7 @@ class VisualizeOutcomeTests(unittest.TestCase):
 
     def test_lint_error_raises_pi_error(self):
         with self.assertRaises(PiError):
-            visualize_outcome(
-                {"fragment": "<html><body>x</body></html>"}, max_fragment_chars=100
-            )
+            visualize_outcome({"fragment": "<html><body>x</body></html>"}, max_fragment_chars=100)
         with self.assertRaises(PiError):
             visualize_outcome({}, max_fragment_chars=100)
         with self.assertRaises(PiError):
@@ -192,7 +271,12 @@ class ObserverVisualTests(unittest.TestCase):
             {
                 "kind": "visualize",
                 "status": "ok",
-                "visual": {"fragment": fragment, "title": "T", "mode": "inline", "size_bytes": 30010},
+                "visual": {
+                    "fragment": fragment,
+                    "title": "T",
+                    "mode": "inline",
+                    "size_bytes": 30010,
+                },
                 "execution_outcome": "executed",
             }
         )
@@ -206,8 +290,7 @@ class ObserverVisualTests(unittest.TestCase):
         import json
 
         self.assertLessEqual(
-            len(json.dumps(fields, ensure_ascii=False, default=str).encode("utf-8")),
-            131_072,
+            len(json.dumps(fields, ensure_ascii=False, default=str).encode("utf-8")), 131_072
         )
 
     def test_other_tools_keep_the_display_clip(self):
@@ -221,9 +304,7 @@ class ObserverVisualTests(unittest.TestCase):
         self.assertLessEqual(len(fields["result"]), 100)
 
     def test_visualize_without_visual_payload_stays_clean(self):
-        seen = self._run_tool_end(
-            {"kind": "visualize", "status": "error"}, tool_name="visualize"
-        )
+        seen = self._run_tool_end({"kind": "visualize", "status": "error"}, tool_name="visualize")
         fields = seen[0]
         self.assertEqual(fields["status"], "error")
         self.assertNotIn("visual", fields)
@@ -273,7 +354,9 @@ class DisplayEventBudgetTests(unittest.TestCase):
         events = self._events(max_events=5)
         for _ in range(300):
             events.record(events.make("message.delta", delta="x"))
-        end = events.record(events.make("message.end", message_id="a1", text="done", stop_reason="stop"))
+        end = events.record(
+            events.make("message.end", message_id="a1", text="done", stop_reason="stop")
+        )
         self.assertIsNotNone(end)
         state = events.record(events.make("tool.end", tool_call_id="c1", name="t", status="ok"))
         self.assertIsNotNone(state)

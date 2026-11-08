@@ -15,10 +15,33 @@ defines what a valid fragment looks like in this deployment.
 **This deployment is intranet-only: the card has zero network access.** Every
 style, script, font and image must be inline in the fragment. The tool rejects
 fragments that reference `https://` (or protocol-relative `//`) resources, use
-`@import`/`url(https://…)`, or call `fetch`/`XMLHttpRequest`/`WebSocket`/
+`url(https://…)`, or call `fetch`/`XMLHttpRequest`/`WebSocket`/
 `EventSource`/`sendBeacon`. There is no Chart.js, no ECharts, no CDN — write
 vanilla SVG, `<canvas>` 2D, or DOM/CSS. `data:` URIs and inline `<script>` /
 `<style>` blocks are the only supported resource shapes.
+
+## Lint codes
+
+Rejections name a stable code — read it, fix that rule, call again:
+
+| Code | Rule |
+| --- | --- |
+| `[VZ002]` | fragment over the size limit |
+| `[VZ003]` | document-skeleton tag (`<!doctype>`/`<html>`/`<head>`/`<body>`) |
+| `[VZ004]` | **string-escaped markup** — literal `\"` or `\n` where real quotes and line breaks belong. The most common failure: send the markup itself, never a JSON-escaped rendition of it |
+| `[VZ005]` | external resource (`https://`, `//`, remote `@import`) |
+| `[VZ007]` | network API (`fetch`/XHR/WebSocket/`EventSource`/`sendBeacon`) |
+| `[VZ008]` | form submission (`<form action>`, `method="post"`, `formaction`) — a bare `<form>` used as layout is fine, but never rely on submission |
+| `[VZ009]` | the fragment declares `color-scheme` — delete it; the card document already carries the host scheme |
+| `[VZ010]` | `document.currentScript` — give the root a unique `id` and use `document.getElementById(...)` |
+
+Warnings (the card still renders, fix if it matters): `[VZ106]` relative
+resource URLs (cannot resolve in the sandbox — inline instead), `[VZ108]`
+browser storage (`localStorage`/`sessionStorage`/`indexedDB`/
+`document.cookie` **throw** inside the sandboxed card and stop your script —
+keep state in the fragment's own variables), `[VZ101]` hard-coded colours
+(ignores the host theme — use the tokens below; canvas code should resolve a
+token through a probe element).
 
 ## Fragment contract
 
@@ -82,16 +105,20 @@ values arrive on `:root` from the host.
   need (bars, lines, points, axes).
 - `setInterval` polling or timers expecting later data — the card is static
   data + interaction only.
-- Emitting a full HTML document — hard error (VZ skeleton rule).
+- Emitting a full HTML document — hard error (`[VZ003]`).
+- A JSON-escaped fragment (literal `\"` / `\n` in place of real quotes and
+  newlines) — hard error (`[VZ004]`).
+- `localStorage`/`sessionStorage`/`indexedDB`/`document.cookie` — they throw
+  inside the sandboxed card and stop your script (`[VZ108]`).
 - Forms relying on submission — `<form>` posts are blocked by CSP; use button
-  handlers.
+  handlers (`[VZ008]`).
 
 ## After the call
 
 The tool returns a one-line confirmation; the user sees the card immediately.
 Do not paste the fragment back into your reply — describe what the card shows
 in one or two sentences and let the card do the talking. If validation fails,
-read the error: it names the exact rule (size, skeleton, external resource,
-network API); fix the fragment and call again. Cards are immutable once
-rendered — re-call `visualize` with a corrected full fragment rather than
-trying to patch.
+read the error: it names a stable code (`[VZ004]`, `[VZ005]`, …) plus the fix;
+repair the fragment and call again. Cards are immutable once rendered —
+re-call `visualize` with a corrected full fragment rather than trying to
+patch.

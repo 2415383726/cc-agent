@@ -23,13 +23,8 @@ from .interaction import (
     public_questionnaire,
 )
 from .mcp import McpRuntime
-from .visualize import (
-    TOOL_DESCRIPTION,
-    VISUALIZE_SCHEMA,
-    VISUALIZE_TOOL_NAME,
-    visualize_outcome,
-)
 from .skills import SkillCatalog
+from .visualize import TOOL_DESCRIPTION, VISUALIZE_SCHEMA, VISUALIZE_TOOL_NAME, visualize_outcome
 
 try:  # pragma: no cover - Dify SDK types are present in the plugin runtime
     from dify_plugin.entities.tool import ToolProviderType
@@ -395,10 +390,7 @@ class ToolRuntime:
                     is_error=True,
                 )
             self.ledger.record_tool(False, len(outcome_fields["text"]))
-            return ToolOutcome(
-                text=outcome_fields["text"],
-                details=outcome_fields["details"],
-            )
+            return ToolOutcome(text=outcome_fields["text"], details=outcome_fields["details"])
         return ToolOutcome(
             text=f"Unknown internal tool {spec.name}.", details={"status": "error"}, is_error=True
         )
