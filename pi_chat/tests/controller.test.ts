@@ -44,6 +44,11 @@ function mockStream(items: unknown[]) {
   ;(transport.streamChat as any).mockResolvedValue({ events: streamOf(items) })
 }
 
+
+async function settle(times = 10) {
+  for (let i = 0; i < times; i += 1) await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   ;(transport.readAgentState as any).mockResolvedValue(null)
@@ -497,6 +502,66 @@ describe('DifyController 会话管理（重命名/删除/列表）', () => {
     expect(ok).toBe(false)
     expect(controller.ui.actionNote).toContain('删除失败')
     expect(controller.ui.actionNote).toContain('Server Error')
+  })
+
+  it('运行中切新会话：不中止流，侧栏保留进行中标记，终态后清除', async () => {
+    let release: (() => void) | null = null
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let opened = 0
+    ;(transport.streamChat as any).mockImplementation(async () => ({
+      events: (async function* () {
+        opened += 1
+        yield { event: 'message', answer: '部分', conversation_id: 'conv_live' }
+        await gate
+        yield { event: 'message_end', conversation_id: 'conv_live' }
+      })(),
+    }))
+    ;(transport.listMessages as any).mockResolvedValue({ records: [], hasMore: false, firstId: '' })
+
+    const controller = new DifyController(config)
+    const sending = controller.send('长任务')
+    await settle()
+    // 切走：新会话不应中止流
+    controller.newConversation()
+    expect(controller.ui.runningIds).toContain('conv_live')
+    expect(opened).toBe(1)
+    release!()
+    await sending
+    await settle()
+    expect(controller.ui.runningIds).not.toContain('conv_live')
+    expect(controller.ui.running).toBe(false)
+  })
+
+  it('切走期间跑完：回到该会话会重新拉取服务端历史', async () => {
+    let release: (() => void) | null = null
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    ;(transport.streamChat as any).mockImplementation(async () => ({
+      events: (async function* () {
+        yield { event: 'message', answer: 'x', conversation_id: 'conv_live' }
+        await gate
+        yield { event: 'message_end', conversation_id: 'conv_live' }
+      })(),
+    }))
+    ;(transport.listMessages as any).mockResolvedValue({
+      records: [{ id: 'm1', query: 'q', answer: '最终回答', created_at: 1 }],
+      hasMore: false,
+      firstId: 'm1',
+    })
+
+    const controller = new DifyController(config)
+    const sending = controller.send('q')
+    await settle()
+    controller.newConversation()
+    await controller.loadConversation('conv_live')
+    const callsBefore = (transport.listMessages as any).mock.calls.length
+    release!()
+    await sending
+    await settle()
+    expect((transport.listMessages as any).mock.calls.length).toBeGreaterThan(callsBefore)
   })
 
   it('列表加载失败：conversationsError 记录错误，成功后清除', async () => {

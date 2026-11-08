@@ -30,6 +30,7 @@ const SIDEBAR_WIDTH = 280
 
 const conversations = computed(() => props.controller?.ui.conversations ?? [])
 const activeId = computed(() => props.controller?.ui.conversationId ?? '')
+const runningIds = computed(() => props.controller?.ui.runningIds ?? [])
 const conversationsError = computed(() => props.controller?.ui.conversationsError ?? '')
 const actionNote = computed(() => props.controller?.ui.actionNote ?? '')
 
@@ -263,6 +264,15 @@ function cancelDelete(): void {
                 :class="rows.title"
                 @dblclick.stop="startRename(item)"
               >{{ item.name }}</span>
+              <!-- 进行中：该会话的流还没读到服务端终态（客户端唯一可信依据）。 -->
+              <span
+                v-if="runningIds.includes(item.id)"
+                class="pi-running-dot"
+                data-testid="conversation-running"
+                role="status"
+                aria-label="进行中"
+                title="进行中"
+              />
               <span
                 v-if="confirmingId !== item.id"
                 :class="rows.rowResting"
@@ -410,8 +420,7 @@ function cancelDelete(): void {
   overflow-wrap: anywhere;
 }
 
-/* 行内删除确认条：替换悬停操作按钮的位置。 */
-.pi-confirm-text {
+/* 行内删除确认条：替换悬停操作按钮的位置。 */.pi-confirm-text {
   font-size: 12px;
   line-height: 20px;
   color: var(--dsw-alias-label-secondary);
@@ -441,5 +450,22 @@ function cancelDelete(): void {
   .pi-confirm-no:hover {
     background: var(--dsw-alias-interactive-bg-hover);
   }
+}
+</style>
+<style>
+/* 组件自有（非 vendor）：会话行的进行中指示（流未收到终态）。 */
+.pi-running-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-success-primary, #1f7a4d);
+  animation: pi-running-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pi-running-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
 }
 </style>

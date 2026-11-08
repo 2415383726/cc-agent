@@ -48,6 +48,8 @@ export interface UiState {
   hasMore: boolean
   firstId: string
   stoppedNote: string
+  /** 已有回合在跑、但当前视图不在其中的会话；侧栏据此显示进行中。 */
+  runningIds: string[]
 }
 
 export interface WorkbenchController {
@@ -85,6 +87,7 @@ export class DifyController implements WorkbenchController {
     hasMore: false,
     firstId: '',
     stoppedNote: '',
+    runningIds: [],
   }
   config: WorkbenchConfig
 
@@ -94,6 +97,11 @@ export class DifyController implements WorkbenchController {
   private _platformText = ''
   private _records: HistoryRecord[] = []
   private _warnedVersion = false
+  /**
+   * 在跑的回合只记录成一笔账：切走视图时把它标成 detached 而不 abort，
+   * 让流一直读到服务端终态 —— 这正是侧栏「进行中」的判断依据（没有终态 = 仍在跑）。
+   */
+  private _run: { ticket: number; conversationId: string; detached: boolean } | null = null
 
   constructor(config: WorkbenchConfig) {
     this.config = { ...config }
@@ -242,6 +250,12 @@ export class DifyController implements WorkbenchController {
     this.ui.actionNote = ''
     try {
       await deleteConversationRequest(this.config, id)
+      // 删除在跑的会话：这是唯一会主动中止流的场景，避免把结果写给已删除的会话。
+      if (this._run?.conversationId === id) {
+        this._abort?.abort()
+        this._run = null
+        this._setRunning(id, false)
+      }
       this.ui.conversations = this.ui.conversations.filter((item) => item.id !== id)
       if (this.ui.conversationId === id) this.newConversation()
       await this.refreshConversations()
@@ -254,7 +268,8 @@ export class DifyController implements WorkbenchController {
 
   async loadConversation(id: string): Promise<void> {
     const epoch = ++this._ticket
-    this._abort?.abort()
+    // 切会话不 abort 在跑的回合：摘掉视图绑定即可，终态到达时再回填历史。
+    this._detachRun()
     this._abort = null
     this.ui.running = false
     this.ui.stopping = false
@@ -308,7 +323,8 @@ export class DifyController implements WorkbenchController {
 
   newConversation(): void {
     this._ticket += 1
-    this._abort?.abort()
+    // 上一轮仍在跑时只摘视图：继续读流到终态，侧栏保留该会话的进行中标记。
+    this._detachRun()
     this._abort = null
     this._records = []
     this._taskId = ''
@@ -415,6 +431,8 @@ export class DifyController implements WorkbenchController {
     this.view.running = true
     this._ticket += 1
     const ticket = this._ticket
+    const run = { ticket, conversationId: this.ui.conversationId, detached: false }
+    this._run = run
     this.ui.running = true
     this.ui.stopping = false
     this.ui.stopRequested = false
@@ -432,30 +450,32 @@ export class DifyController implements WorkbenchController {
         files: files as UploadedFile[],
         signal: this._abort.signal,
       })
+      // 视图切换只让 ticket 失配（detached），流本身读到底：终态是唯一的「跑完」证据。
       for await (const payload of stream.events) {
-        if (ticket !== this._ticket) return
-        this._handleDifyEvent(payload)
+        this._handleDifyEvent(payload, run)
       }
-      if (ticket !== this._ticket) return
-      if (!this.view.terminal) this._synthesizeUnconfirmed(this.ui.stopRequested)
-      this.ui.running = false
+      if (this._attached(run)) {
+        if (!this.view.terminal) this._synthesizeUnconfirmed(this.ui.stopRequested)
+      }
     } catch (error) {
-      if (ticket !== this._ticket) return
-      if (this.ui.stopRequested) {
-        if (!this.view.terminal) this._synthesizeUnconfirmed(true)
-      } else {
-        this.ui.error = safeError(error)
-        if (!this.view.terminal) {
-          this.view.terminal = {
-            status: 'failed',
-            answer: 'Dify 请求失败，未收到可信终态。',
-            error: { code: 'transport_failed', stage: 'transport', message: safeError(error) },
+      if (this._attached(run)) {
+        if (this.ui.stopRequested) {
+          if (!this.view.terminal) this._synthesizeUnconfirmed(true)
+        } else {
+          this.ui.error = safeError(error)
+          if (!this.view.terminal) {
+            this.view.terminal = {
+              status: 'failed',
+              answer: 'Dify 请求失败，未收到可信终态。',
+              error: { code: 'transport_failed', stage: 'transport', message: safeError(error) },
+            }
           }
         }
       }
-      this.ui.running = false
     } finally {
-      if (ticket === this._ticket) {
+      const attached = this._attached(run)
+      this._finishRun(run, attached)
+      if (attached) {
         this.ui.running = false
         this.ui.stopping = false
         this._abort = null
@@ -463,19 +483,56 @@ export class DifyController implements WorkbenchController {
     }
   }
 
-  private _handleDifyEvent(payload: Record<string, any>): void {
+  /** 该回合的视图是否仍由当前会话承载（切走即 detached，只保留运行中账目）。 */
+  private _attached(run: { ticket: number; detached: boolean }): boolean {
+    return !run.detached && run.ticket === this._ticket
+  }
+
+  private _finishRun(run: { conversationId: string }, attached: boolean): void {
+    this._setRunning(run.conversationId, false)
+    if (this._run?.conversationId === run.conversationId) this._run = null
+    // 切走期间跑完的回合：回到该会话时补拉服务端历史（含最终回答）。
+    if (!attached && this.ui.conversationId && this.ui.conversationId === run.conversationId) {
+      void this.loadConversation(run.conversationId)
+    }
+  }
+
+  private _setRunning(conversationId: string, running: boolean): void {
+    if (!conversationId) return
+    const index = this.ui.runningIds.indexOf(conversationId)
+    if (running && index < 0) this.ui.runningIds.push(conversationId)
+    if (!running && index >= 0) this.ui.runningIds.splice(index, 1)
+  }
+
+  /** 视图切走：保留流与运行中账目，只把后续事件从视图上摘掉。 */
+  private _detachRun(): void {
+    if (this._run) this._run.detached = true
+  }
+
+  private _handleDifyEvent(
+    payload: Record<string, any>,
+    run: { ticket: number; conversationId: string; detached: boolean },
+  ): void {
     const eventName = String(payload?.event || '')
+    const attached = this._attached(run)
     if (payload?.task_id) this._taskId = String(payload.task_id)
     if (payload?.conversation_id) {
-      this.ui.conversationId = String(payload.conversation_id)
-      if (!this.ui.conversations.some((item) => item.id === this.ui.conversationId)) {
-        this.ui.conversations.push({
-          id: this.ui.conversationId,
-          name: '当前会话',
-          updatedAt: Date.now(),
-        })
+      const incoming = String(payload.conversation_id)
+      // 运行中账目按服务端会话 id 记，即便视图已切走也要登记（侧栏据此显示进行中）。
+      if (!run.conversationId) run.conversationId = incoming
+      this._setRunning(run.conversationId, true)
+      if (attached) {
+        this.ui.conversationId = incoming
+        if (!this.ui.conversations.some((item) => item.id === incoming)) {
+          this.ui.conversations.push({
+            id: incoming,
+            name: '当前会话',
+            updatedAt: Date.now(),
+          })
+        }
       }
     }
+    if (!attached) return
     if (eventName === 'error') {
       const message = safeText(payload?.message || 'Dify 流返回了错误。')
       this.ui.error = message

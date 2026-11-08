@@ -160,6 +160,17 @@ describe('ComposerBar Enter / IME / busy', () => {
     expect(wrapper.emitted('send')).toHaveLength(1)
   })
 
+  it('组词标志残留（compositionend 丢失）时点发送仍可提交', async () => {
+    const wrapper = mount(ComposerBar, { props: { interactive: true } })
+    const textarea = wrapper.find('textarea')
+    await textarea.setValue('你好')
+    await textarea.trigger('compositionstart')
+    // 没有 compositionend：模拟组词期切走焦点导致标志卡死
+    await wrapper.find('[data-testid="composer-send"]').trigger('click')
+    expect(wrapper.emitted('send')).toHaveLength(1)
+    expect(wrapper.emitted('send')![0][0]).toBe('你好')
+  })
+
   it('busy 时输入不发送、发送按钮不出现，停止按钮出现且可点；非运行时无停止按钮', async () => {
     const idle = mount(ComposerBar, { props: { interactive: true, busy: false } })
     expect(idle.find('[data-testid="composer-stop"]').exists()).toBe(false)
