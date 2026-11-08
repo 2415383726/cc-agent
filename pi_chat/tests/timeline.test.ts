@@ -142,16 +142,33 @@ describe('timeline AssistantMessage（助手消息）', () => {
     expect(wrapper.text().split('30 天退款窗口内').length - 1).toBe(1)
   })
 
-  it('streaming 时显示打字指示行，结束后消失', async () => {
+  it('助手消息不再自带运行中指示（由时间线末尾统一渲染）', () => {
     const wrapper = mount(AssistantMessage, {
       props: { entry: messageEntry({ text: '部分回答', streaming: true }) },
     })
-    const running = wrapper.find('[data-testid="assistant-running"]')
-    expect(running.exists()).toBe(true)
-    expect(running.text()).toContain('深度求索中')
-
-    await wrapper.setProps({ entry: messageEntry({ text: '完整回答', streaming: false }) })
     expect(wrapper.find('[data-testid="assistant-running"]').exists()).toBe(false)
+  })
+
+  it('运行中指示固定在时间线末尾：后续思考行排在它上面', () => {
+    const entries: WorkbenchEntry[] = [
+      messageEntry({ id: 'u1', role: 'user', text: '问题', ts: 1000, streaming: false }),
+      messageEntry({ id: 'a1', role: 'assistant', text: '先加载技能', ts: 2000, streaming: true }),
+      {
+        kind: 'reasoning',
+        id: 'r1',
+        ts: 3000,
+        text: '思考中的内容',
+        title: '思考',
+        streaming: true,
+      } as WorkbenchEntry,
+    ]
+    const wrapper = mount(TranscriptView, { props: { entries, running: true } })
+    const rows = wrapper.findAll('li')
+    const runningIndex = rows.findIndex((row) => row.find('[data-testid="assistant-running"]').exists())
+    expect(runningIndex).toBeGreaterThanOrEqual(0)
+    // 指示行必须是最后一个 li
+    expect(runningIndex).toBe(rows.length - 1)
+    expect(wrapper.text()).toContain('深度求索中')
   })
 })
 

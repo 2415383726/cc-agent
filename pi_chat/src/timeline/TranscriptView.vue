@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive } from 'vue'
 import AssistantMessage from './AssistantMessage.vue'
+import RunningStatusRow from './RunningStatusRow.vue'
 import CompactionRow from './CompactionRow.vue'
 import NoteRow from './NoteRow.vue'
 import ReasoningRow from './ReasoningRow.vue'
@@ -54,6 +55,20 @@ const isAssistant = (entry: WorkbenchEntry): boolean =>
   entry.kind === 'message' && (entry as MessageEntry).role === 'assistant'
 
 const turns = computed(() => turnViews(props.entries, props.running === true))
+
+/*
+ * 仍在流式的最后一条助手消息：它的时间戳是「深度求索中」计时起点。
+ * 只有它存在时才显示运行中指示（等待问卷/审批时不会误报）。
+ */
+const runningTs = computed<number>(() => {
+  for (let index = props.entries.length - 1; index >= 0; index -= 1) {
+    const entry = props.entries[index]
+    if (entry.kind === 'message' && (entry as MessageEntry).role === 'assistant') {
+      return (entry as MessageEntry).streaming ? (entry as MessageEntry).ts : 0
+    }
+  }
+  return 0
+})
 
 /* 折叠态：默认收起；用户展开的回合记录在案（回合 id → 是否展开）。 */
 const expandedTurns = reactive(new Set<string>())
@@ -211,6 +226,12 @@ const turnTail = (turn: TurnView): { text: string; time: number } | null => {
         />
       </li>
     </template>
+
+    <!-- 运行中指示固定收在时间线末尾：进程行会不断追加到流式消息之后，
+         指示若挂在消息内部就会停在中间（见 RunningStatusRow.vue）。 -->
+    <li v-if="runningTs" class="pi-running-row" data-testid="timeline-running-row">
+      <RunningStatusRow :start-ts="runningTs" />
+    </li>
   </ol>
 
   <ul v-if="outputLinks.length" aria-label="输出文件" class="pi-transcript-outputs">
@@ -242,6 +263,11 @@ const turnTail = (turn: TurnView): { text: string; time: number } | null => {
 }
 
 /* 组件自有（非 vendor）：输出文件列表（回放无输出时不渲染；链接经协议护栏）。 */
+.pi-running-row {
+  list-style: none;
+  margin: 4px 0 0;
+}
+
 .pi-transcript-outputs {
   list-style: none;
   margin: 0 auto;
