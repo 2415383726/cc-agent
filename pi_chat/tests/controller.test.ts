@@ -534,34 +534,43 @@ describe('DifyController 会话管理（重命名/删除/列表）', () => {
     expect(controller.ui.running).toBe(false)
   })
 
-  it('切走期间跑完：回到该会话会重新拉取服务端历史', async () => {
+  it('切回运行中的会话：内容还原且流继续，终态后仍在', async () => {
     let release: (() => void) | null = null
     const gate = new Promise<void>((resolve) => {
       release = resolve
     })
     ;(transport.streamChat as any).mockImplementation(async () => ({
       events: (async function* () {
-        yield { event: 'message', answer: 'x', conversation_id: 'conv_live' }
+        yield { event: 'agent_log', data: { piagent: piEvent('message.user', 0, { text: 'q', message_id: 'u1' }) } }
+        yield { event: 'agent_log', data: { piagent: piEvent('message.start', 1, { message_id: 'a1' }) } }
+        yield { event: 'agent_log', data: { piagent: piEvent('message.delta', 2, { message_id: 'a1', delta: '部分' }) } }
+        yield { event: 'message', answer: '部分', conversation_id: 'conv_live' }
         await gate
+        yield { event: 'agent_log', data: { piagent: piEvent('message.end', 3, { message_id: 'a1', text: '部分回答' }) } }
         yield { event: 'message_end', conversation_id: 'conv_live' }
       })(),
     }))
-    ;(transport.listMessages as any).mockResolvedValue({
-      records: [{ id: 'm1', query: 'q', answer: '最终回答', created_at: 1 }],
-      hasMore: false,
-      firstId: 'm1',
-    })
+    ;(transport.listMessages as any).mockResolvedValue({ records: [], hasMore: false, firstId: '' })
 
     const controller = new DifyController(config)
     const sending = controller.send('q')
     await settle()
+    const beforeSwitch = controller.view.entries.length
+    expect(beforeSwitch).toBeGreaterThan(0)
+
     controller.newConversation()
+    expect(controller.view.entries.length).toBe(0)
+
     await controller.loadConversation('conv_live')
-    const callsBefore = (transport.listMessages as any).mock.calls.length
+    const restored = controller.view.entries.length
+    expect(restored).toBeGreaterThan(0)
+
     release!()
     await sending
     await settle()
-    expect((transport.listMessages as any).mock.calls.length).toBeGreaterThan(callsBefore)
+    // 接回后继续写同一个视图：既不空白也不会被历史重置
+    expect(controller.view.entries.length).toBeGreaterThanOrEqual(restored)
+    expect(controller.view.terminal).not.toBeNull()
   })
 
   it('列表加载失败：conversationsError 记录错误，成功后清除', async () => {

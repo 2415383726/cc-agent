@@ -30,6 +30,7 @@ export class ReplayController implements WorkbenchController {
     conversationId: 'replay',
     conversations: [{ id: 'replay', name: '回放场景', updatedAt: 0 }],
     conversationsError: '',
+    runningIds: [],
     actionNote: '',
     loadingHistory: false,
     hasMore: false,

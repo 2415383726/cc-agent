@@ -52,6 +52,16 @@ export interface UiState {
   runningIds: string[]
 }
 
+interface RunState {
+  ticket: number
+  conversationId: string
+  detached: boolean
+  abort: AbortController
+  taskId: string
+  /** 平台侧累积的正文，按回合隔离（切走的回合不能污染当前视图）。 */
+  platformText: string
+}
+
 export interface WorkbenchController {
   view: TranscriptView
   ui: UiState
@@ -94,14 +104,15 @@ export class DifyController implements WorkbenchController {
   private _ticket = 0
   private _abort: AbortController | null = null
   private _taskId = ''
-  private _platformText = ''
   private _records: HistoryRecord[] = []
   private _warnedVersion = false
   /**
    * 在跑的回合只记录成一笔账：切走视图时把它标成 detached 而不 abort，
    * 让流一直读到服务端终态 —— 这正是侧栏「进行中」的判断依据（没有终态 = 仍在跑）。
    */
-  private _run: { ticket: number; conversationId: string; detached: boolean } | null = null
+  private _run: RunState | null = null
+  /** 离开某会话时的视图快照：切回来先还原，避免「一切会话内容就没了」。 */
+  private _views = new Map<string, TranscriptView>()
 
   constructor(config: WorkbenchConfig) {
     this.config = { ...config }
@@ -267,6 +278,24 @@ export class DifyController implements WorkbenchController {
   }
 
   async loadConversation(id: string): Promise<void> {
+    this._snapshotView()
+    // 回到仍在跑的会话：还原离开时的内容，并把流接回这个视图（不重拉历史，
+    // 服务端此刻还没有这一轮的最终回答）。
+    const active = this._run && this._run.conversationId === id ? this._run : null
+    if (active) {
+      this.ui.conversationId = id
+      this.ui.error = ''
+      this.ui.stopping = false
+      this.ui.stoppedNote = ''
+      this.ui.loadingHistory = false
+      this._restoreView(id)
+      active.detached = false
+      this._ticket = active.ticket
+      this._abort = active.abort
+      this._taskId = active.taskId
+      this.ui.running = true
+      return
+    }
     const epoch = ++this._ticket
     // 切会话不 abort 在跑的回合：摘掉视图绑定即可，终态到达时再回填历史。
     this._detachRun()
@@ -277,6 +306,7 @@ export class DifyController implements WorkbenchController {
     this.ui.conversationId = id
     this._records = []
     resetView(this.view)
+    this._restoreView(id)
     this.ui.firstId = ''
     this.ui.hasMore = false
     if (!id) return
@@ -288,6 +318,7 @@ export class DifyController implements WorkbenchController {
       this.ui.firstId = page.firstId
       this.ui.hasMore = page.hasMore
       this._applyHistory()
+      this._views.delete(id)
       await this._restoreSavedState(epoch, id)
     } catch (error) {
       if (epoch !== this._ticket) return
@@ -322,6 +353,7 @@ export class DifyController implements WorkbenchController {
   }
 
   newConversation(): void {
+    this._snapshotView()
     this._ticket += 1
     // 上一轮仍在跑时只摘视图：继续读流到终态，侧栏保留该会话的进行中标记。
     this._detachRun()
@@ -431,7 +463,15 @@ export class DifyController implements WorkbenchController {
     this.view.running = true
     this._ticket += 1
     const ticket = this._ticket
-    const run = { ticket, conversationId: this.ui.conversationId, detached: false }
+    const abort = new AbortController()
+    const run: RunState = {
+      ticket,
+      conversationId: this.ui.conversationId,
+      detached: false,
+      abort,
+      taskId: '',
+      platformText: '',
+    }
     this._run = run
     this.ui.running = true
     this.ui.stopping = false
@@ -439,8 +479,7 @@ export class DifyController implements WorkbenchController {
     this.ui.error = ''
     this.ui.stoppedNote = ''
     this._taskId = ''
-    this._platformText = ''
-    this._abort = new AbortController()
+    this._abort = abort
     try {
       const stream = await streamChat({
         ...this.config,
@@ -484,13 +523,15 @@ export class DifyController implements WorkbenchController {
   }
 
   /** 该回合的视图是否仍由当前会话承载（切走即 detached，只保留运行中账目）。 */
-  private _attached(run: { ticket: number; detached: boolean }): boolean {
+  private _attached(run: RunState): boolean {
     return !run.detached && run.ticket === this._ticket
   }
 
-  private _finishRun(run: { conversationId: string }, attached: boolean): void {
+  private _finishRun(run: RunState, attached: boolean): void {
     this._setRunning(run.conversationId, false)
     if (this._run?.conversationId === run.conversationId) this._run = null
+    // 回合结束，缓存快照以服务端历史为准（下次进入会重新拉取）。
+    if (run.conversationId) this._views.delete(run.conversationId)
     // 切走期间跑完的回合：回到该会话时补拉服务端历史（含最终回答）。
     if (!attached && this.ui.conversationId && this.ui.conversationId === run.conversationId) {
       void this.loadConversation(run.conversationId)
@@ -509,13 +550,30 @@ export class DifyController implements WorkbenchController {
     if (this._run) this._run.detached = true
   }
 
+  /** 记住当前会话已渲染的内容（切回来先还原，等服务端历史到达再覆盖）。 */
+  private _snapshotView(): void {
+    const id = this.ui.conversationId
+    if (!id) return
+    this._views.set(id, cloneView(this.view))
+  }
+
+  private _restoreView(id: string): void {
+    const cached = this._views.get(id)
+    if (!cached) return
+    const copy = cloneView(cached)
+    Object.assign(this.view, copy)
+  }
+
   private _handleDifyEvent(
     payload: Record<string, any>,
-    run: { ticket: number; conversationId: string; detached: boolean },
+    run: RunState,
   ): void {
     const eventName = String(payload?.event || '')
     const attached = this._attached(run)
-    if (payload?.task_id) this._taskId = String(payload.task_id)
+    if (payload?.task_id) {
+      this._taskId = String(payload.task_id)
+      run.taskId = this._taskId
+    }
     if (payload?.conversation_id) {
       const incoming = String(payload.conversation_id)
       // 运行中账目按服务端会话 id 记，即便视图已切走也要登记（侧栏据此显示进行中）。
@@ -532,10 +590,30 @@ export class DifyController implements WorkbenchController {
         }
       }
     }
-    if (!attached) return
+    if (!attached) {
+      // 切走的回合继续写进该会话的缓存视图：切回来时内容是完整的。
+      if (!run.conversationId) return
+      const live = this.view
+      this.view = this._viewFor(run.conversationId)
+      try {
+        this._applyEvent(payload, eventName, run, true)
+      } finally {
+        this.view = live
+      }
+      return
+    }
+    this._applyEvent(payload, eventName, run, false)
+  }
+
+  private _applyEvent(
+    payload: Record<string, any>,
+    eventName: string,
+    run: RunState,
+    detached: boolean,
+  ): void {
     if (eventName === 'error') {
       const message = safeText(payload?.message || 'Dify 流返回了错误。')
-      this.ui.error = message
+      if (!detached) this.ui.error = message
       if (!this.view.terminal) {
         this.view.terminal = {
           status: 'failed',
@@ -547,7 +625,7 @@ export class DifyController implements WorkbenchController {
     }
     if (eventName === 'message' || eventName === 'agent_message') {
       const answer = String(payload?.answer || '')
-      if (answer) this._platformText += answer
+      if (answer) run.platformText += answer
     }
     if (eventName === 'message_file') {
       const url = String(payload?.url || '')
@@ -568,19 +646,47 @@ export class DifyController implements WorkbenchController {
     }
     if (found?.event) {
       applyEvent(this.view, found.event)
-      if (this.view.terminal && !isWaiting(this.view.terminal.status)) {
+      if (!detached && this.view.terminal && !isWaiting(this.view.terminal.status)) {
         this.ui.running = false
       }
     }
     if (eventName === 'message_end') {
-      const finalText = normalizeAnswer(this._platformText || String(payload?.answer || ''))
+      const finalText = normalizeAnswer(run.platformText || String(payload?.answer || ''))
       if (finalText) mergeFinalAnswer(this.view, finalText)
     }
+  }
+
+  /** 切走期间的缓存视图（按会话）；首次访问时从空视图开始。 */
+  private _viewFor(conversationId: string): TranscriptView {
+    let cached = this._views.get(conversationId)
+    if (!cached) {
+      cached = newView()
+      this._views.set(conversationId, cached)
+    }
+    return cached
   }
 }
 
 function isWaiting(status: string): boolean {
   return status === 'awaiting_user' || status === 'awaiting_approval'
+}
+
+/** 视图快照的深拷贝：entries/outputs/terminal 是纯数据，seen 是 Set。 */
+function cloneView(view: TranscriptView): TranscriptView {
+  const copy: TranscriptView = {
+    entries: JSON.parse(JSON.stringify(view.entries ?? [])),
+    outputs: JSON.parse(JSON.stringify(view.outputs ?? [])),
+    terminal: view.terminal ? JSON.parse(JSON.stringify(view.terminal)) : null,
+    running: view.running,
+    platformAnswer: view.platformAnswer,
+    warnings: [...(view.warnings ?? [])],
+    ignored: view.ignored,
+    seen: new Set(view.seen ?? []),
+    activeAssistantId: view.activeAssistantId,
+    activeReasoningId: view.activeReasoningId,
+    optimisticUserId: view.optimisticUserId,
+  }
+  return copy
 }
 
 function safeError(error: unknown): string {
