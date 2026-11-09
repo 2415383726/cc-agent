@@ -1,0 +1,21 @@
+<section data-pi-visualize="1" data-kit-version="1" data-title="为什么队伍越来越长？" data-description="讲解模型：到达速度超过单窗口处理速度时，队伍增长；拖动滑块观察变化，暂停或重置演示。">
+<style>
+.queue-demo{max-width:760px;margin:auto}.queue-demo h3{margin:0 0 8px;font-size:18px}.queue-demo p{margin:8px 0;color:#b8b8c2}.queue-demo label{display:block;margin:16px 0 6px}.queue-demo input{width:100%;accent-color:#9b8cff}.queue-demo button{background:#26262c;color:inherit;border:1px solid #55535f;border-radius:8px;padding:8px 14px;min-height:40px;margin:8px 8px 0 0}.queue-demo output{font-variant-numeric:tabular-nums}.queue-demo svg{width:100%;height:auto;display:block;margin:16px 0}.queue-demo text{fill:currentColor;font:14px system-ui}.queue-demo .hint{font-size:12px}.queue-demo button:focus-visible{outline:2px solid #b9aaff;outline-offset:3px}
+</style>
+<div class="queue-demo">
+<h3>到达快于处理，等候会累积</h3>
+<p>这是简化的讲解模型，时间和人数均为演示值。</p>
+<label for="arrival">到达速度：<output id="arrival-value">3</output> 人/秒</label><input id="arrival" type="range" min="0" max="6" step="1" value="3">
+<label for="service">单窗口处理速度：<output id="service-value">2</output> 人/秒</label><input id="service" type="range" min="0" max="6" step="1" value="2">
+<svg viewBox="0 0 640 190" role="img" aria-label="左侧队伍、右侧处理窗口，底部比较到达和处理速度">
+<text x="12" y="22">等待区</text><g id="people"></g><rect x="520" y="42" width="108" height="58" rx="8" fill="#383342" stroke="#9b8cff"/><text x="538" y="76">处理窗口</text>
+<text x="12" y="132">到达</text><rect id="arrival-bar" x="68" y="118" width="180" height="18" fill="#9b8cff"/>
+<text x="12" y="168">处理</text><rect id="service-bar" x="68" y="154" width="120" height="18" fill="#77c5a1"/>
+</svg>
+<p aria-live="polite">当前等待 <output id="queue-count">4</output> 人 · 已演示 <output id="elapsed">0</output> 秒</p>
+<p id="trend">每秒净增加 1 人。</p><button id="pause" type="button">暂停</button><button id="reset" type="button">重置</button><p class="hint">刷新或重开作品时恢复初始参数。图内操作只影响这幅演示。</p>
+</div>
+<script>
+(()=>{const $=id=>document.getElementById(id),arrival=$('arrival'),service=$('service');let count=4,time=0,playing=!matchMedia('(prefers-reduced-motion: reduce)').matches;function render(){const a=+arrival.value,s=+service.value;$('arrival-value').textContent=a;$('service-value').textContent=s;$('arrival-bar').setAttribute('width',a*60);$('service-bar').setAttribute('width',s*60);$('queue-count').textContent=Math.round(count);$('elapsed').textContent=time.toFixed(1);$('trend').textContent=a>s?'每秒净增加 '+(a-s)+' 人。':a<s?'处理有余量，队伍会逐渐缩短。':'到达与处理保持平衡。';$('pause').textContent=playing?'暂停':'播放';$('pause').setAttribute('aria-pressed',String(!playing));$('people').innerHTML='';for(let i=0;i<Math.min(24,Math.ceil(count));i++){const c=document.createElementNS('http://www.w3.org/2000/svg','circle');c.setAttribute('cx',26+(i%12)*38);c.setAttribute('cy',i<12?54:86);c.setAttribute('r','10');c.setAttribute('fill','#c3b9ff');$('people').append(c)}}arrival.addEventListener('input',render);service.addEventListener('input',render);$('pause').addEventListener('click',()=>{playing=!playing;render()});$('reset').addEventListener('click',()=>{arrival.value='3';service.value='2';count=4;time=0;playing=false;render()});setInterval(()=>{if(!playing)return;time+=.5;count=Math.min(100,Math.max(0,count+(+arrival.value-+service.value)*.5));render()},500);render()})();
+</script>
+</section>

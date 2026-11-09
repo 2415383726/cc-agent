@@ -1,0 +1,23 @@
+<section data-pi-visualize="1" data-kit-version="1" data-title="速度与路程" data-description="时间固定为2小时。调节速度，观察路程随之变化。">
+  <h2>同样两小时，速度决定路程</h2>
+  <label class="form-label" for="speed">速度：<output id="speed-value">40 千米/小时</output></label>
+  <input id="speed" class="form-range" type="range" min="10" max="100" step="10" value="40">
+  <figure aria-label="行驶路程，单位千米">
+    <svg id="distance-figure" width="100%" height="64" viewBox="0 0 200 32" role="img" aria-label="路程条形图">
+      <rect id="distance-bar" x="0" y="8" width="80" height="16" fill="var(--viz-series-1)"></rect>
+    </svg>
+    <figcaption>路程：<strong id="distance">80</strong> 千米。路程 = 速度 × 2 小时。</figcaption>
+  </figure>
+  <script>
+    (() => {
+      const speed = document.getElementById('speed');
+      const render = () => {
+        document.getElementById('speed-value').textContent = speed.value + ' 千米/小时';
+        document.getElementById('distance').textContent = String(Number(speed.value) * 2);
+        document.getElementById('distance-bar').setAttribute('width', String(Number(speed.value) * 2));
+      };
+      speed.addEventListener('input', render);
+      render();
+    })();
+  </script>
+</section>

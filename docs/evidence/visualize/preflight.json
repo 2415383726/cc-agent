@@ -1,0 +1,218 @@
+{
+  "control": {
+    "imgLoaded": true
+  },
+  "delayedHits": [],
+  "browser": "154.0.8037.57",
+  "date": "2026-10-29T15:16:24.142Z",
+  "results": [
+    {
+      "mode": "DOMParser",
+      "name": "img",
+      "parsed": {
+        "nodes": "<html><head></head><body><section data-pi-visualize=\"1\" data-kit-version=\"1\" data-title=\"test\" data-description=\"test\"><img src=\"http://127.0.0.1:36139/DOMParser/img\"></section></body></html>"
+      },
+      "hits": []
+    },
+    {
+      "mode": "DOMParser",
+      "name": "iframe",
+      "parsed": {
+        "nodes": "<html><head></head><body><section data-pi-visualize=\"1\" data-kit-version=\"1\" data-title=\"test\" data-description=\"test\"><iframe src=\"http://127.0.0.1:36139/DOMParser/iframe\"></iframe></section></body></html>"
+      },
+      "hits": []
+    },
+    {
+      "mode": "DOMParser",
+      "name": "link-css",
+      "parsed": {
+        "nodes": "<html><head></head><body><section data-pi-visualize=\"1\" data-kit-version=\"1\" data-title=\"test\" data-description=\"test\"><link rel=\"stylesheet\" href=\"http://127.0.0.1:36139/DOMParser/link-css\"></section></body></html>"
+      },
+      "hits": []
+    },
+    {
+      "mode": "DOMParser",
+      "name": "doctype",
+      "parsed": {
+        "nodes": "<html><head></head><body><section>test</section></body></html>"
+      },
+      "hits": []
+    },
+    {
+      "mode": "DOMParser",
+      "name": "external-entity",
+      "parsed": {
+        "nodes": "<html><head></head><body>]&gt;<section>&amp;external;</section></body></html>"
+      },
+      "hits": []
+    },
+    {
+      "mode": "DOMParser",
+      "name": "svg-image",
+      "parsed": {
+        "nodes": "<html><head></head><body><section data-pi-visualize=\"1\" data-kit-version=\"1\" data-title=\"test\" data-description=\"test\"><svg><image href=\"http://127.0.0.1:36139/DOMParser/svg-image\"></image></svg></section></body></html>"
+      },
+      "hits": []
+    },
+    {
+      "mode": "DOMParser",
+      "name": "style-import",
+      "parsed": {
+        "nodes": "<html><head></head><body><section data-pi-visualize=\"1\" data-kit-version=\"1\" data-title=\"test\" data-description=\"test\"><style>@import url('http://127.0.0.1:36139/DOMParser/style-import');</style></section></body></html>"
+      },
+      "hits": []
+    },
+    {
+      "mode": "DOMParser",
+      "name": "script",
+      "parsed": {
+        "nodes": "<html><head></head><body><section data-pi-visualize=\"1\" data-kit-version=\"1\" data-title=\"test\" data-description=\"test\"><script src=\"http://127.0.0.1:36139/DOMParser/script\"></script></section></body></html>"
+      },
+      "hits": []
+    },
+    {
+      "mode": "DOMParser",
+      "name": "object",
+      "parsed": {
+        "nodes": "<html><head></head><body><section data-pi-visualize=\"1\" data-kit-version=\"1\" data-title=\"test\" data-description=\"test\"><object data=\"http://127.0.0.1:36139/DOMParser/object\"></object></section></body></html>"
+      },
+      "hits": []
+    },
+    {
+      "mode": "DOMParser",
+      "name": "nested-template",
+      "parsed": {
+        "nodes": "<html><head></head><body><section data-pi-visualize=\"1\" data-kit-version=\"1\" data-title=\"test\" data-description=\"test\"><template><img src=\"http://127.0.0.1:36139/DOMParser/nested-template\"></template></section></body></html>"
+      },
+      "hits": []
+    },
+    {
+      "mode": "answerSegments",
+      "name": "img",
+      "parsed": [
+        {
+          "kind": "visualize",
+          "error": "作品不支持外部资源或跳转。"
+        }
+      ],
+      "hits": []
+    },
+    {
+      "mode": "answerSegments",
+      "name": "iframe",
+      "parsed": [
+        {
+          "kind": "visualize",
+          "error": "作品包含不支持的文档或资源元素。"
+        }
+      ],
+      "hits": []
+    },
+    {
+      "mode": "answerSegments",
+      "name": "link-css",
+      "parsed": [
+        {
+          "kind": "visualize",
+          "error": "作品包含不支持的文档或资源元素。"
+        }
+      ],
+      "hits": []
+    },
+    {
+      "mode": "answerSegments",
+      "name": "doctype",
+      "parsed": [
+        {
+          "kind": "visualize",
+          "error": "作品只能提供内容片段。"
+        }
+      ],
+      "hits": []
+    },
+    {
+      "mode": "answerSegments",
+      "name": "external-entity",
+      "parsed": [
+        {
+          "kind": "visualize",
+          "error": "作品需要一个根元素。"
+        }
+      ],
+      "hits": []
+    },
+    {
+      "mode": "answerSegments",
+      "name": "svg-image",
+      "parsed": [
+        {
+          "kind": "visualize",
+          "error": "作品不支持外部资源或跳转。"
+        }
+      ],
+      "hits": []
+    },
+    {
+      "mode": "answerSegments",
+      "name": "style-import",
+      "parsed": [
+        {
+          "kind": "visualize",
+          "error": "作品不支持外部样式资源。"
+        }
+      ],
+      "hits": []
+    },
+    {
+      "mode": "answerSegments",
+      "name": "script",
+      "parsed": [
+        {
+          "kind": "visualize",
+          "error": "作品不支持外部资源或跳转。"
+        }
+      ],
+      "hits": []
+    },
+    {
+      "mode": "answerSegments",
+      "name": "object",
+      "parsed": [
+        {
+          "kind": "visualize",
+          "error": "作品包含不支持的文档或资源元素。"
+        }
+      ],
+      "hits": []
+    },
+    {
+      "mode": "answerSegments",
+      "name": "nested-template",
+      "parsed": [
+        {
+          "kind": "visualize",
+          "error": ""
+        }
+      ],
+      "hits": []
+    },
+    {
+      "mode": "DOMParser-xml",
+      "name": "external-entity",
+      "parsed": "<root/>",
+      "hits": []
+    }
+  ],
+  "allSinkHits": [
+    {
+      "url": "/positive-control/fetch",
+      "type": "empty",
+      "time": 1793286983637
+    },
+    {
+      "url": "/positive-control/img",
+      "type": "image",
+      "time": 1793286983642
+    }
+  ]
+}

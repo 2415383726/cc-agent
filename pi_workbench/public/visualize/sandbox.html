@@ -1,0 +1,91 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="pi-visualize-shell" content="1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; script-src-attr 'none'; style-src 'unsafe-inline'; img-src data:; font-src 'none'; connect-src 'none'; media-src 'none'; frame-src blob:; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pi 作品隔离环境</title>
+<style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#0d0d0d}iframe{display:block;width:100%;height:100%;border:0}</style>
+</head><body><script>(() => {
+  'use strict';
+  let id = '', child = null, blob = '', initialized = false, count = 0, since = 0;
+  const send = (type, fields = {}) => parent.postMessage({ type: 'pi-visualize:' + type, id, ...fields }, '*');
+  const clear = () => { child?.remove(); child = null; if (blob) URL.revokeObjectURL(blob); blob = ''; };
+  const bridge = (identity, initialTheme) => {
+    const post = parent.postMessage.bind(parent);
+    let errored = false, scheduled = false, lastHeight = 0;
+    const tell = (type, fields = {}) => post({ type: 'pi-visualize:' + type, id: identity, ...fields }, '*');
+    const properties = { background: 'bg', text: 'text', surface: 'surface', raised: 'raised', muted: 'muted', border: 'border', primary: 'primary', onPrimary: 'on-primary', input: 'input', focus: 'focus', danger: 'danger', series1: 'series-1', series2: 'series-2', series3: 'series-3', series4: 'series-4', series5: 'series-5', series6: 'series-6' };
+    const applyTheme = (theme, notify) => {
+      if (!theme || !['light', 'dark'].includes(theme.mode) || !theme.colors) return;
+      document.documentElement.dataset.theme = theme.mode;
+      document.documentElement.style.colorScheme = theme.mode;
+      for (const [key, property] of Object.entries(properties)) {
+        const value = theme.colors[key];
+        if (typeof value === 'string' && value.length <= 80 && /^(?:#[0-9a-f]{3,8}|rgba?\([\d.,% /]+\))$/i.test(value)) document.documentElement.style.setProperty('--viz-' + property, value);
+      }
+      if (notify) dispatchEvent(new CustomEvent('piviz:themechange', { detail: window.PiViz.getTheme() }));
+    };
+    applyTheme(initialTheme, false);
+    addEventListener('message', event => {
+      if (event.source === parent && event.data?.type === 'pi-visualize:theme' && event.data.id === identity) applyTheme(event.data.theme, true);
+    });
+    const measure = () => {
+      if (scheduled) return;
+      scheduled = true;
+      setTimeout(() => {
+        scheduled = false;
+        const next = Math.min(1200, Math.max(200, Math.ceil(document.body.getBoundingClientRect().height)));
+        if (next !== lastHeight) { lastHeight = next; tell('resize', { height: next }); }
+      }, 100);
+    };
+    addEventListener('error', () => { errored = true; tell('error', { message: 'script_error' }); }, true);
+    addEventListener('unhandledrejection', () => { errored = true; tell('error', { message: 'unhandled_rejection' }); }, true);
+    addEventListener('DOMContentLoaded', () => {
+      if (errored) return;
+      try { window.PiViz.init(); } catch { tell('error', { message: 'kit_initialization_failed' }); return; }
+      tell('ready');
+      new ResizeObserver(measure).observe(document.body);
+      measure();
+    }, { once: true });
+  };
+  addEventListener('message', (event) => {
+    const data = event.data;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+    if (event.source === parent) {
+      if (data.type === 'pi-visualize:dispose' && data.id === id) { clear(); return; }
+      if (data.type === 'pi-visualize:theme' && data.id === id) {
+        if (JSON.stringify(data.theme || {}).length <= 3000) child?.contentWindow.postMessage(data, '*');
+        return;
+      }
+      if (data.type !== 'pi-visualize:init' || initialized || typeof data.id !== 'string' || data.id.length > 100 ||
+          typeof data.source !== 'string' || new TextEncoder().encode(data.source).byteLength > 65536) return;
+      initialized = true; id = data.id;
+      const assets = data.assets;
+      if (!assets || typeof assets.css !== 'string' || assets.css.length > 30000 || typeof assets.runtime !== 'string' || assets.runtime.length > 30000 ||
+          !Array.isArray(assets.libraries) || assets.libraries.length > 2 || assets.libraries.some(item => !item || !['d3', 'lucide'].includes(item.id) || typeof item.code !== 'string' || item.code.length > 700000)) {
+        send('error', { message: 'invalid_local_assets' }); return;
+      }
+      const csp = "default-src 'none'; script-src 'unsafe-inline'; script-src-attr 'none'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
+      const script = code => '<script>' + code.replace(/<\/script/gi, '<\\/script') + '<' + '/script>';
+      const html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="' + csp + '">' +
+        '<style>' + assets.css.replace(/<\/style/gi, '<\\/style') + '</style>' +
+        script('(' + bridge.toString() + ')(' + JSON.stringify(id) + ',' + JSON.stringify(data.theme).replace(/</g, '\\u003c') + ')') +
+        assets.libraries.map(item => script(item.code)).join('') + script(assets.runtime) + '</head><body>' + data.source + '</body></html>';
+      blob = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+      child = document.createElement('iframe');
+      child.setAttribute('sandbox', 'allow-scripts'); child.setAttribute('referrerpolicy', 'no-referrer');
+      child.title = '交互作品内容'; child.src = blob;
+      document.body.append(child);
+      return;
+    }
+    if (!child || event.source !== child.contentWindow || data.id !== id) return;
+    if (Date.now() - since > 1000) { since = Date.now(); count = 0; }
+    if (++count > 30) return;
+    if (data.type === 'pi-visualize:ready') send('ready');
+    else if (data.type === 'pi-visualize:resize' && Number.isFinite(data.height)) send('resize', { height: Math.min(1200, Math.max(200, Math.ceil(data.height))) });
+    else if (data.type === 'pi-visualize:error' && typeof data.message === 'string' && data.message.length <= 500) { send('error', { message: data.message }); clear(); }
+  });
+  addEventListener('pagehide', clear, { once: true });
+  send('shell-ready');
+})();
+</script></body></html>

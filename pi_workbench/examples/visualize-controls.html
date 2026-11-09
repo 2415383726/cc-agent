@@ -1,0 +1,45 @@
+<section data-pi-visualize="1" data-kit-version="1" data-libraries="d3 lucide" data-title="排队速度比较" data-description="这是简化的讲解模型。改变到达速度、处理速度或窗口数，图表和数据同步更新。">
+  <h2>处理能力能否跟上到达速度？</h2>
+  <div class="viz-controls">
+    <label><span class="form-label">到达速度：<output id="rate-value">3 人/分钟</output></span><input class="form-range" id="rate" type="range" min="1" max="6" value="3"></label>
+    <label><span class="form-label">单窗口处理速度</span><select class="form-select" id="capacity"><option value="2">2 人/分钟</option><option value="3">3 人/分钟</option></select></label>
+    <label class="form-switch"><input id="two" type="checkbox" role="switch">使用两个窗口</label>
+  </div>
+  <div class="viz-row">
+    <button class="btn" id="reset" type="button"><i data-lucide="rotate-ccw" aria-hidden="true"></i>重置</button>
+    <button class="btn btn-ghost" type="button" data-viz-tooltip="假定每分钟速率恒定，且起始没有人在等待。">模型说明</button>
+  </div>
+  <p class="viz-muted">讲解假设：速率恒定，起始队列为零。排队增长量 = max(0，到达速度 − 总处理速度) × 时间。</p>
+  <p>12 分钟后，排队约 <strong id="total">12</strong> 人。</p>
+  <div data-viz-tabs>
+    <div role="tablist" aria-label="排队结果"><button role="tab" aria-controls="plot-panel" aria-selected="true">图表</button><button role="tab" aria-controls="table-panel">数据</button></div>
+    <section id="plot-panel" role="tabpanel"><svg id="plot" width="100%" height="220" role="img" aria-label="排队人数随时间变化"></svg><p class="viz-small viz-muted">横轴：分钟；纵轴：排队人数（人）。</p></section>
+    <section id="table-panel" role="tabpanel" hidden><div class="table-responsive" tabindex="0" aria-label="排队结果数据"><table class="table"><caption>每 3 分钟的模拟结果</caption><thead><tr><th scope="col">分钟</th><th scope="col">排队人数（人）</th></tr></thead><tbody id="rows"></tbody></table></div></section>
+  </div>
+  <script>
+    (() => {
+      const get = id => document.getElementById(id);
+      const render = () => {
+        const rate = Number(get('rate').value);
+        const capacity = Number(get('capacity').value) * (get('two').checked ? 2 : 1);
+        const rows = [0, 3, 6, 9, 12].map(minute => ({ minute, queue: Math.max(0, rate - capacity) * minute }));
+        const colors = PiViz.getTheme().colors;
+        const width = Math.max(180, get('plot').clientWidth);
+        const x = d3.scaleLinear().domain([0, 12]).range([32, width - 12]);
+        const y = d3.scaleLinear().domain([0, Math.max(10, rows[4].queue)]).nice().range([186, 12]);
+        const svg = d3.select('#plot').attr('viewBox', '0 0 ' + width + ' 220');
+        svg.selectAll('*').remove();
+        svg.append('g').attr('transform', 'translate(0,186)').call(d3.axisBottom(x).ticks(4));
+        svg.append('g').attr('transform', 'translate(32,0)').call(d3.axisLeft(y).ticks(4));
+        svg.selectAll('.domain,.tick line').attr('stroke', colors.border);
+        svg.selectAll('.tick text').attr('fill', colors.text).style('font-size', '12px');
+        svg.append('path').datum(rows).attr('fill', 'none').attr('stroke', colors.series1).attr('stroke-width', 2.5).attr('d', d3.line().x(row => x(row.minute)).y(row => y(row.queue)));
+        get('rate-value').textContent = rate + ' 人/分钟'; get('total').textContent = String(rows[4].queue);
+        get('rows').replaceChildren(...rows.map(row => { const tr = document.createElement('tr'); for (const value of [row.minute, row.queue]) { const td = document.createElement('td'); td.textContent = String(value); tr.append(td); } return tr; }));
+      };
+      get('rate').addEventListener('input', render); get('capacity').addEventListener('change', render); get('two').addEventListener('change', render);
+      get('reset').addEventListener('click', () => { get('rate').value = '3'; get('capacity').value = '2'; get('two').checked = false; render(); });
+      addEventListener('piviz:themechange', render); addEventListener('resize', render); render();
+    })();
+  </script>
+</section>

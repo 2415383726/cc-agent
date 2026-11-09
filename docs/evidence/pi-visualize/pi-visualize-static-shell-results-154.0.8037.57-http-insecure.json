@@ -1,0 +1,208 @@
+{
+  "browser": "154.0.8037.57",
+  "date": "2026-10-29T11:08:05.209Z",
+  "csp": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
+  "results": [
+    {
+      "name": "static-csp-rtc-leaks",
+      "cal": false,
+      "code": "const pc=new RTCPeerConnection({iceServers:[{urls:'stun:127.0.0.1:35660'}]});pc.createDataChannel('x');pc.createOffer().then(d=>pc.setLocalDescription(d));window.pc=pc;",
+      "reports": [
+        {
+          "ready": true
+        }
+      ],
+      "serverHits": [
+        "/sink?parent"
+      ],
+      "udpHits": [
+        20,
+        20,
+        20,
+        20
+      ],
+      "errors": [],
+      "parentFetch": {
+        "status": 200,
+        "header": null
+      }
+    },
+    {
+      "name": "static-cal-rtc-blocked",
+      "cal": true,
+      "code": "const pc=new RTCPeerConnection({iceServers:[{urls:'stun:127.0.0.1:35660'}]});pc.createDataChannel('x');pc.createOffer().then(d=>pc.setLocalDescription(d));window.pc=pc;",
+      "reports": [
+        {
+          "ready": true
+        }
+      ],
+      "serverHits": [
+        "/sink?parent"
+      ],
+      "udpHits": [],
+      "errors": [],
+      "parentFetch": {
+        "status": 200,
+        "header": "()"
+      }
+    },
+    {
+      "name": "static-cal-http-blocked-without-csp",
+      "cal": true,
+      "csp": false,
+      "code": "fetch(\"http://localhost:46175/sink?fetch\").catch(e=>report('fetch',e.message));new Image().src=\"http://localhost:46175/sink?image\"",
+      "reports": [
+        {
+          "ready": true
+        },
+        {
+          "name": "fetch",
+          "value": "Failed to fetch"
+        }
+      ],
+      "serverHits": [
+        "/sink?parent"
+      ],
+      "udpHits": [],
+      "errors": [
+        "Failed to load resource: net::ERR_NETWORK_ACCESS_REVOKED",
+        "Failed to load resource: net::ERR_NETWORK_ACCESS_REVOKED"
+      ],
+      "parentFetch": {
+        "status": 200,
+        "header": "()"
+      }
+    },
+    {
+      "name": "static-cal-same-origin-navigation",
+      "cal": true,
+      "code": "location=\"http://sandbox.test:46175/sink?self-navigation\"",
+      "reports": [
+        {
+          "ready": true
+        }
+      ],
+      "serverHits": [
+        "/sink?parent"
+      ],
+      "udpHits": [],
+      "errors": [],
+      "parentFetch": {
+        "status": 200,
+        "header": "()"
+      }
+    },
+    {
+      "name": "static-cal-self-navigation",
+      "cal": true,
+      "code": "location=\"http://localhost:46175/sink?navigation\"",
+      "reports": [
+        {
+          "ready": true
+        }
+      ],
+      "serverHits": [
+        "/sink?parent"
+      ],
+      "udpHits": [],
+      "errors": [
+        "Framing 'http://localhost:46175/' violates the following Content Security Policy directive: \"frame-src 'self'\". The request has been blocked.\n"
+      ],
+      "parentFetch": {
+        "status": 200,
+        "header": "()"
+      }
+    },
+    {
+      "name": "static-cal-blob-inherits",
+      "cal": true,
+      "code": "let html='<script>'+\"const pc=new RTCPeerConnection({iceServers:[{urls:'stun:127.0.0.1:35660'}]});pc.createDataChannel('x');pc.createOffer().then(d=>pc.setLocalDescription(d));window.pc=pc;\"+'<'+ '/script><img src=\"'+\"http://localhost:46175/sink?blob-image\"+'\">';location=URL.createObjectURL(new Blob([html],{type:'text/html'}))",
+      "reports": [
+        {
+          "ready": true
+        }
+      ],
+      "serverHits": [
+        "/sink?parent"
+      ],
+      "udpHits": [],
+      "errors": [
+        "Framing '' violates the following Content Security Policy directive: \"frame-src 'self'\". The request has been blocked.\n"
+      ],
+      "parentFetch": {
+        "status": 200,
+        "header": "()"
+      }
+    },
+    {
+      "name": "static-csp-nested-srcdoc-monkeypatch-bypass",
+      "cal": false,
+      "code": "Object.defineProperty(window,'RTCPeerConnection',{value:undefined,writable:false,configurable:false});let f=document.createElement('iframe');f.srcdoc='<script>'+\"const pc=new RTCPeerConnection({iceServers:[{urls:'stun:127.0.0.1:35660'}]});pc.createDataChannel('x');pc.createOffer().then(d=>pc.setLocalDescription(d));window.pc=pc;\"+'<'+ '/script>';document.body.append(f)",
+      "reports": [
+        {
+          "ready": true
+        }
+      ],
+      "serverHits": [
+        "/sink?parent"
+      ],
+      "udpHits": [
+        20,
+        20,
+        20,
+        20
+      ],
+      "errors": [],
+      "parentFetch": {
+        "status": 200,
+        "header": null
+      }
+    },
+    {
+      "name": "static-cal-nested-srcdoc-inherits",
+      "cal": true,
+      "code": "let f=document.createElement('iframe');f.srcdoc='<script>'+\"const pc=new RTCPeerConnection({iceServers:[{urls:'stun:127.0.0.1:35660'}]});pc.createDataChannel('x');pc.createOffer().then(d=>pc.setLocalDescription(d));window.pc=pc;\"+'<'+ '/script>';document.body.append(f)",
+      "reports": [
+        {
+          "ready": true
+        }
+      ],
+      "serverHits": [
+        "/sink?parent"
+      ],
+      "udpHits": [],
+      "errors": [],
+      "parentFetch": {
+        "status": 200,
+        "header": "()"
+      }
+    },
+    {
+      "name": "static-header-feature-surface",
+      "cal": true,
+      "code": "report('feature',{iframeAttr:'connectionAllowlist' in HTMLIFrameElement.prototype,reportTypes:ReportingObserver.supportedTypes,secure:isSecureContext,ua:navigator.userAgent});",
+      "reports": [
+        {
+          "ready": true
+        },
+        {
+          "name": "feature",
+          "value": {
+            "iframeAttr": false,
+            "secure": false,
+            "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36"
+          }
+        }
+      ],
+      "serverHits": [
+        "/sink?parent"
+      ],
+      "udpHits": [],
+      "errors": [],
+      "parentFetch": {
+        "status": 200,
+        "header": "()"
+      }
+    }
+  ]
+}

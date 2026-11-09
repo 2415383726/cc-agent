@@ -72,6 +72,7 @@ describe('DifyController', () => {
       expect(controller.view.entries.find((entry) => entry.kind === 'question')).toMatchObject({
         pendingId: 'q1', status: 'waiting',
       })
+      expect(controller.view.entries.filter((entry: any) => entry.role === 'assistant').map((entry: any) => entry.text)).toEqual(['waiting'])
       expect(transport.streamChat).not.toHaveBeenCalled()
     } finally {
       globalThis.Blob = blob
@@ -224,4 +225,37 @@ describe('DifyController', () => {
     expect(controller.view.warnings.join(' ')).toContain('不受支持')
     expect(controller.view.entries.some((entry) => entry.kind === 'message' && (entry as any).text === 'Dify text')).toBe(true)
   })
+})
+
+it('binds native answers to each live platform message without overwriting earlier runs', async () => {
+  const controller = new DifyController(config)
+  mockStream([
+    { event: 'agent_log', data: { piagent: piEvent('run.state', 1, { status: 'completed', answer: 'old' }) } },
+    { event: 'message', answer: 'old full', message_id: 'm-old' },
+    { event: 'message_end', message_id: 'm-old' },
+  ])
+  await controller.send('first')
+  mockStream([
+    { event: 'message', answer: 'new full', message_id: 'm-new' },
+    { event: 'message_end', message_id: 'm-new' },
+  ])
+  await controller.send('second')
+  const answers = controller.view.entries.filter((entry: any) => entry.role === 'assistant') as any[]
+  expect(answers.map((entry) => entry.text)).toEqual(['old full', 'new full'])
+  expect(answers.map((entry) => entry.platformMessageId)).toEqual(['m-old', 'm-new'])
+  expect(answers[1].runStatus).toBeUndefined()
+})
+
+it('keeps a later history turn unconfirmed when only an older turn has a saved terminal', async () => {
+  ;(transport.listMessages as any).mockResolvedValue({ records: [
+    { id: 'older', query: 'old', answer: 'old answer', agent_thoughts: [
+      { data: { piagent: piEvent('run.state', 20, { status: 'completed', answer: 'old answer' }) } },
+    ] },
+    { id: 'latest', query: 'latest', answer: 'latest answer' },
+  ], hasMore: false, firstId: 'older' })
+  const controller = new DifyController(config)
+  await controller.loadConversation('history-conversation')
+  expect(controller.view.terminal?.status).toBe('unknown')
+  const answers = controller.view.entries.filter((entry: any) => entry.role === 'assistant') as any[]
+  expect(answers.map((entry) => entry.runStatus)).toEqual(['completed', undefined])
 })

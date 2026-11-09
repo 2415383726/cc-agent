@@ -5,10 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "node scripts/check-visualize-manifest.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "check:static": "node scripts/check-static.mjs"
+    "check:static": "node scripts/check-visualize-manifest.mjs && node scripts/check-static.mjs",
+    "manifest:visualize": "node scripts/check-visualize-manifest.mjs --write"
   },
   "dependencies": {
     "highlight.js": "11.11.1",

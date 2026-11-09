@@ -1,0 +1,29 @@
+{
+  "browser": "154.0.8037.57",
+  "checks": [
+    "pause stops time",
+    "keyboard sliders update labels, geometry, and trend",
+    "expand/collapse retain same iframe, slider values, pause state",
+    "reset restores initial values and pauses",
+    "refresh recreates artwork with initial parameters",
+    "close disposes both iframe levels",
+    "390px main page and artwork have no horizontal overflow"
+  ],
+  "screenshots": [
+    "/tmp/pi-visualize-ui-desktop-expanded.png",
+    "/tmp/pi-visualize-ui-mobile-390.png",
+    "/tmp/pi-visualize-ui-mobile-390-expanded.png"
+  ],
+  "externalRequests": [],
+  "pageErrors": [],
+  "mobileWidths": {
+    "outer": {
+      "width": 390,
+      "scroll": 390
+    },
+    "inner": {
+      "width": 340,
+      "scroll": 340
+    }
+  }
+}

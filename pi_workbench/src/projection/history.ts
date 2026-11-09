@@ -1,4 +1,5 @@
 import { DisplayEvent, SCHEMA, findPiEvent, parseDisplayEvent } from '../contract/display'
+import { TranscriptView, applyEvent, mergeFinalAnswer, resetView } from './transcript'
 
 export interface HistoryRecord {
   id?: string
@@ -46,6 +47,21 @@ export function eventsFromHistory(records: HistoryRecord[]): HistoryProjection {
     }
   }
   return { events, records: Array.isArray(records) ? records : [] }
+}
+
+/** Reconstruct each platform turn before proceeding to the next one. */
+export function restoreHistory(view: TranscriptView, records: HistoryRecord[]): void {
+  resetView(view)
+  for (const record of records) {
+    view.terminal = null
+    const { events } = eventsFromHistory([record])
+    for (const event of events) applyEvent(view, event)
+    const runId = [...events].reverse().find((event) => !event.run_id.startsWith('history:'))?.run_id
+      || `history:${record.id || record.created_at || 'answer'}`
+    if (record.answer) mergeFinalAnswer(view, record.answer, {
+      runId, platformMessageId: record.id, ts: record.created_at,
+    })
+  }
 }
 
 export function findPiEventsInMessage(record: Record<string, unknown>): DisplayEvent[] {

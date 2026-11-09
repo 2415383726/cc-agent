@@ -1,0 +1,49 @@
+{
+  "browser": "154.0.8037.57",
+  "cases": [
+    {
+      "scenario": "missing-csp",
+      "frameCount": 0,
+      "fallback": "部署尚未启用作品网络隔离；请联系维护者配置后再查看。"
+    },
+    {
+      "scenario": "wrong-csp",
+      "frameCount": 0,
+      "fallback": "部署尚未启用作品网络隔离；请联系维护者配置后再查看。"
+    },
+    {
+      "scenario": "missing-d3",
+      "frameCount": 0,
+      "fallback": "本地可视化资源无法加载或校验失败，请联系维护者检查部署。"
+    },
+    {
+      "scenario": "corrupt-d3",
+      "frameCount": 0,
+      "fallback": "本地可视化资源无法加载或校验失败，请联系维护者检查部署。"
+    },
+    {
+      "scenario": "local-libraries-preserve-isolation",
+      "outcomes": {
+        "d3json": "TypeError",
+        "d3csv": "TypeError",
+        "fetch": "TypeError",
+        "beacon": "attempted",
+        "rtc": "attempted"
+      },
+      "httpHits": 0,
+      "udpPackets": 0
+    },
+    {
+      "scenario": "author-self-navigation",
+      "httpHits": 0
+    }
+  ],
+  "sinkHttp": [],
+  "sinkUdp": [],
+  "externalRequests": [],
+  "posts": [],
+  "positiveControl": {
+    "http": 1,
+    "udp": 1
+  }
+}

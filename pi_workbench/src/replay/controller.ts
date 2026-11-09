@@ -10,6 +10,7 @@ import {
   addOptimisticUser,
   applyEvent,
   newView,
+  mergeFinalAnswer,
   resetView,
 } from '../projection/transcript'
 import { REPLAY_SCENARIOS, ReplayScenario, scenarioById } from './scenarios'
@@ -46,6 +47,7 @@ export class ReplayController implements WorkbenchController {
       const questionnaire = event.questionnaire as Questionnaire | undefined
       if (questionnaire) this._conversation = questionnaire
     }
+    for (const answer of scenario.answers || []) mergeFinalAnswer(this.view, answer.text, answer)
     this.ui.running = false
     this.ui.error = ''
   }

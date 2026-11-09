@@ -1,0 +1,1898 @@
+<section data-pi-visualize="1" data-kit-version="1" data-libraries="d3 lucide" data-title="到达与处理：排队如何变化" data-description="调节速率或窗口数，观察排队人数随时间变化。">
+<h2>速率如何影响排队</h2>
+<p class="viz-muted">360 个模拟采样（20 秒/次），用于讲解，不代表实际业务预测。</p>
+<div class="viz-controls">
+<label><span class="form-label">到达速度 <output id="arrival-value">3 人/分钟</output></span><input class="form-range" id="arrival" type="range" min="1" max="6" step="0.5" value="3"></label>
+<label><span class="form-label">单窗口处理速度</span><select id="service" class="form-select"><option value="2" selected>2 人/分钟</option><option value="3">3 人/分钟</option><option value="4">4 人/分钟</option></select></label>
+<label class="form-switch"><input id="second" type="checkbox" role="switch"><span>开启第二个处理窗口</span></label>
+</div>
+<div class="viz-row">
+<button class="btn btn-primary" id="play" type="button" aria-pressed="false"><i data-lucide="play" aria-hidden="true"></i><span>播放</span></button>
+<button class="btn" id="reset" type="button"><i data-lucide="rotate-ccw" aria-hidden="true"></i>重置</button>
+<button class="btn btn-ghost" id="help" type="button" data-viz-tooltip="每个采样用到达人数减去可处理人数，队列最低为零。">计算说明</button>
+</div>
+<p class="viz-small viz-muted">队列 = max(0，上次队列 + 到达人数 − 可处理人数)。</p>
+<div class="viz-row" style="margin:16px 0"><p>观察到第 <output id="elapsed">30</output> 分钟 · 排队约 <strong id="backlog">0</strong> 人</p><span id="motion" class="viz-small viz-muted"></span></div>
+<div data-viz-tabs>
+<div role="tablist" aria-label="排队演示视图"><button role="tab" aria-controls="queue-figures" aria-selected="true">图解</button><button role="tab" aria-controls="queue-data">采样数据</button></div>
+<section id="queue-figures" role="tabpanel">
+<figure aria-label="平均到达与总处理速度，单位人每分钟">
+<div class="viz-row"><span>到达：<strong id="arrival-rate">3</strong> 人/分钟</span><span>总处理：<strong id="service-rate">2</strong> 人/分钟</span></div>
+<svg id="rates" width="100%" height="64" role="img" aria-label="两条横柱比较到达与处理速度"><rect id="arrival-bar" x="0" y="8" height="16" fill="var(--viz-series-1)"></rect><rect id="service-bar" x="0" y="36" height="16" fill="var(--viz-series-2)"></rect></svg>
+<figcaption class="viz-small viz-muted">紫色：到达；蓝色：总处理，单位均为人/分钟。</figcaption>
+</figure>
+<figure><svg id="trend" width="100%" height="230" role="img" aria-label="排队人数随分钟变化的折线图"></svg><figcaption class="viz-small viz-muted">横轴：分钟；纵轴：排队人数（人）。</figcaption></figure>
+<figure><canvas id="people" width="600" height="74" role="img" aria-label="队列圆点示意"></canvas><figcaption class="viz-small viz-muted">每个圆点代表约 1 人，最多画 40 人；准确人数见上方数值。</figcaption></figure>
+</section>
+<section id="queue-data" role="tabpanel" hidden><div class="table-responsive" tabindex="0" aria-label="最近八个模拟采样，可横向滚动"><table class="table"><caption>当前观察点之前最近八个采样；速率单位均为人/分钟。</caption><thead><tr><th scope="col">分钟</th><th scope="col">到达</th><th scope="col">处理</th><th scope="col">排队（人）</th></tr></thead><tbody id="data-rows"></tbody></table></div></section>
+</div>
+<script>
+(() => {
+const observations = [
+ {
+  "minute": 0,
+  "demand": 3.3,
+  "capacity": 2.11
+ },
+ {
+  "minute": 0.333,
+  "demand": 3.331,
+  "capacity": 2.118
+ },
+ {
+  "minute": 0.667,
+  "demand": 3.356,
+  "capacity": 2.124
+ },
+ {
+  "minute": 1,
+  "demand": 3.375,
+  "capacity": 2.13
+ },
+ {
+  "minute": 1.333,
+  "demand": 3.388,
+  "capacity": 2.135
+ },
+ {
+  "minute": 1.667,
+  "demand": 3.396,
+  "capacity": 2.139
+ },
+ {
+  "minute": 2,
+  "demand": 3.398,
+  "capacity": 2.143
+ },
+ {
+  "minute": 2.333,
+  "demand": 3.396,
+  "capacity": 2.145
+ },
+ {
+  "minute": 2.667,
+  "demand": 3.39,
+  "capacity": 2.146
+ },
+ {
+  "minute": 3,
+  "demand": 3.381,
+  "capacity": 2.147
+ },
+ {
+  "minute": 3.333,
+  "demand": 3.369,
+  "capacity": 2.147
+ },
+ {
+  "minute": 3.667,
+  "demand": 3.355,
+  "capacity": 2.147
+ },
+ {
+  "minute": 4,
+  "demand": 3.341,
+  "capacity": 2.145
+ },
+ {
+  "minute": 4.333,
+  "demand": 3.326,
+  "capacity": 2.144
+ },
+ {
+  "minute": 4.667,
+  "demand": 3.312,
+  "capacity": 2.141
+ },
+ {
+  "minute": 5,
+  "demand": 3.299,
+  "capacity": 2.139
+ },
+ {
+  "minute": 5.333,
+  "demand": 3.288,
+  "capacity": 2.136
+ },
+ {
+  "minute": 5.667,
+  "demand": 3.28,
+  "capacity": 2.132
+ },
+ {
+  "minute": 6,
+  "demand": 3.275,
+  "capacity": 2.129
+ },
+ {
+  "minute": 6.333,
+  "demand": 3.274,
+  "capacity": 2.125
+ },
+ {
+  "minute": 6.667,
+  "demand": 3.277,
+  "capacity": 2.122
+ },
+ {
+  "minute": 7,
+  "demand": 3.284,
+  "capacity": 2.118
+ },
+ {
+  "minute": 7.333,
+  "demand": 3.295,
+  "capacity": 2.114
+ },
+ {
+  "minute": 7.667,
+  "demand": 3.311,
+  "capacity": 2.111
+ },
+ {
+  "minute": 8,
+  "demand": 3.332,
+  "capacity": 2.108
+ },
+ {
+  "minute": 8.333,
+  "demand": 3.356,
+  "capacity": 2.105
+ },
+ {
+  "minute": 8.667,
+  "demand": 3.385,
+  "capacity": 2.102
+ },
+ {
+  "minute": 9,
+  "demand": 3.416,
+  "capacity": 2.1
+ },
+ {
+  "minute": 9.333,
+  "demand": 3.451,
+  "capacity": 2.098
+ },
+ {
+  "minute": 9.667,
+  "demand": 3.488,
+  "capacity": 2.097
+ },
+ {
+  "minute": 10,
+  "demand": 3.526,
+  "capacity": 2.096
+ },
+ {
+  "minute": 10.333,
+  "demand": 3.565,
+  "capacity": 2.096
+ },
+ {
+  "minute": 10.667,
+  "demand": 3.604,
+  "capacity": 2.097
+ },
+ {
+  "minute": 11,
+  "demand": 3.642,
+  "capacity": 2.098
+ },
+ {
+  "minute": 11.333,
+  "demand": 3.678,
+  "capacity": 2.1
+ },
+ {
+  "minute": 11.667,
+  "demand": 3.711,
+  "capacity": 2.102
+ },
+ {
+  "minute": 12,
+  "demand": 3.741,
+  "capacity": 2.105
+ },
+ {
+  "minute": 12.333,
+  "demand": 3.767,
+  "capacity": 2.108
+ },
+ {
+  "minute": 12.667,
+  "demand": 3.788,
+  "capacity": 2.112
+ },
+ {
+  "minute": 13,
+  "demand": 3.803,
+  "capacity": 2.117
+ },
+ {
+  "minute": 13.333,
+  "demand": 3.812,
+  "capacity": 2.122
+ },
+ {
+  "minute": 13.667,
+  "demand": 3.814,
+  "capacity": 2.128
+ },
+ {
+  "minute": 14,
+  "demand": 3.81,
+  "capacity": 2.134
+ },
+ {
+  "minute": 14.333,
+  "demand": 3.797,
+  "capacity": 2.141
+ },
+ {
+  "minute": 14.667,
+  "demand": 3.778,
+  "capacity": 2.148
+ },
+ {
+  "minute": 15,
+  "demand": 3.751,
+  "capacity": 2.155
+ },
+ {
+  "minute": 15.333,
+  "demand": 3.716,
+  "capacity": 2.162
+ },
+ {
+  "minute": 15.667,
+  "demand": 3.675,
+  "capacity": 2.17
+ },
+ {
+  "minute": 16,
+  "demand": 3.627,
+  "capacity": 2.178
+ },
+ {
+  "minute": 16.333,
+  "demand": 3.573,
+  "capacity": 2.185
+ },
+ {
+  "minute": 16.667,
+  "demand": 3.513,
+  "capacity": 2.193
+ },
+ {
+  "minute": 17,
+  "demand": 3.448,
+  "capacity": 2.201
+ },
+ {
+  "minute": 17.333,
+  "demand": 3.38,
+  "capacity": 2.208
+ },
+ {
+  "minute": 17.667,
+  "demand": 3.308,
+  "capacity": 2.215
+ },
+ {
+  "minute": 18,
+  "demand": 3.234,
+  "capacity": 2.222
+ },
+ {
+  "minute": 18.333,
+  "demand": 3.158,
+  "capacity": 2.228
+ },
+ {
+  "minute": 18.667,
+  "demand": 3.082,
+  "capacity": 2.233
+ },
+ {
+  "minute": 19,
+  "demand": 3.006,
+  "capacity": 2.238
+ },
+ {
+  "minute": 19.333,
+  "demand": 2.932,
+  "capacity": 2.243
+ },
+ {
+  "minute": 19.667,
+  "demand": 2.861,
+  "capacity": 2.246
+ },
+ {
+  "minute": 20,
+  "demand": 2.792,
+  "capacity": 2.249
+ },
+ {
+  "minute": 20.333,
+  "demand": 2.728,
+  "capacity": 2.251
+ },
+ {
+  "minute": 20.667,
+  "demand": 2.668,
+  "capacity": 2.252
+ },
+ {
+  "minute": 21,
+  "demand": 2.614,
+  "capacity": 2.253
+ },
+ {
+  "minute": 21.333,
+  "demand": 2.566,
+  "capacity": 2.252
+ },
+ {
+  "minute": 21.667,
+  "demand": 2.524,
+  "capacity": 2.25
+ },
+ {
+  "minute": 22,
+  "demand": 2.488,
+  "capacity": 2.247
+ },
+ {
+  "minute": 22.333,
+  "demand": 2.459,
+  "capacity": 2.243
+ },
+ {
+  "minute": 22.667,
+  "demand": 2.437,
+  "capacity": 2.238
+ },
+ {
+  "minute": 23,
+  "demand": 2.422,
+  "capacity": 2.232
+ },
+ {
+  "minute": 23.333,
+  "demand": 2.413,
+  "capacity": 2.224
+ },
+ {
+  "minute": 23.667,
+  "demand": 2.41,
+  "capacity": 2.216
+ },
+ {
+  "minute": 24,
+  "demand": 2.412,
+  "capacity": 2.207
+ },
+ {
+  "minute": 24.333,
+  "demand": 2.42,
+  "capacity": 2.196
+ },
+ {
+  "minute": 24.667,
+  "demand": 2.432,
+  "capacity": 2.185
+ },
+ {
+  "minute": 25,
+  "demand": 2.448,
+  "capacity": 2.173
+ },
+ {
+  "minute": 25.333,
+  "demand": 2.467,
+  "capacity": 2.16
+ },
+ {
+  "minute": 25.667,
+  "demand": 2.488,
+  "capacity": 2.146
+ },
+ {
+  "minute": 26,
+  "demand": 2.51,
+  "capacity": 2.131
+ },
+ {
+  "minute": 26.333,
+  "demand": 2.533,
+  "capacity": 2.116
+ },
+ {
+  "minute": 26.667,
+  "demand": 2.556,
+  "capacity": 2.099
+ },
+ {
+  "minute": 27,
+  "demand": 2.578,
+  "capacity": 2.083
+ },
+ {
+  "minute": 27.333,
+  "demand": 2.598,
+  "capacity": 2.066
+ },
+ {
+  "minute": 27.667,
+  "demand": 2.616,
+  "capacity": 2.048
+ },
+ {
+  "minute": 28,
+  "demand": 2.631,
+  "capacity": 2.03
+ },
+ {
+  "minute": 28.333,
+  "demand": 2.642,
+  "capacity": 2.012
+ },
+ {
+  "minute": 28.667,
+  "demand": 2.649,
+  "capacity": 1.994
+ },
+ {
+  "minute": 29,
+  "demand": 2.653,
+  "capacity": 1.976
+ },
+ {
+  "minute": 29.333,
+  "demand": 2.652,
+  "capacity": 1.958
+ },
+ {
+  "minute": 29.667,
+  "demand": 2.647,
+  "capacity": 1.94
+ },
+ {
+  "minute": 30,
+  "demand": 2.638,
+  "capacity": 1.923
+ },
+ {
+  "minute": 30.333,
+  "demand": 2.624,
+  "capacity": 1.905
+ },
+ {
+  "minute": 30.667,
+  "demand": 2.607,
+  "capacity": 1.889
+ },
+ {
+  "minute": 31,
+  "demand": 2.586,
+  "capacity": 1.872
+ },
+ {
+  "minute": 31.333,
+  "demand": 2.563,
+  "capacity": 1.857
+ },
+ {
+  "minute": 31.667,
+  "demand": 2.538,
+  "capacity": 1.841
+ },
+ {
+  "minute": 32,
+  "demand": 2.51,
+  "capacity": 1.827
+ },
+ {
+  "minute": 32.333,
+  "demand": 2.482,
+  "capacity": 1.814
+ },
+ {
+  "minute": 32.667,
+  "demand": 2.454,
+  "capacity": 1.801
+ },
+ {
+  "minute": 33,
+  "demand": 2.427,
+  "capacity": 1.789
+ },
+ {
+  "minute": 33.333,
+  "demand": 2.402,
+  "capacity": 1.779
+ },
+ {
+  "minute": 33.667,
+  "demand": 2.379,
+  "capacity": 1.769
+ },
+ {
+  "minute": 34,
+  "demand": 2.359,
+  "capacity": 1.761
+ },
+ {
+  "minute": 34.333,
+  "demand": 2.343,
+  "capacity": 1.753
+ },
+ {
+  "minute": 34.667,
+  "demand": 2.332,
+  "capacity": 1.747
+ },
+ {
+  "minute": 35,
+  "demand": 2.326,
+  "capacity": 1.741
+ },
+ {
+  "minute": 35.333,
+  "demand": 2.326,
+  "capacity": 1.737
+ },
+ {
+  "minute": 35.667,
+  "demand": 2.332,
+  "capacity": 1.734
+ },
+ {
+  "minute": 36,
+  "demand": 2.345,
+  "capacity": 1.732
+ },
+ {
+  "minute": 36.333,
+  "demand": 2.365,
+  "capacity": 1.731
+ },
+ {
+  "minute": 36.667,
+  "demand": 2.392,
+  "capacity": 1.731
+ },
+ {
+  "minute": 37,
+  "demand": 2.426,
+  "capacity": 1.732
+ },
+ {
+  "minute": 37.333,
+  "demand": 2.467,
+  "capacity": 1.734
+ },
+ {
+  "minute": 37.667,
+  "demand": 2.514,
+  "capacity": 1.737
+ },
+ {
+  "minute": 38,
+  "demand": 2.567,
+  "capacity": 1.741
+ },
+ {
+  "minute": 38.333,
+  "demand": 2.626,
+  "capacity": 1.746
+ },
+ {
+  "minute": 38.667,
+  "demand": 2.69,
+  "capacity": 1.751
+ },
+ {
+  "minute": 39,
+  "demand": 2.758,
+  "capacity": 1.757
+ },
+ {
+  "minute": 39.333,
+  "demand": 2.83,
+  "capacity": 1.764
+ },
+ {
+  "minute": 39.667,
+  "demand": 2.904,
+  "capacity": 1.771
+ },
+ {
+  "minute": 40,
+  "demand": 2.981,
+  "capacity": 1.778
+ },
+ {
+  "minute": 40.333,
+  "demand": 3.057,
+  "capacity": 1.786
+ },
+ {
+  "minute": 40.667,
+  "demand": 3.134,
+  "capacity": 1.795
+ },
+ {
+  "minute": 41,
+  "demand": 3.21,
+  "capacity": 1.803
+ },
+ {
+  "minute": 41.333,
+  "demand": 3.283,
+  "capacity": 1.812
+ },
+ {
+  "minute": 41.667,
+  "demand": 3.353,
+  "capacity": 1.82
+ },
+ {
+  "minute": 42,
+  "demand": 3.42,
+  "capacity": 1.829
+ },
+ {
+  "minute": 42.333,
+  "demand": 3.482,
+  "capacity": 1.837
+ },
+ {
+  "minute": 42.667,
+  "demand": 3.538,
+  "capacity": 1.846
+ },
+ {
+  "minute": 43,
+  "demand": 3.589,
+  "capacity": 1.854
+ },
+ {
+  "minute": 43.333,
+  "demand": 3.633,
+  "capacity": 1.862
+ },
+ {
+  "minute": 43.667,
+  "demand": 3.67,
+  "capacity": 1.869
+ },
+ {
+  "minute": 44,
+  "demand": 3.701,
+  "capacity": 1.876
+ },
+ {
+  "minute": 44.333,
+  "demand": 3.724,
+  "capacity": 1.883
+ },
+ {
+  "minute": 44.667,
+  "demand": 3.739,
+  "capacity": 1.889
+ },
+ {
+  "minute": 45,
+  "demand": 3.748,
+  "capacity": 1.894
+ },
+ {
+  "minute": 45.333,
+  "demand": 3.75,
+  "capacity": 1.899
+ },
+ {
+  "minute": 45.667,
+  "demand": 3.745,
+  "capacity": 1.904
+ },
+ {
+  "minute": 46,
+  "demand": 3.734,
+  "capacity": 1.907
+ },
+ {
+  "minute": 46.333,
+  "demand": 3.718,
+  "capacity": 1.91
+ },
+ {
+  "minute": 46.667,
+  "demand": 3.697,
+  "capacity": 1.913
+ },
+ {
+  "minute": 47,
+  "demand": 3.672,
+  "capacity": 1.915
+ },
+ {
+  "minute": 47.333,
+  "demand": 3.644,
+  "capacity": 1.916
+ },
+ {
+  "minute": 47.667,
+  "demand": 3.613,
+  "capacity": 1.916
+ },
+ {
+  "minute": 48,
+  "demand": 3.58,
+  "capacity": 1.916
+ },
+ {
+  "minute": 48.333,
+  "demand": 3.547,
+  "capacity": 1.916
+ },
+ {
+  "minute": 48.667,
+  "demand": 3.514,
+  "capacity": 1.915
+ },
+ {
+  "minute": 49,
+  "demand": 3.481,
+  "capacity": 1.913
+ },
+ {
+  "minute": 49.333,
+  "demand": 3.45,
+  "capacity": 1.911
+ },
+ {
+  "minute": 49.667,
+  "demand": 3.422,
+  "capacity": 1.909
+ },
+ {
+  "minute": 50,
+  "demand": 3.396,
+  "capacity": 1.906
+ },
+ {
+  "minute": 50.333,
+  "demand": 3.373,
+  "capacity": 1.904
+ },
+ {
+  "minute": 50.667,
+  "demand": 3.355,
+  "capacity": 1.901
+ },
+ {
+  "minute": 51,
+  "demand": 3.34,
+  "capacity": 1.898
+ },
+ {
+  "minute": 51.333,
+  "demand": 3.33,
+  "capacity": 1.895
+ },
+ {
+  "minute": 51.667,
+  "demand": 3.324,
+  "capacity": 1.892
+ },
+ {
+  "minute": 52,
+  "demand": 3.322,
+  "capacity": 1.889
+ },
+ {
+  "minute": 52.333,
+  "demand": 3.325,
+  "capacity": 1.886
+ },
+ {
+  "minute": 52.667,
+  "demand": 3.331,
+  "capacity": 1.883
+ },
+ {
+  "minute": 53,
+  "demand": 3.341,
+  "capacity": 1.881
+ },
+ {
+  "minute": 53.333,
+  "demand": 3.354,
+  "capacity": 1.879
+ },
+ {
+  "minute": 53.667,
+  "demand": 3.369,
+  "capacity": 1.878
+ },
+ {
+  "minute": 54,
+  "demand": 3.386,
+  "capacity": 1.877
+ },
+ {
+  "minute": 54.333,
+  "demand": 3.405,
+  "capacity": 1.877
+ },
+ {
+  "minute": 54.667,
+  "demand": 3.423,
+  "capacity": 1.878
+ },
+ {
+  "minute": 55,
+  "demand": 3.441,
+  "capacity": 1.879
+ },
+ {
+  "minute": 55.333,
+  "demand": 3.458,
+  "capacity": 1.881
+ },
+ {
+  "minute": 55.667,
+  "demand": 3.473,
+  "capacity": 1.883
+ },
+ {
+  "minute": 56,
+  "demand": 3.485,
+  "capacity": 1.887
+ },
+ {
+  "minute": 56.333,
+  "demand": 3.493,
+  "capacity": 1.891
+ },
+ {
+  "minute": 56.667,
+  "demand": 3.497,
+  "capacity": 1.896
+ },
+ {
+  "minute": 57,
+  "demand": 3.497,
+  "capacity": 1.902
+ },
+ {
+  "minute": 57.333,
+  "demand": 3.49,
+  "capacity": 1.909
+ },
+ {
+  "minute": 57.667,
+  "demand": 3.478,
+  "capacity": 1.917
+ },
+ {
+  "minute": 58,
+  "demand": 3.46,
+  "capacity": 1.926
+ },
+ {
+  "minute": 58.333,
+  "demand": 3.436,
+  "capacity": 1.936
+ },
+ {
+  "minute": 58.667,
+  "demand": 3.405,
+  "capacity": 1.946
+ },
+ {
+  "minute": 59,
+  "demand": 3.367,
+  "capacity": 1.957
+ },
+ {
+  "minute": 59.333,
+  "demand": 3.324,
+  "capacity": 1.969
+ },
+ {
+  "minute": 59.667,
+  "demand": 3.274,
+  "capacity": 1.982
+ },
+ {
+  "minute": 60,
+  "demand": 3.219,
+  "capacity": 1.995
+ },
+ {
+  "minute": 60.333,
+  "demand": 3.159,
+  "capacity": 2.009
+ },
+ {
+  "minute": 60.667,
+  "demand": 3.094,
+  "capacity": 2.024
+ },
+ {
+  "minute": 61,
+  "demand": 3.026,
+  "capacity": 2.039
+ },
+ {
+  "minute": 61.333,
+  "demand": 2.955,
+  "capacity": 2.054
+ },
+ {
+  "minute": 61.667,
+  "demand": 2.882,
+  "capacity": 2.07
+ },
+ {
+  "minute": 62,
+  "demand": 2.808,
+  "capacity": 2.086
+ },
+ {
+  "minute": 62.333,
+  "demand": 2.733,
+  "capacity": 2.102
+ },
+ {
+  "minute": 62.667,
+  "demand": 2.66,
+  "capacity": 2.118
+ },
+ {
+  "minute": 63,
+  "demand": 2.588,
+  "capacity": 2.134
+ },
+ {
+  "minute": 63.333,
+  "demand": 2.519,
+  "capacity": 2.15
+ },
+ {
+  "minute": 63.667,
+  "demand": 2.453,
+  "capacity": 2.166
+ },
+ {
+  "minute": 64,
+  "demand": 2.392,
+  "capacity": 2.181
+ },
+ {
+  "minute": 64.333,
+  "demand": 2.336,
+  "capacity": 2.196
+ },
+ {
+  "minute": 64.667,
+  "demand": 2.286,
+  "capacity": 2.211
+ },
+ {
+  "minute": 65,
+  "demand": 2.242,
+  "capacity": 2.225
+ },
+ {
+  "minute": 65.333,
+  "demand": 2.206,
+  "capacity": 2.239
+ },
+ {
+  "minute": 65.667,
+  "demand": 2.176,
+  "capacity": 2.252
+ },
+ {
+  "minute": 66,
+  "demand": 2.154,
+  "capacity": 2.263
+ },
+ {
+  "minute": 66.333,
+  "demand": 2.14,
+  "capacity": 2.275
+ },
+ {
+  "minute": 66.667,
+  "demand": 2.133,
+  "capacity": 2.285
+ },
+ {
+  "minute": 67,
+  "demand": 2.134,
+  "capacity": 2.294
+ },
+ {
+  "minute": 67.333,
+  "demand": 2.142,
+  "capacity": 2.302
+ },
+ {
+  "minute": 67.667,
+  "demand": 2.157,
+  "capacity": 2.309
+ },
+ {
+  "minute": 68,
+  "demand": 2.178,
+  "capacity": 2.315
+ },
+ {
+  "minute": 68.333,
+  "demand": 2.205,
+  "capacity": 2.32
+ },
+ {
+  "minute": 68.667,
+  "demand": 2.236,
+  "capacity": 2.324
+ },
+ {
+  "minute": 69,
+  "demand": 2.272,
+  "capacity": 2.326
+ },
+ {
+  "minute": 69.333,
+  "demand": 2.312,
+  "capacity": 2.327
+ },
+ {
+  "minute": 69.667,
+  "demand": 2.354,
+  "capacity": 2.327
+ },
+ {
+  "minute": 70,
+  "demand": 2.397,
+  "capacity": 2.326
+ },
+ {
+  "minute": 70.333,
+  "demand": 2.442,
+  "capacity": 2.324
+ },
+ {
+  "minute": 70.667,
+  "demand": 2.486,
+  "capacity": 2.32
+ },
+ {
+  "minute": 71,
+  "demand": 2.53,
+  "capacity": 2.316
+ },
+ {
+  "minute": 71.333,
+  "demand": 2.572,
+  "capacity": 2.31
+ },
+ {
+  "minute": 71.667,
+  "demand": 2.612,
+  "capacity": 2.303
+ },
+ {
+  "minute": 72,
+  "demand": 2.649,
+  "capacity": 2.295
+ },
+ {
+  "minute": 72.333,
+  "demand": 2.682,
+  "capacity": 2.287
+ },
+ {
+  "minute": 72.667,
+  "demand": 2.712,
+  "capacity": 2.277
+ },
+ {
+  "minute": 73,
+  "demand": 2.737,
+  "capacity": 2.267
+ },
+ {
+  "minute": 73.333,
+  "demand": 2.757,
+  "capacity": 2.255
+ },
+ {
+  "minute": 73.667,
+  "demand": 2.773,
+  "capacity": 2.244
+ },
+ {
+  "minute": 74,
+  "demand": 2.785,
+  "capacity": 2.231
+ },
+ {
+  "minute": 74.333,
+  "demand": 2.792,
+  "capacity": 2.218
+ },
+ {
+  "minute": 74.667,
+  "demand": 2.795,
+  "capacity": 2.205
+ },
+ {
+  "minute": 75,
+  "demand": 2.793,
+  "capacity": 2.191
+ },
+ {
+  "minute": 75.333,
+  "demand": 2.789,
+  "capacity": 2.178
+ },
+ {
+  "minute": 75.667,
+  "demand": 2.782,
+  "capacity": 2.164
+ },
+ {
+  "minute": 76,
+  "demand": 2.772,
+  "capacity": 2.15
+ },
+ {
+  "minute": 76.333,
+  "demand": 2.761,
+  "capacity": 2.135
+ },
+ {
+  "minute": 76.667,
+  "demand": 2.75,
+  "capacity": 2.122
+ },
+ {
+  "minute": 77,
+  "demand": 2.738,
+  "capacity": 2.108
+ },
+ {
+  "minute": 77.333,
+  "demand": 2.727,
+  "capacity": 2.094
+ },
+ {
+  "minute": 77.667,
+  "demand": 2.718,
+  "capacity": 2.081
+ },
+ {
+  "minute": 78,
+  "demand": 2.711,
+  "capacity": 2.068
+ },
+ {
+  "minute": 78.333,
+  "demand": 2.707,
+  "capacity": 2.056
+ },
+ {
+  "minute": 78.667,
+  "demand": 2.706,
+  "capacity": 2.044
+ },
+ {
+  "minute": 79,
+  "demand": 2.71,
+  "capacity": 2.033
+ },
+ {
+  "minute": 79.333,
+  "demand": 2.719,
+  "capacity": 2.023
+ },
+ {
+  "minute": 79.667,
+  "demand": 2.734,
+  "capacity": 2.013
+ },
+ {
+  "minute": 80,
+  "demand": 2.753,
+  "capacity": 2.004
+ },
+ {
+  "minute": 80.333,
+  "demand": 2.779,
+  "capacity": 1.996
+ },
+ {
+  "minute": 80.667,
+  "demand": 2.81,
+  "capacity": 1.988
+ },
+ {
+  "minute": 81,
+  "demand": 2.847,
+  "capacity": 1.981
+ },
+ {
+  "minute": 81.333,
+  "demand": 2.89,
+  "capacity": 1.975
+ },
+ {
+  "minute": 81.667,
+  "demand": 2.939,
+  "capacity": 1.97
+ },
+ {
+  "minute": 82,
+  "demand": 2.992,
+  "capacity": 1.965
+ },
+ {
+  "minute": 82.333,
+  "demand": 3.049,
+  "capacity": 1.962
+ },
+ {
+  "minute": 82.667,
+  "demand": 3.111,
+  "capacity": 1.959
+ },
+ {
+  "minute": 83,
+  "demand": 3.175,
+  "capacity": 1.956
+ },
+ {
+  "minute": 83.333,
+  "demand": 3.242,
+  "capacity": 1.955
+ },
+ {
+  "minute": 83.667,
+  "demand": 3.31,
+  "capacity": 1.954
+ },
+ {
+  "minute": 84,
+  "demand": 3.379,
+  "capacity": 1.953
+ },
+ {
+  "minute": 84.333,
+  "demand": 3.447,
+  "capacity": 1.953
+ },
+ {
+  "minute": 84.667,
+  "demand": 3.514,
+  "capacity": 1.954
+ },
+ {
+  "minute": 85,
+  "demand": 3.579,
+  "capacity": 1.955
+ },
+ {
+  "minute": 85.333,
+  "demand": 3.641,
+  "capacity": 1.956
+ },
+ {
+  "minute": 85.667,
+  "demand": 3.698,
+  "capacity": 1.958
+ },
+ {
+  "minute": 86,
+  "demand": 3.751,
+  "capacity": 1.96
+ },
+ {
+  "minute": 86.333,
+  "demand": 3.798,
+  "capacity": 1.961
+ },
+ {
+  "minute": 86.667,
+  "demand": 3.839,
+  "capacity": 1.963
+ },
+ {
+  "minute": 87,
+  "demand": 3.873,
+  "capacity": 1.965
+ },
+ {
+  "minute": 87.333,
+  "demand": 3.9,
+  "capacity": 1.967
+ },
+ {
+  "minute": 87.667,
+  "demand": 3.919,
+  "capacity": 1.969
+ },
+ {
+  "minute": 88,
+  "demand": 3.931,
+  "capacity": 1.971
+ },
+ {
+  "minute": 88.333,
+  "demand": 3.935,
+  "capacity": 1.972
+ },
+ {
+  "minute": 88.667,
+  "demand": 3.93,
+  "capacity": 1.973
+ },
+ {
+  "minute": 89,
+  "demand": 3.919,
+  "capacity": 1.973
+ },
+ {
+  "minute": 89.333,
+  "demand": 3.9,
+  "capacity": 1.973
+ },
+ {
+  "minute": 89.667,
+  "demand": 3.874,
+  "capacity": 1.973
+ },
+ {
+  "minute": 90,
+  "demand": 3.841,
+  "capacity": 1.972
+ },
+ {
+  "minute": 90.333,
+  "demand": 3.803,
+  "capacity": 1.97
+ },
+ {
+  "minute": 90.667,
+  "demand": 3.76,
+  "capacity": 1.968
+ },
+ {
+  "minute": 91,
+  "demand": 3.713,
+  "capacity": 1.965
+ },
+ {
+  "minute": 91.333,
+  "demand": 3.662,
+  "capacity": 1.962
+ },
+ {
+  "minute": 91.667,
+  "demand": 3.609,
+  "capacity": 1.957
+ },
+ {
+  "minute": 92,
+  "demand": 3.554,
+  "capacity": 1.952
+ },
+ {
+  "minute": 92.333,
+  "demand": 3.499,
+  "capacity": 1.947
+ },
+ {
+  "minute": 92.667,
+  "demand": 3.443,
+  "capacity": 1.941
+ },
+ {
+  "minute": 93,
+  "demand": 3.389,
+  "capacity": 1.934
+ },
+ {
+  "minute": 93.333,
+  "demand": 3.337,
+  "capacity": 1.926
+ },
+ {
+  "minute": 93.667,
+  "demand": 3.287,
+  "capacity": 1.918
+ },
+ {
+  "minute": 94,
+  "demand": 3.24,
+  "capacity": 1.909
+ },
+ {
+  "minute": 94.333,
+  "demand": 3.197,
+  "capacity": 1.9
+ },
+ {
+  "minute": 94.667,
+  "demand": 3.159,
+  "capacity": 1.89
+ },
+ {
+  "minute": 95,
+  "demand": 3.125,
+  "capacity": 1.879
+ },
+ {
+  "minute": 95.333,
+  "demand": 3.096,
+  "capacity": 1.869
+ },
+ {
+  "minute": 95.667,
+  "demand": 3.072,
+  "capacity": 1.858
+ },
+ {
+  "minute": 96,
+  "demand": 3.053,
+  "capacity": 1.847
+ },
+ {
+  "minute": 96.333,
+  "demand": 3.039,
+  "capacity": 1.835
+ },
+ {
+  "minute": 96.667,
+  "demand": 3.03,
+  "capacity": 1.824
+ },
+ {
+  "minute": 97,
+  "demand": 3.025,
+  "capacity": 1.812
+ },
+ {
+  "minute": 97.333,
+  "demand": 3.024,
+  "capacity": 1.801
+ },
+ {
+  "minute": 97.667,
+  "demand": 3.026,
+  "capacity": 1.79
+ },
+ {
+  "minute": 98,
+  "demand": 3.031,
+  "capacity": 1.779
+ },
+ {
+  "minute": 98.333,
+  "demand": 3.038,
+  "capacity": 1.768
+ },
+ {
+  "minute": 98.667,
+  "demand": 3.046,
+  "capacity": 1.758
+ },
+ {
+  "minute": 99,
+  "demand": 3.055,
+  "capacity": 1.748
+ },
+ {
+  "minute": 99.333,
+  "demand": 3.063,
+  "capacity": 1.739
+ },
+ {
+  "minute": 99.667,
+  "demand": 3.071,
+  "capacity": 1.73
+ },
+ {
+  "minute": 100,
+  "demand": 3.076,
+  "capacity": 1.722
+ },
+ {
+  "minute": 100.333,
+  "demand": 3.08,
+  "capacity": 1.715
+ },
+ {
+  "minute": 100.667,
+  "demand": 3.08,
+  "capacity": 1.709
+ },
+ {
+  "minute": 101,
+  "demand": 3.076,
+  "capacity": 1.704
+ },
+ {
+  "minute": 101.333,
+  "demand": 3.068,
+  "capacity": 1.699
+ },
+ {
+  "minute": 101.667,
+  "demand": 3.055,
+  "capacity": 1.696
+ },
+ {
+  "minute": 102,
+  "demand": 3.038,
+  "capacity": 1.694
+ },
+ {
+  "minute": 102.333,
+  "demand": 3.015,
+  "capacity": 1.693
+ },
+ {
+  "minute": 102.667,
+  "demand": 2.987,
+  "capacity": 1.693
+ },
+ {
+  "minute": 103,
+  "demand": 2.954,
+  "capacity": 1.694
+ },
+ {
+  "minute": 103.333,
+  "demand": 2.915,
+  "capacity": 1.696
+ },
+ {
+  "minute": 103.667,
+  "demand": 2.872,
+  "capacity": 1.699
+ },
+ {
+  "minute": 104,
+  "demand": 2.824,
+  "capacity": 1.704
+ },
+ {
+  "minute": 104.333,
+  "demand": 2.773,
+  "capacity": 1.71
+ },
+ {
+  "minute": 104.667,
+  "demand": 2.718,
+  "capacity": 1.717
+ },
+ {
+  "minute": 105,
+  "demand": 2.66,
+  "capacity": 1.725
+ },
+ {
+  "minute": 105.333,
+  "demand": 2.601,
+  "capacity": 1.734
+ },
+ {
+  "minute": 105.667,
+  "demand": 2.541,
+  "capacity": 1.744
+ },
+ {
+  "minute": 106,
+  "demand": 2.48,
+  "capacity": 1.755
+ },
+ {
+  "minute": 106.333,
+  "demand": 2.421,
+  "capacity": 1.768
+ },
+ {
+  "minute": 106.667,
+  "demand": 2.363,
+  "capacity": 1.781
+ },
+ {
+  "minute": 107,
+  "demand": 2.308,
+  "capacity": 1.794
+ },
+ {
+  "minute": 107.333,
+  "demand": 2.256,
+  "capacity": 1.809
+ },
+ {
+  "minute": 107.667,
+  "demand": 2.208,
+  "capacity": 1.824
+ },
+ {
+  "minute": 108,
+  "demand": 2.166,
+  "capacity": 1.84
+ },
+ {
+  "minute": 108.333,
+  "demand": 2.129,
+  "capacity": 1.856
+ },
+ {
+  "minute": 108.667,
+  "demand": 2.099,
+  "capacity": 1.873
+ },
+ {
+  "minute": 109,
+  "demand": 2.076,
+  "capacity": 1.89
+ },
+ {
+  "minute": 109.333,
+  "demand": 2.061,
+  "capacity": 1.908
+ },
+ {
+  "minute": 109.667,
+  "demand": 2.053,
+  "capacity": 1.925
+ },
+ {
+  "minute": 110,
+  "demand": 2.053,
+  "capacity": 1.943
+ },
+ {
+  "minute": 110.333,
+  "demand": 2.06,
+  "capacity": 1.96
+ },
+ {
+  "minute": 110.667,
+  "demand": 2.076,
+  "capacity": 1.978
+ },
+ {
+  "minute": 111,
+  "demand": 2.099,
+  "capacity": 1.995
+ },
+ {
+  "minute": 111.333,
+  "demand": 2.13,
+  "capacity": 2.012
+ },
+ {
+  "minute": 111.667,
+  "demand": 2.167,
+  "capacity": 2.028
+ },
+ {
+  "minute": 112,
+  "demand": 2.211,
+  "capacity": 2.044
+ },
+ {
+  "minute": 112.333,
+  "demand": 2.26,
+  "capacity": 2.06
+ },
+ {
+  "minute": 112.667,
+  "demand": 2.314,
+  "capacity": 2.074
+ },
+ {
+  "minute": 113,
+  "demand": 2.372,
+  "capacity": 2.089
+ },
+ {
+  "minute": 113.333,
+  "demand": 2.433,
+  "capacity": 2.102
+ },
+ {
+  "minute": 113.667,
+  "demand": 2.496,
+  "capacity": 2.115
+ },
+ {
+  "minute": 114,
+  "demand": 2.56,
+  "capacity": 2.126
+ },
+ {
+  "minute": 114.333,
+  "demand": 2.625,
+  "capacity": 2.137
+ },
+ {
+  "minute": 114.667,
+  "demand": 2.69,
+  "capacity": 2.147
+ },
+ {
+  "minute": 115,
+  "demand": 2.753,
+  "capacity": 2.156
+ },
+ {
+  "minute": 115.333,
+  "demand": 2.813,
+  "capacity": 2.164
+ },
+ {
+  "minute": 115.667,
+  "demand": 2.871,
+  "capacity": 2.171
+ },
+ {
+  "minute": 116,
+  "demand": 2.925,
+  "capacity": 2.177
+ },
+ {
+  "minute": 116.333,
+  "demand": 2.975,
+  "capacity": 2.182
+ },
+ {
+  "minute": 116.667,
+  "demand": 3.019,
+  "capacity": 2.186
+ },
+ {
+  "minute": 117,
+  "demand": 3.059,
+  "capacity": 2.189
+ },
+ {
+  "minute": 117.333,
+  "demand": 3.093,
+  "capacity": 2.192
+ },
+ {
+  "minute": 117.667,
+  "demand": 3.122,
+  "capacity": 2.193
+ },
+ {
+  "minute": 118,
+  "demand": 3.146,
+  "capacity": 2.193
+ },
+ {
+  "minute": 118.333,
+  "demand": 3.163,
+  "capacity": 2.193
+ },
+ {
+  "minute": 118.667,
+  "demand": 3.176,
+  "capacity": 2.192
+ },
+ {
+  "minute": 119,
+  "demand": 3.184,
+  "capacity": 2.19
+ },
+ {
+  "minute": 119.333,
+  "demand": 3.187,
+  "capacity": 2.188
+ },
+ {
+  "minute": 119.667,
+  "demand": 3.186,
+  "capacity": 2.184
+ }
+];
+const get = id => document.getElementById(id);
+const arrival = get('arrival'), service = get('service'), second = get('second');
+let minute = 30, playing = false;
+const number = value => Number(value).toFixed(1);
+function calculate() {
+  let queue = 0;
+  return observations.filter(row => row.minute <= minute).map(row => {
+    const entering = row.demand * Number(arrival.value) / 3;
+    const leaving = row.capacity * Number(service.value) / 2 * (second.checked ? 2 : 1);
+    queue = Math.max(0, queue + (entering - leaving) / 3);
+    return { minute: row.minute, entering, leaving, queue };
+  });
+}
+function render() {
+  const rows = calculate(), last = rows[rows.length - 1];
+  const rate = Number(arrival.value), capacity = Number(service.value) * (second.checked ? 2 : 1);
+  const colors = PiViz.getTheme().colors;
+  get('arrival-value').textContent = number(rate) + ' 人/分钟';
+  arrival.setAttribute('aria-valuetext', number(rate) + ' 人/分钟');
+  get('arrival-rate').textContent = number(rate);
+  get('service-rate').textContent = number(capacity);
+  get('elapsed').textContent = String(minute);
+  get('backlog').textContent = number(last.queue);
+  get('motion').textContent = PiViz.reducedMotion ? '已减少动画；可手动播放或调参。' : '每秒前进 1 分钟，可随时暂停。';
+  const rateWidth = get('rates').clientWidth;
+  get('arrival-bar').setAttribute('width', String(rateWidth * rate / 8));
+  get('service-bar').setAttribute('width', String(rateWidth * capacity / 8));
+  const width = Math.max(180, get('trend').clientWidth), height = 230;
+  const x = d3.scaleLinear().domain([0, 120]).range([36, width - 12]);
+  const y = d3.scaleLinear().domain([0, Math.max(10, d3.max(rows, row => row.queue))]).nice().range([height - 32, 12]);
+  const svg = d3.select('#trend').attr('viewBox', '0 0 ' + width + ' ' + height);
+  svg.selectAll('*').remove();
+  svg.append('g').attr('transform', 'translate(0,' + (height - 32) + ')').call(d3.axisBottom(x).ticks(width < 350 ? 3 : 6).tickFormat(value => value + ''));
+  svg.append('g').attr('transform', 'translate(36,0)').call(d3.axisLeft(y).ticks(4));
+  svg.selectAll('.domain,.tick line').attr('stroke', colors.border);
+  svg.selectAll('.tick text').attr('fill', colors.text).style('font-size', '12px');
+  svg.append('path').datum(rows).attr('fill', 'none').attr('stroke', colors.series1).attr('stroke-width', 2.5).attr('d', d3.line().x(row => x(row.minute)).y(row => y(row.queue)));
+  const canvas = get('people'), context = canvas.getContext('2d');
+  const cssWidth = Math.max(180, canvas.clientWidth), dpr = devicePixelRatio || 1;
+  canvas.style.width = '100%'; canvas.style.height = '74px'; canvas.width = cssWidth * dpr; canvas.height = 74 * dpr;
+  context.scale(dpr, dpr); context.fillStyle = colors.background; context.fillRect(0, 0, cssWidth, 74);
+  context.fillStyle = colors.series3;
+  const columns = Math.max(10, Math.floor(cssWidth / 15));
+  for (let i = 0; i < Math.min(40, Math.round(last.queue)); i++) { context.beginPath(); context.arc(8 + (i % columns) * 15, 10 + Math.floor(i / columns) * 17, 5, 0, Math.PI * 2); context.fill(); }
+  canvas.setAttribute('aria-label', '当前排队约 ' + number(last.queue) + ' 人，最多显示40个圆点。');
+  get('data-rows').replaceChildren(...rows.slice(-8).map(row => {
+    const tr = document.createElement('tr');
+    for (const value of [row.minute, row.entering, row.leaving, row.queue]) { const td = document.createElement('td'); td.textContent = number(value); tr.append(td); }
+    return tr;
+  }));
+}
+function setPlaying(next) {
+  playing = next;
+  get('play').setAttribute('aria-pressed', String(playing));
+  get('play').querySelector('span').textContent = playing ? '暂停' : '播放';
+}
+arrival.addEventListener('input', render); service.addEventListener('change', render); second.addEventListener('change', render);
+get('play').addEventListener('click', () => setPlaying(!playing));
+get('reset').addEventListener('click', () => { arrival.value = '3'; service.value = '2'; second.checked = false; minute = 30; setPlaying(false); render(); });
+addEventListener('piviz:themechange', render); addEventListener('resize', render);
+matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', event => { if (event.matches) setPlaying(false); render(); });
+setInterval(() => { if (playing) { minute = minute >= 119 ? 1 : minute + 1; render(); } }, 1000);
+render();
+})();
+</script>
+</section>

@@ -1,0 +1,35 @@
+{
+  "app_id": "9cdedc0b-d8a6-4b73-a0b5-95bece069037",
+  "models": [
+    {
+      "provider": "langgenius/deepseek/deepseek",
+      "model": "deepseek-flash",
+      "model_type": "llm"
+    }
+  ],
+  "live_terminal_events": [
+    {
+      "recording": "ticket02-kit",
+      "type": "run.state",
+      "status": "completed"
+    },
+    {
+      "recording": "ticket02-kit",
+      "type": "run.done",
+      "status": "completed"
+    },
+    {
+      "recording": "ticket02-kit-v2",
+      "type": "run.state",
+      "status": "completed"
+    },
+    {
+      "recording": "ticket02-kit-v2",
+      "type": "run.done",
+      "status": "completed"
+    }
+  ],
+  "dify_version": "1.15.0",
+  "harness_version": "0.6.0",
+  "kit_version": "1.0.0"
+}

@@ -2,12 +2,14 @@
 import { computed, ref } from 'vue'
 import AskUserForm from './AskUserForm.vue'
 import ApprovalCard from './ApprovalCard.vue'
-import { escapeHtml, renderJson, renderMarkdown } from '../projection/markdown'
+import VisualizeCard from './VisualizeCard.vue'
+import { answerSegments } from '../projection/visualize'
+import { escapeHtml, renderJson } from '../projection/markdown'
 import { toolStatusLabel, toolStatusTone } from '../projection/toolStatus'
 import { errorText, statusText } from '../projection/labels'
 import type { WorkbenchEntry } from '../projection/transcript'
 
-const props = defineProps<{ entry: WorkbenchEntry }>()
+const props = defineProps<{ entry: WorkbenchEntry; conversationId?: string }>()
 const emit = defineEmits<{
   'submit-answers': [entry: Extract<WorkbenchEntry, { kind: 'question' }>, answers: Record<string, string | string[]>]
   'cancel-question': [entry: Extract<WorkbenchEntry, { kind: 'question' }>]
@@ -27,10 +29,10 @@ const tone = computed(() =>
 const statusLabel = computed(() =>
   props.entry.kind === 'tool' ? toolStatusLabel(props.entry.status) : '',
 )
-const assistantHtml = computed(() =>
+const assistantSegments = computed(() =>
   props.entry.kind === 'message' && props.entry.role === 'assistant'
-    ? renderMarkdown(props.entry.text)
-    : '',
+    ? answerSegments(props.entry.text)
+    : [],
 )
 const argsHtml = computed(() =>
   props.entry.kind === 'tool' ? renderJson(props.entry.args || {}) : '',
@@ -61,7 +63,11 @@ const reportedTokens = computed(() => {
       </div>
     </div>
     <div v-else>
-      <div class="markdown-body" v-html="assistantHtml"></div>
+      <template v-for="(segment, index) in assistantSegments" :key="index">
+        <div v-if="segment.kind === 'markdown'" class="markdown-body" v-html="segment.html"></div>
+        <VisualizeCard v-else :block="segment.block" :complete="Boolean(entry.answerComplete)"
+          :status="entry.runStatus" :content-id="`${conversationId || ''}:${entry.platformMessageId || entry.id}:${segment.block.index}`" />
+      </template>
       <span v-if="entry.streaming" class="pi-streaming-dot" aria-label="streaming"></span>
       <span v-if="entry.platformConfirmed" class="pi-platform-note">已合并 Dify 最终文本</span>
     </div>

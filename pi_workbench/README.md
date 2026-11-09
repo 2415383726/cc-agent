@@ -72,7 +72,7 @@ unconfirmed/unknown.
 
 ## Security
 
-- No HTML output from model text: Markdown is rendered with `html: false`.
+- Ordinary model HTML remains escaped. Dedicated completed `pi-visualize` blocks run in an isolated static host; see [deployment requirements](docs-visualize.md).
 - No external fonts, scripts, CDNs or telemetry in the static build.
 - The static gate fails on `src=`/`href=`/`url()`/`fetch()` external asset loads
   and on bundled Pi SDK/Node backend markers.
@@ -103,3 +103,7 @@ service is included.
   usable and never triggers an automatic resubmission.
 - Stop is best effort and the UI distinguishes requested stop from a trusted
   server terminal state.
+
+## Interactive answers
+
+See [the host deployment guide](docs-visualize.md) for the dedicated response header, supported Chromium versions, content protocol and history limits. `/?replay=visualize` opens the fixed native SVG queue demonstration.

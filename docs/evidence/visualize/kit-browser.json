@@ -1,0 +1,81 @@
+{
+  "browser": "154.0.8037.57",
+  "checks": [
+    "real D3 7.9.0 and Lucide initialize before author script",
+    "slider/select/toggle change plotted queue and native bars",
+    "play advances; pause freezes; reset restores initial parameters",
+    "tabs ArrowRight/Left/Home/End select panels with matching aria state",
+    "tooltip focus and Escape; explanation also visible in ordinary text",
+    "light/dark changes native SVG, D3 colors and canvas pixels without frame rebuild",
+    "expand/collapse retains same inner frame and values",
+    "parent/top DOM and storage access denied",
+    "320px main/artwork have no horizontal overflow; labels and units remain rendered",
+    "touch tooltip opens and dismisses outside",
+    "reduced motion starts paused and no automatic time advance"
+  ],
+  "externalRequests": [],
+  "posts": [],
+  "errors": [],
+  "screenshots": [
+    "screenshots/pi-visualize-kit-desktop-light.png",
+    "screenshots/pi-visualize-kit-desktop-dark.png",
+    "screenshots/pi-visualize-kit-mobile-320-dark.png",
+    "screenshots/pi-visualize-kit-mobile-320-light.png",
+    "screenshots/pi-visualize-kit-mobile-320-figures.png"
+  ],
+  "layouts": [
+    {
+      "surface": "main-320",
+      "width": 320,
+      "scroll": 320
+    },
+    {
+      "surface": "artwork-320",
+      "width": 270,
+      "scroll": 270,
+      "controls": [
+        {
+          "text": "arrival",
+          "height": 44,
+          "right": 262
+        },
+        {
+          "text": "2 人/分钟3 人/分钟4 人/分钟",
+          "height": 44,
+          "right": 262
+        },
+        {
+          "text": "开启第二个处理窗口",
+          "height": 44,
+          "right": 262
+        },
+        {
+          "text": "播放",
+          "height": 44,
+          "right": 92
+        },
+        {
+          "text": "重置",
+          "height": 44,
+          "right": 188
+        },
+        {
+          "text": "计算说明",
+          "height": 44,
+          "right": 94
+        },
+        {
+          "text": "图解",
+          "height": 44,
+          "right": 60
+        },
+        {
+          "text": "采样数据",
+          "height": 44,
+          "right": 144
+        }
+      ]
+    }
+  ],
+  "capture_note": "Final 320px captures wait for ready, D3 path, expanded layout and 300ms paint; figures capture scrolls the same frame."
+}

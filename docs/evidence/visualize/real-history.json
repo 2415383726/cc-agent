@@ -1,0 +1,106 @@
+{
+  "browser": "154.0.8037.57",
+  "conversation_id": "fc2dd357-f5fb-4752-86f9-d571cb1d34e0",
+  "checks": [
+    "two real Dify native history artworks remain unconfirmed and inert until explicitly activated",
+    "manual view runs local interactive artwork without restoring Agent execution",
+    "keyboard slider updates geometry; pause freezes time; expansion keeps current value",
+    "refresh re-fetches identical native answers and identities, requires click again and restores initial parameters",
+    "fresh browser context restores both works from real Dify history without browser cache or prior storage",
+    "switching to a new conversation disposes all artwork frames"
+  ],
+  "stages": [
+    {
+      "name": "first-history-open",
+      "identities": [
+        "fc2dd357-f5fb-4752-86f9-d571cb1d34e0:33167c7b-8155-4980-b575-5f9da53926c6:0:83baa42293e55f52",
+        "fc2dd357-f5fb-4752-86f9-d571cb1d34e0:24af8ced-1b52-45ab-b83a-69ee04148315:0:83baa42293e55f52"
+      ],
+      "hashes": [
+        {
+          "message_id": "6d6fa7d4-c528-4c87-9edd-ed88e09c4ae5",
+          "answer_chars": 16751,
+          "sha256": "8ff8c90ff37ec039c0bfb56eb232d3ece92915a7c8331a70fe1e3e4383473dc5",
+          "agent_thoughts_count": 0
+        },
+        {
+          "message_id": "33167c7b-8155-4980-b575-5f9da53926c6",
+          "answer_chars": 3339,
+          "sha256": "5c25426c44a323b18e536af68993851464d84dd4da4eb8f44ba055c858667d70",
+          "agent_thoughts_count": 0
+        },
+        {
+          "message_id": "24af8ced-1b52-45ab-b83a-69ee04148315",
+          "answer_chars": 3339,
+          "sha256": "5c25426c44a323b18e536af68993851464d84dd4da4eb8f44ba055c858667d70",
+          "agent_thoughts_count": 0
+        }
+      ],
+      "auto_frame_count": 0
+    },
+    {
+      "name": "after-refresh",
+      "identities": [
+        "fc2dd357-f5fb-4752-86f9-d571cb1d34e0:33167c7b-8155-4980-b575-5f9da53926c6:0:83baa42293e55f52",
+        "fc2dd357-f5fb-4752-86f9-d571cb1d34e0:24af8ced-1b52-45ab-b83a-69ee04148315:0:83baa42293e55f52"
+      ],
+      "hashes": [
+        {
+          "message_id": "6d6fa7d4-c528-4c87-9edd-ed88e09c4ae5",
+          "answer_chars": 16751,
+          "sha256": "8ff8c90ff37ec039c0bfb56eb232d3ece92915a7c8331a70fe1e3e4383473dc5",
+          "agent_thoughts_count": 0
+        },
+        {
+          "message_id": "33167c7b-8155-4980-b575-5f9da53926c6",
+          "answer_chars": 3339,
+          "sha256": "5c25426c44a323b18e536af68993851464d84dd4da4eb8f44ba055c858667d70",
+          "agent_thoughts_count": 0
+        },
+        {
+          "message_id": "24af8ced-1b52-45ab-b83a-69ee04148315",
+          "answer_chars": 3339,
+          "sha256": "5c25426c44a323b18e536af68993851464d84dd4da4eb8f44ba055c858667d70",
+          "agent_thoughts_count": 0
+        }
+      ],
+      "auto_frame_count": 0
+    },
+    {
+      "name": "fresh-browser-context-without-cookies-storage-cache",
+      "identities": [
+        "fc2dd357-f5fb-4752-86f9-d571cb1d34e0:33167c7b-8155-4980-b575-5f9da53926c6:0:83baa42293e55f52",
+        "fc2dd357-f5fb-4752-86f9-d571cb1d34e0:24af8ced-1b52-45ab-b83a-69ee04148315:0:83baa42293e55f52"
+      ],
+      "hashes": [
+        {
+          "message_id": "6d6fa7d4-c528-4c87-9edd-ed88e09c4ae5",
+          "answer_chars": 16751,
+          "sha256": "8ff8c90ff37ec039c0bfb56eb232d3ece92915a7c8331a70fe1e3e4383473dc5",
+          "agent_thoughts_count": 0
+        },
+        {
+          "message_id": "33167c7b-8155-4980-b575-5f9da53926c6",
+          "answer_chars": 3339,
+          "sha256": "5c25426c44a323b18e536af68993851464d84dd4da4eb8f44ba055c858667d70",
+          "agent_thoughts_count": 0
+        },
+        {
+          "message_id": "24af8ced-1b52-45ab-b83a-69ee04148315",
+          "answer_chars": 3339,
+          "sha256": "5c25426c44a323b18e536af68993851464d84dd4da4eb8f44ba055c858667d70",
+          "agent_thoughts_count": 0
+        }
+      ],
+      "auto_frame_count": 0
+    }
+  ],
+  "postRequests": [],
+  "externalRequests": [],
+  "pageErrors": [],
+  "screenshots": [
+    "/tmp/pi-visualize-real-history-opened.png",
+    "/tmp/pi-visualize-real-history-fresh-context.png"
+  ],
+  "activation": "Final full history regression used native keyboard Enter on each View artwork button. An earlier run also opened the first work with a pointer; second-work pointer timing during frame resizing was not accepted as a complete pointer result."
+}
