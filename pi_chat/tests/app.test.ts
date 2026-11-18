@@ -95,10 +95,11 @@ beforeEach(() => {
 })
 
 describe('pi_chat 接线', () => {
-  it('默认显示连接表单与空会话列表（未连接）', async () => {
+  it('默认显示连接表单、常驻连接设置入口与空会话列表（未连接）', async () => {
     const wrapper = mount(App)
     await flushPromises()
     expect(wrapper.find('[data-testid="connection-form"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="open-connect-form"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="mode-badge"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="conversation-item"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('暂无历史会话')

@@ -48,6 +48,11 @@ async function onConnect(credentials: SessionCredentials): Promise<void> {
   formOpen.value = Boolean(live.ui.conversationsError)
 }
 
+/* 已连接时允许点遮罩/Esc 收起；未连接时保持常显（关掉就没有可用入口）。 */
+function onOverlayClose(): void {
+  if (live.ui.connected) formOpen.value = false
+}
+
 /* 票 08：composer 提交完整 payload（文本 + 附件），草稿由 ComposerBar 清空。 */
 async function onLiveSend(text: string, files: FileRef[]): Promise<void> {
   await live.send(text, files)
@@ -172,7 +177,6 @@ onBeforeUnmount(() => {
       <template #actions>
         <!-- 停止按钮已移入 composer（票 08）：只在运行中渲染，停止 best-effort 由控制器承接。 -->
         <button
-          v-if="live.ui.connected"
           type="button"
           class="pi-mode-button"
           data-testid="open-connect-form"
@@ -183,14 +187,27 @@ onBeforeUnmount(() => {
       </template>
 
       <div class="pi-live-stack">
+        <LiveConversation :controller="live" />
+      </div>
+
+      <!-- 连接设置：固定遮罩弹窗，不随会话滚动位置漂移（旧内联表单在长会话里
+           会被滚到视口上方，点「连接设置」看起来像没反应）。 -->
+      <div
+        v-if="showForm"
+        class="pi-connect-overlay"
+        data-testid="connection-overlay"
+        role="dialog"
+        aria-modal="true"
+        aria-label="连接设置"
+        @click.self="onOverlayClose"
+        @keydown.esc="onOverlayClose"
+      >
         <ConnectionForm
-          v-if="showForm"
           :connection-error="live.ui.conversationsError || ''"
           :connected="Boolean(live.ui.connected)"
           @connect="onConnect"
           @close="formOpen = false"
         />
-        <LiveConversation :controller="live" />
       </div>
 
       <template #composer>
@@ -219,7 +236,26 @@ onBeforeUnmount(() => {
 </template>
 
 <style>
-/* 组件自有（非 vendor）：会话栈（连接表单叠加在会话视图上方）。 */
+/* 组件自有（非 vendor）：连接设置的固定遮罩弹窗，长会话滚动不影响可见性。 */
+.pi-connect-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: min(12vh, 96px) 16px 24px;
+  overflow-y: auto;
+  background: rgba(11, 11, 12, 0.32);
+}
+
+.pi-connect-overlay .pi-connect {
+  margin: 0;
+  width: min(420px, 100%);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+}
+
+/* 组件自有（非 vendor）：会话栈（预留多块叠加内容的纵向间距）。 */
 .pi-live-stack {
   display: flex;
   flex-direction: column;
