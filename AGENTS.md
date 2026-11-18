@@ -2,9 +2,10 @@
 
 ## Project
 
-- `cc_agent/`: Dify Agent Strategy plugin, Python ≥3.12. Conversation state uses the Dify `agent_state` variable. Internal tools handle skills, tasks, and AG-UI user prompts; Dify injects external tools.
+- `cc_agent/`: Dify Agent Strategy plugin, Python ≥3.12. Conversation state uses the Dify `agent_state` variable. Internal tools handle skills, tasks, and AG-UI user prompts; Dify injects external tools. Frozen after the pi_strategy split; kept as a behavioral baseline, not for further development. See [ADR-0011](docs/adr/0011-pi-strategy-native-split.md).
 - `copilotkit-dify/`: Vue 3 + Vite frontend consuming AG-UI / Dify streams, with tool cards, structured answers, attachments, and permission interrupts.
 - `pi_dify/`: independent v2 Pi Harness Dify Agent Strategy plugin (Python 3.12). Pins `pi-agent-core-lc`/`pi-agent-harness-lc` 0.6.0 and uses `piagent-state:v1:gzip-base64:`; it does not import old `cc_agent` state or loops.
+- `pi_strategy/`: independent Pi Harness Dify Agent Strategy plugin (Python 3.12) with Dify-native output, forked from `pi_dify`. Same 0.6.0 pins, but no `piagent.display.v1` contract: it renders Dify-native messages aligned with the retired `CC Agent (Dify)` mode for the built-in Dify UI, uses `pistrategy-state:v1:gzip-base64:` (rejects foreign prefixes), resumes interactions from the next query text instead of an `interaction` parameter, and ships no Tasks tool. It shares no code with `pi_dify` or `cc_agent`.
 - `pi_chat/`: static Vue 3 workbench for the `piagent.display.v1` contract; presentation ported from the MIT-licensed DeepSeek Harness (attribution in its NOTICE.md). No Node/Pi runtime backend.
 - `cc-haha/` and `cheetahclaws/`, when present, are read-only reference implementations.
 
@@ -20,7 +21,10 @@ python -B -m unittest cc_agent.tests.test_core
 python cc_agent/scripts/build_offline_package.py
 python -B -m unittest discover -s pi_dify/tests
 python pi_dify/scripts/build_offline_package.py --arch amd64
+python -B -m unittest discover -s pi_strategy/tests
+python pi_strategy/scripts/build_offline_package.py --arch amd64
 ```
+
 
 From `pi_chat/`, use `npm install`, `npm run dev`, `npm run test`, `npm run build`, and `npm run check:static`.
 
@@ -48,6 +52,12 @@ From `copilotkit-dify/`, use `npm install`, `npm run dev`, `npm run test`, and `
 - `pi_dify/pi_agent/state.py` is the only Pi cross-turn authority. Keep the size-limited codec, pending/leaf/tool pairing on trim, and state-before-terminal ordering. `state_ref` must not claim platform persistence.
 - AskUser and approval are distinct pending interactions in `pi_agent/interaction.py`; both stop the batch deterministically and resume from a validated next-turn `interaction`. A questionnaire answer is not a tool authorization.
 - `pi_chat/src/dify/controller.ts` owns Dify send/stop/history/stale-result rules; `src/projection/transcript.ts` owns display reduction. Replay must use the same contract and components, not a second renderer.
+
+- `pi_strategy/pi_strategy/harness.py` is its only AgentHarness 0.6.0 adapter subclass (stop predicate + resume turn seams only); do not copy the Pi loop there either.
+- `pi_strategy/pi_strategy/stream.py` is its only Dify model boundary; keep the one-overflow-compaction retry and never replay completed tools.
+- `pi_strategy/pi_strategy/state.py` is its only cross-turn authority under the `pistrategy-state:v1:gzip-base64:` prefix; the codec must keep rejecting foreign prefixes.
+- `pi_strategy/pi_strategy/native.py` + `observer.py` render Pi harness events as Dify-native messages (`<think>` reasoning, HTML tool cards, log/variable/json), mirroring the retired `CC Agent (Dify)` UX; there is no display contract and no workbench consumer.
+- Interactions in `pi_strategy/pi_strategy/interaction.py` render the pending approval as text and resume from the next query text; keep pending validation, consumed records, expiry and fingerprints. There is no `ask_user` or `visualize` internal tool in pi_strategy.
 
 ## Invariants
 

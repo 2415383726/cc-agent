@@ -1,0 +1,15 @@
+identity:
+  author: pi_strategy
+  name: pi_strategy
+  label:
+    en_US: Pi Strategy (Native)
+    zh_Hans: Pi Strategy（原生）
+  description:
+    en_US: Pi harness agent with Dify-native output for the built-in Dify UI, a Dify-hosted model, tools, skills and state.
+    zh_Hans: 面向 Dify 自带界面输出原生消息的 Pi Harness Agent，由 Dify 提供模型、工具、技能与状态。
+  icon: icon.svg
+strategies:
+  - strategies/pi_strategy_native.yaml
+extra:
+  python:
+    source: provider/pi_strategy.py

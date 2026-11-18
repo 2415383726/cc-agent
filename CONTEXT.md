@@ -40,6 +40,15 @@ _Avoid_：官方 Pi RPC 兼容、任意事件总线、逐 token 全量快照
 **Pi 状态**：以 `piagent-state:v1:gzip-base64:` 封装的 Pi 会话、技能、授权、pending 和统计，是唯一跨轮权威。
 _Avoid_：浏览器权威缓存、本地文件存储、旧 ccagent 快照
 
+**Pi Strategy**：以 Pi 架构及开源 Harness 实现为基础、向 Dify 原生消息面输出的独立插件；与 Pi Agent 并列，不共享代码与状态。
+_Avoid_：CC Agent 的原生模式、pi_dify 的输出变体、单插件多策略
+
+**原生输出**：面向 Dify 自带界面的消息面（文本流、工具卡片、日志、变量与 blob），无需自定义前端即可完成问答、澄清与审批。
+_Avoid_：显示契约、专用工作台、AG-UI 事件
+
+**Strategy 状态**：以 `pistrategy-state:v1:gzip-base64:` 封装的 Pi 会话、技能、授权、pending 和统计，是 pi_strategy 的唯一跨轮权威；与 Pi 状态前缀不同、互不认读。
+_Avoid_：跨插件续跑、旧 ccagent 快照
+
 **用户澄清**：助手在运行中向用户提出结构化问题、结束本轮并等待下一次输入；不授予任何操作权限。
 _Avoid_：工具审批、确认、interrupt、进程内 waiter
 
