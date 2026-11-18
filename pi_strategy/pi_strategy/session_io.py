@@ -7,8 +7,10 @@ stalled provider or tool can never be abandoned — the stop watcher, the wall
 clock and ``RunStream.close()`` all wait for an await point that never arrives.
 
 Each call (or each whole model stream) therefore runs on a real OS thread and
-the loop polls a GIL-atomic deque/flag instead of blocking. Timeouts are
-enforced on the loop side; a timed-out worker is left to finish on its own
+hands results over through a GIL-atomic deque/flag. The worker signals the loop
+with ``call_soon_threadsafe`` so a chunk is delivered as soon as it arrives;
+the loop only re-checks stop/timeout every ``WAIT_SECONDS`` while idle. Timeouts
+are enforced on the loop side; a timed-out worker is left to finish on its own
 because a blocking stdio read cannot be cancelled safely from another thread.
 """
 
@@ -22,7 +24,7 @@ from typing import Any
 
 from .threads import start_real_thread, stdlib_original
 
-POLL_SECONDS = 0.01
+WAIT_SECONDS = 0.05
 TIMEOUT_MESSAGE = "The Dify session call did not respond in time."
 ABORT_MESSAGE = "The run stopped while the session call was outstanding."
 
@@ -37,6 +39,25 @@ class SessionAborted(Exception):
 
 class SessionIO:
     """One bridge per run; calls are issued sequentially by the Pi loop."""
+
+    def __init__(self) -> None:
+        self._loop = asyncio.get_running_loop()
+        self._wake = asyncio.Event()
+
+    def _notify(self) -> None:
+        """Wake the loop from a worker thread without touching asyncio state."""
+        try:
+            self._loop.call_soon_threadsafe(self._wake.set)
+        except RuntimeError:
+            # The run loop is already closed, so no waiter remains.
+            pass
+
+    async def _wait_notified(self) -> None:
+        """Wait for a worker notification, re-checking conditions periodically."""
+        try:
+            await asyncio.wait_for(self._wake.wait(), WAIT_SECONDS)
+        except TimeoutError:
+            pass
 
     async def call(
         self,
@@ -55,6 +76,7 @@ class SessionIO:
                 box["error"] = exc
             finally:
                 box["done"] = True
+                self._notify()
 
         start_real_thread(target, name=f"pi-strategy-{label}")
         return await self._await_box(box, timeout, abort)
@@ -83,8 +105,12 @@ class SessionIO:
         def pump() -> None:
             try:
                 for chunk in iterator:
-                    buffer.append(chunk)
+                    # Mark busy before publishing the chunk: otherwise the
+                    # consumer could take and acknowledge it first, and the pump
+                    # would then wait for an acknowledgement that never comes.
                     state["busy"] = True
+                    buffer.append(chunk)
+                    self._notify()
                     while state["busy"] and not state["closed"]:
                         sleep(0.001)
                     if state["closed"]:
@@ -101,11 +127,15 @@ class SessionIO:
                     except Exception:
                         pass
                 box["done"] = True
+                self._notify()
 
         start_real_thread(pump, name="pi-strategy-stream")
         deadline = time.monotonic() + timeout if timeout and timeout > 0 else None
         try:
             while True:
+                # Clear before inspecting shared state: a notification that
+                # arrives after this point stays set and wakes the wait below.
+                self._wake.clear()
                 if buffer:
                     item = buffer.popleft()
                     yield item
@@ -120,24 +150,26 @@ class SessionIO:
                     raise SessionAborted(ABORT_MESSAGE)
                 if deadline is not None and time.monotonic() >= deadline:
                     raise TimeoutError(TIMEOUT_MESSAGE)
-                await asyncio.sleep(POLL_SECONDS)
+                await self._wait_notified()
         finally:
             # The consumer left early (stop, error or cancellation): release the
             # pump so it stops after the current provider call returns.
             state["closed"] = True
             state["busy"] = False
 
-    @staticmethod
     async def _await_box(
-        box: dict[str, Any], timeout: float | None, abort: Callable[[], bool] | None = None
+        self, box: dict[str, Any], timeout: float | None, abort: Callable[[], bool] | None = None
     ) -> Any:
         deadline = time.monotonic() + timeout if timeout and timeout > 0 else None
-        while not box["done"]:
+        while True:
+            self._wake.clear()
+            if box["done"]:
+                break
             if abort is not None and abort():
                 raise SessionAborted(ABORT_MESSAGE)
             if deadline is not None and time.monotonic() >= deadline:
                 raise TimeoutError(TIMEOUT_MESSAGE)
-            await asyncio.sleep(POLL_SECONDS)
+            await self._wait_notified()
         if "error" in box:
             raise box["error"]
         return box.get("value")

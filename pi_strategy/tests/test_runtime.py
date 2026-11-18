@@ -231,6 +231,9 @@ class TokenEstimateTests(unittest.TestCase):
         # One token per CJK character: 4 chars/token would under-count by 4x.
         self.assertEqual(estimate_text_tokens("四个汉字"), 4)
         self.assertGreater(estimate_text_tokens("中文" * 100), 100)
+        # The pure-ASCII fast path must agree with the general estimate.
+        self.assertEqual(estimate_text_tokens("a" * 4_001), 1_001)
+        self.assertEqual(estimate_text_tokens("中文abcd"), 3)
 
 
 class FinalizeTests(unittest.TestCase):

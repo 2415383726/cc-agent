@@ -11,6 +11,7 @@ import httpx
 
 from .config import RuntimeConfig
 from .errors import PiError
+from .native import clip
 
 try:  # pragma: no cover - remote MCP transport is a runtime dependency
     from mcp import ClientSession
@@ -70,7 +71,15 @@ class McpRuntime:
             try:
                 await self._connect(server)
             except Exception as exc:
-                self.errors.append({"server": server.name, "error": type(exc).__name__})
+                # Keep diagnostics useful without leaking headers: clip()
+                # redacts credentials and bounds the message.
+                self.errors.append(
+                    {
+                        "server": server.name,
+                        "error": type(exc).__name__,
+                        "message": clip(str(exc), 200),
+                    }
+                )
 
     async def _connect(self, server: McpServer) -> None:
         if server.transport == "sse":

@@ -180,10 +180,16 @@ def _signature(name: str, arguments: dict[str, Any]) -> str:
 def estimate_text_tokens(text: str) -> int:
     """Rough token estimate: CJK is about one token per character, Latin about
     one per four. Treating Chinese text as 4 chars/token underestimates the
-    context by ~4x and lets an over-limit request reach the provider."""
+    context by ~4x and lets an over-limit request reach the provider.
+
+    Pure-ASCII prompts (tool schemas, English history) take a C-level fast path;
+    scanning them character by character dominated long request preparation.
+    """
     value = text or ""
     if not value:
         return 0
+    if value.isascii():
+        return (len(value) + 3) // 4
     cjk = sum(1 for char in value if _is_cjk(char))
     return cjk + (len(value) - cjk + 3) // 4
 

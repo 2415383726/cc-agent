@@ -863,7 +863,7 @@ class PiStrategyRuntime:
             answer = error["message"]
         summary: dict[str, Any] | None = None
         if state is not None:
-            if save_error is None and "save" in locals():
+            if save_error is None:
                 summary = state_summary(state)
                 summary["encoded_bytes"] = save.encoded_bytes
                 summary["delivery_status"] = "encoded"

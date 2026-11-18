@@ -180,6 +180,7 @@ class FailSoftTests(unittest.TestCase):
         self.assertEqual(attempted, ["a", "b"])
         self.assertEqual([item["server"] for item in errors], ["a"])
         self.assertEqual(errors[0]["error"], "RuntimeError")
+        self.assertIn("dial failed", errors[0]["message"])
 
 
 class InvalidParamsTests(unittest.TestCase):

@@ -309,12 +309,14 @@ def sanitize_entries(entries: list[dict[str, Any]], leaf_id: str | None) -> list
     # Rebuild a single valid chain and append synthetic results for unfinished calls.
     by_id = {item["id"]: item for item in cleaned}
     ordered: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
     for item in cleaned:
         parent = item.get("parentId")
-        if parent is not None and parent not in {entry["id"] for entry in ordered}:
+        if parent is not None and parent not in seen_ids:
             item = dict(item)
             item["parentId"] = ordered[-1]["id"] if ordered else None
         ordered.append(item)
+        seen_ids.add(item["id"])
     if not ordered:
         return ordered
     leaf = leaf_id if leaf_id in by_id else ordered[-1]["id"]

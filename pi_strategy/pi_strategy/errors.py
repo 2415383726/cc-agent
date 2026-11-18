@@ -94,8 +94,3 @@ class StateError(PiError):
         self, message: str = "The saved Pi state is invalid.", code: str = "invalid_state"
     ) -> None:
         super().__init__(code=code, stage="state", message=message)
-
-
-class ToolPolicyError(PiError):
-    def __init__(self, message: str, code: str = "tool_failed") -> None:
-        super().__init__(code=code, stage="tool", message=message)
