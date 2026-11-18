@@ -10,17 +10,7 @@ from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from _support import (
-    FakeSession,
-    base_parameters,
-    json_payloads,
-    text_items,
-    last_state,
-    last_terminal,
-    run_turn,
-    text_chunks,
-    tool_chunks,
-)
+from _support import FakeSession, base_parameters, last_terminal, run_turn, text_chunks, tool_chunks
 from pi_agent_harness.session.session import Session
 from test_state import assistant, user
 from test_stream import build_stream, consume
@@ -184,26 +174,6 @@ class ReviewRegressionTests(unittest.TestCase):
         self.assertEqual(len(session.model.llm.calls), 1)
         self.assertIn("budget_exhausted", final.errorMessage)
 
-    def test_approval_cannot_target_a_replacement_provider(self):
-        original = {
-            "name": "write",
-            "provider": "alpha",
-            "parameters": {"type": "object", "properties": {}},
-        }
-        session = FakeSession([tool_chunks([{"name": "write"}]), text_chunks("done")])
-        runtime = {"approval_tools": ["write"]}
-        first = run_turn(session, base_parameters(tools=[original], runtime=runtime))
-        run_turn(
-            session,
-            base_parameters(
-                tools=[{**original, "provider": "beta"}],
-                runtime=runtime,
-                state=last_state(first),
-                query="同意",
-            ),
-        )
-        self.assertEqual(session.tool.calls, [])
-
     def test_mcp_business_error_is_an_error(self):
         from pi_strategy.budget import RunLedger
         from pi_strategy.skills import SkillCatalog
@@ -216,15 +186,10 @@ class ReviewRegressionTests(unittest.TestCase):
             async def call(self, *_args):
                 return {"isError": True, "content": [{"type": "text", "text": "denied"}]}
 
-        config = RuntimeConfig.from_value({"approval_mode": "off"})
+        config = RuntimeConfig()
         ledger = RunLedger(config, "run")
         tools = ToolRuntime(
-            session=None,
-            config=config,
-            ledger=ledger,
-            run_id="run",
-            skills=SkillCatalog.load(),
-            mcp=McpStub(),
+            session=None, config=config, ledger=ledger, skills=SkillCatalog.load(), mcp=McpStub()
         )
         outcome = asyncio.run(tools.execute(tools.resolve("write"), "c1", {}))
         self.assertTrue(outcome.is_error)

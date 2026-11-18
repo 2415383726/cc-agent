@@ -32,3 +32,6 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/_support.py" = ["E402"]
+# Tool cards are one inline HTML/CSS template per line; wrapping them would
+# change the rendered markup.
+"pi_strategy/observer.py" = ["E501"]

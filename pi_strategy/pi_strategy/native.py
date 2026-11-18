@@ -20,7 +20,6 @@ from typing import Any
 TERMINAL_STATUSES = frozenset(
     {
         "completed",
-        "awaiting_approval",
         "failed",
         "stopped",
         "budget_exhausted",
@@ -38,25 +37,27 @@ MAX_LOG_EVENTS = 400
 MAX_LOG_DATA_CHARS = 8_000
 MAX_RESULT_CHARS = 8_000
 MAX_ARGUMENT_CHARS = 4_000
-_SECRET_PATTERNS = (
-    re.compile(r"(?i)\b(authorization\s*:\s*)(bearer\s+)?[^\s\"']+"),
-    re.compile(r"(?i)\b(api[_-]?key|access[_-]?token|secret|password)\s*[=:]\s*[^\s,;\"']+"),
-    re.compile(r"(?i)(https?://[^/\s:@]+):([^@\s/]+)@"),
+_SECRET_RULES: tuple[tuple[re.Pattern[str], Any], ...] = (
+    (
+        re.compile(r"(?i)\b(authorization\s*:\s*)(bearer\s+)?[^\s\"']+"),
+        lambda match: f"{match.group(1) or ''}[redacted]",
+    ),
+    (
+        re.compile(r"(?i)\b(api[_-]?key|access[_-]?token|secret|password)\s*[=:]\s*[^\s,;\"']+"),
+        lambda match: f"{match.group(1) or ''}[redacted]",
+    ),
+    (
+        re.compile(r"(?i)(https?://[^/\s:@]+):([^@\s/]+)@"),
+        lambda match: f"{match.group(1)}:[redacted]@",
+    ),
 )
 
 
 def redact(text: str) -> str:
     value = str(text or "")
-    for pattern in _SECRET_PATTERNS:
-        value = pattern.sub(lambda match: _redacted_match(match), value)
+    for pattern, replacement in _SECRET_RULES:
+        value = pattern.sub(replacement, value)
     return value
-
-
-def _redacted_match(match: re.Match[str]) -> str:
-    if match.re.pattern.startswith("(?i)(https?"):
-        return f"{match.group(1)}:[redacted]@"
-    prefix = match.group(1) or ""
-    return f"{prefix}[redacted]"
 
 
 def clip(text: Any, limit: int = MAX_RESULT_CHARS) -> str:
@@ -172,7 +173,6 @@ def run_state_payload(
     state_ref: dict[str, Any] | None = None,
     state_summary: dict[str, Any] | None = None,
     error: dict[str, Any] | None = None,
-    pending: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "status": terminal_status(status),
@@ -185,8 +185,6 @@ def run_state_payload(
         payload["state_ref"] = state_ref
     if error:
         payload["error"] = error
-    if pending:
-        payload["pending"] = pending
     return payload
 
 

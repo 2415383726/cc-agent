@@ -5,8 +5,8 @@ identity:
     en_US: Pi Strategy (Native)
     zh_Hans: Pi Strategy（原生）
 description:
-  en_US: Pi harness execution with Dify-native output for the built-in Dify UI; models, tools, skills, approvals and recovery included.
-  zh_Hans: 复用 Pi Harness 执行，向 Dify 自带界面输出原生消息；包含模型、工具、技能、审批与恢复。
+  en_US: Pi harness execution with Dify-native output for the built-in Dify UI; models, tools, skills and recovery included.
+  zh_Hans: 复用 Pi Harness 执行，向 Dify 自带界面输出原生消息；包含模型、工具、技能与恢复。
 features:
   - history-messages
 parameters:
@@ -91,6 +91,16 @@ output_schema:
       description:
         en_US: Encoded Pi conversation state to write back into the conversation variable.
         zh_Hans: 回写会话变量的编码 Pi 会话状态。
+    answer:
+      type: string
+      description:
+        en_US: Final answer text of this run, also emitted as the `answer` variable.
+        zh_Hans: 本次运行的最终回答文本，同时作为 `answer` 变量输出。
+    json:
+      type: object
+      description:
+        en_US: Terminal run payload (status, stats, answer, state ref, error).
+        zh_Hans: 运行终态 JSON（状态、统计、回答、状态引用、错误）。
 extra:
   python:
     source: strategies/pi_strategy_native.py

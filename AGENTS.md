@@ -5,7 +5,7 @@
 - `cc_agent/`: Dify Agent Strategy plugin, Python ≥3.12. Conversation state uses the Dify `agent_state` variable. Internal tools handle skills, tasks, and AG-UI user prompts; Dify injects external tools. Frozen after the pi_strategy split; kept as a behavioral baseline, not for further development. See [ADR-0011](docs/adr/0011-pi-strategy-native-split.md).
 - `copilotkit-dify/`: Vue 3 + Vite frontend consuming AG-UI / Dify streams, with tool cards, structured answers, attachments, and permission interrupts.
 - `pi_dify/`: independent v2 Pi Harness Dify Agent Strategy plugin (Python 3.12). Pins `pi-agent-core-lc`/`pi-agent-harness-lc` 0.6.0 and uses `piagent-state:v1:gzip-base64:`; it does not import old `cc_agent` state or loops.
-- `pi_strategy/`: independent Pi Harness Dify Agent Strategy plugin (Python 3.12) with Dify-native output, forked from `pi_dify`. Same 0.6.0 pins, but no `piagent.display.v1` contract: it renders Dify-native messages aligned with the retired `CC Agent (Dify)` mode for the built-in Dify UI, uses `pistrategy-state:v1:gzip-base64:` (rejects foreign prefixes), resumes interactions from the next query text instead of an `interaction` parameter, and ships no Tasks tool. It shares no code with `pi_dify` or `cc_agent`.
+- `pi_strategy/`: independent Pi Harness Dify Agent Strategy plugin (Python 3.12) with Dify-native output, forked from `pi_dify`. Same 0.6.0 pins, but no `piagent.display.v1` contract: it renders Dify-native messages aligned with the retired `CC Agent (Dify)` mode for the built-in Dify UI, uses `pistrategy-state:v1:gzip-base64:` (rejects foreign prefixes), has no approval interaction (tools execute directly, no `interaction` parameter), and ships no Tasks tool. It shares no code with `pi_dify` or `cc_agent`.
 - `pi_chat/`: static Vue 3 workbench for the `piagent.display.v1` contract; presentation ported from the MIT-licensed DeepSeek Harness (attribution in its NOTICE.md). No Node/Pi runtime backend.
 - `cc-haha/` and `cheetahclaws/`, when present, are read-only reference implementations.
 
@@ -56,9 +56,10 @@ From `copilotkit-dify/`, use `npm install`, `npm run dev`, `npm run test`, and `
 
 - `pi_strategy/pi_strategy/harness.py` is its only AgentHarness 0.6.0 adapter subclass (stop predicate + resume turn seams only); do not copy the Pi loop there either.
 - `pi_strategy/pi_strategy/stream.py` is its only Dify model boundary; keep the one-overflow-compaction retry and never replay completed tools.
-- `pi_strategy/pi_strategy/state.py` is its only cross-turn authority under the `pistrategy-state:v1:gzip-base64:` prefix; the codec must keep rejecting foreign prefixes.
+- `pi_strategy/pi_strategy/state.py` is its only cross-turn authority under the `pistrategy-state:v1:gzip-base64:` prefix; the codec must keep rejecting foreign prefixes. It stores entries/leaf, active skills and stats only: there is no approval pending, grant or consumed record.
+- `pi_strategy/pi_strategy/session_io.py` is the only bridge for blocking Dify session calls (`llm.invoke`, `tool.invoke`, provider chunk pulls). Keep calls off the run loop on real OS threads (the host monkey-patches `threading` with gevent), keep the one-chunk backpressure, and let a stop abandon an in-flight call as an unknown outcome.
 - `pi_strategy/pi_strategy/native.py` + `observer.py` render Pi harness events as Dify-native messages (`<think>` reasoning, HTML tool cards, log/variable/json), mirroring the retired `CC Agent (Dify)` UX; there is no display contract and no workbench consumer.
-- Interactions in `pi_strategy/pi_strategy/interaction.py` render the pending approval as text and resume from the next query text; keep pending validation, consumed records, expiry and fingerprints. There is no `ask_user` or `visualize` internal tool in pi_strategy.
+- `pi_strategy` has no approval or `ask_user` interaction: Dify tools, MCP tools and internal skill tools execute directly. Do not reintroduce the `interaction` parameter, approval keywords, pending/grant state or the `visualize` card tool.
 
 ## Invariants
 
@@ -84,6 +85,7 @@ Tests use `unittest` and `SimpleNamespace` for fake Dify objects. Prefer fakes o
 - Skill, command, permission and app YAML tests live beside these in `cc_agent/tests/`.
 - `pi_dify/tests/test_runtime.py`: Pi text/tool/AskUser/approval/budget/overflow flows with fakes.
 - `pi_dify/tests/test_state.py`, `test_stream.py`, `test_skills*.py`, `test_interaction.py`, `test_mcp.py`, `test_strategy.py`: codec/trimming, stream modes, skills, interactions, MCP lifecycle and manifest contracts.
+- `pi_strategy/tests/test_runtime.py`, `test_state.py`, `test_stream.py`, `test_skills*.py`, `test_mcp.py`, `test_strategy.py`, `test_review_regressions.py`, `test_runtime_concurrency.py`: text/tool/budget/overflow flows, state codec/trimming (including oversized user messages), stream modes, skills, MCP fail-soft and call classification, blocked-call stop handling and manifest/output contracts. There is no approval or interaction test because the feature is gone.
 - `pi_chat/tests/`: contract validation, projection/merge, history, controller stale/stop rules, interaction cards, timeline/composer and static replay.
 
 For frontend changes, preserve tool-card fallback rendering, attachment handling and conversation-ID recovery in `src/cc-assistant/`. Generic file renderers can also serve Dify-injected tools.

@@ -138,81 +138,6 @@ class ToolTests(unittest.TestCase):
         self.assertNotIn("connection reset", json.dumps(outbox))
 
 
-class ApprovalTests(unittest.TestCase):
-    def test_approval_executes_once_after_current_policy_check(self) -> None:
-        tool = {
-            "name": "write",
-            "description": "Write a record",
-            "parameters": {"type": "object", "properties": {"value": {"type": "string"}}},
-        }
-        session = FakeSession(
-            [
-                tool_chunks([{"name": "write", "arguments": '{"value":"x"}'}]),
-                text_chunks("Written"),
-                text_chunks("never"),
-            ],
-            tool_responses=[[{"type": "text", "message": "written"}]],
-        )
-        config = {"approval_mode": "configured", "approval_tools": ["write"]}
-        first = run_turn(session, base_parameters(query="write it", tools=[tool], runtime=config))
-        self.assertEqual(last_terminal(first)["status"], "awaiting_approval")
-        self.assertEqual(len(session.tool.calls), 0)
-        state = last_state(first)
-        pending = decode_state(state).state.pending
-        self.assertEqual(pending["kind"], "approval")
-        # The approval request is rendered as text with reply keywords.
-        self.assertTrue(any("工具确认" in text for text in text_items(first)))
-        self.assertTrue(any("write" in text for text in text_items(first)))
-
-        second = run_turn(
-            session,
-            base_parameters(query="当前会话始终允许", tools=[tool], runtime=config, state=state),
-        )
-        self.assertEqual(last_terminal(second)["status"], "completed")
-        self.assertEqual(len(session.tool.calls), 1)
-        loaded = decode_state(last_state(second))
-        self.assertIsNone(loaded.state.pending)
-        self.assertEqual([grant["tool"] for grant in loaded.state.grants], ["write"])
-        # The approval-resumed execution renders its own native tool card.
-        approve_cards = [card for card in tool_cards(second) if "write" in card]
-        self.assertTrue(approve_cards)
-        self.assertIn("已运行", approve_cards[-1])
-        self.assertIn("written", approve_cards[-1])
-        self.assertEqual(
-            sum(
-                1
-                for entry in loaded.state.entries
-                if entry.get("type") == "message"
-                and entry.get("message", {}).get("role") == "toolResult"
-            ),
-            1,
-        )
-        self.assertIn("Written", last_terminal(second)["answer"])
-
-    def test_rejection_is_not_executed_and_not_replayed(self) -> None:
-        tool = {
-            "name": "write",
-            "description": "Write",
-            "parameters": {"type": "object", "properties": {}},
-        }
-        session = FakeSession(
-            [tool_chunks([{"name": "write"}]), text_chunks("Understood")], tool_responses=[]
-        )
-        config = {"approval_mode": "configured", "approval_tools": ["write"]}
-        first = run_turn(session, base_parameters(query="write", tools=[tool], runtime=config))
-        second = run_turn(
-            session,
-            base_parameters(query="拒绝", tools=[tool], runtime=config, state=last_state(first)),
-        )
-        self.assertEqual(last_terminal(second)["status"], "completed")
-        self.assertEqual(len(session.tool.calls), 0)
-        self.assertIsNone(decode_state(last_state(second)).state.pending)
-        # The rejection renders a not-executed card instead of a run card.
-        reject_cards = [card for card in tool_cards(second) if "write" in card]
-        self.assertTrue(reject_cards)
-        self.assertIn("未执行", reject_cards[-1])
-
-
 class BudgetTests(unittest.TestCase):
     def test_tool_budget_blocks_execution_and_stops(self) -> None:
         tool = {
@@ -297,103 +222,15 @@ class NoReplayOverflowTests(unittest.TestCase):
         self.assertTrue(any("context was compacted" in text for text in prompts))
 
 
-class ApprovalExpiryRuntimeTests(unittest.TestCase):
-    def test_configured_expiry_rejects_the_decision(self) -> None:
-        import time
+class TokenEstimateTests(unittest.TestCase):
+    def test_cjk_text_is_not_underestimated(self) -> None:
+        from pi_strategy.budget import estimate_text_tokens
 
-        tool = {
-            "name": "write",
-            "description": "Write",
-            "parameters": {"type": "object", "properties": {}},
-        }
-        session = FakeSession([tool_chunks([{"name": "write"}])])
-        config = {
-            "approval_mode": "configured",
-            "approval_tools": ["write"],
-            "approval_timeout_seconds": 0.001,
-        }
-        first = run_turn(session, base_parameters(query="write", tools=[tool], runtime=config))
-        time.sleep(0.01)
-        second = run_turn(
-            session,
-            base_parameters(query="同意", tools=[tool], runtime=config, state=last_state(first)),
-        )
-        self.assertEqual(last_terminal(second)["status"], "awaiting_approval")
-        self.assertEqual(last_terminal(second)["error"]["code"], "pending_expired")
-        self.assertEqual(len(session.tool.calls), 0)
-
-
-class NestedPendingTests(unittest.TestCase):
-    def test_new_pending_created_during_approval_resume_is_persisted(self) -> None:
-        write = {
-            "name": "write",
-            "description": "Write",
-            "parameters": {"type": "object", "properties": {}},
-        }
-        publish = {
-            "name": "publish",
-            "description": "Publish",
-            "parameters": {"type": "object", "properties": {}},
-        }
-        # The approval resume continues the batch; the model then calls a second
-        # approval-required tool, which opens a new pending approval.
-        session = FakeSession(
-            [tool_chunks([{"name": "write"}]), tool_chunks([{"name": "publish"}])],
-            tool_responses=[[{"type": "text", "message": "written"}]],
-        )
-        config = {"approval_mode": "configured", "approval_tools": ["write", "publish"]}
-        first = run_turn(
-            session, base_parameters(query="write", tools=[write, publish], runtime=config)
-        )
-        self.assertEqual(decode_state(last_state(first)).state.pending["kind"], "approval")
-        second = run_turn(
-            session,
-            base_parameters(
-                query="同意", tools=[write, publish], runtime=config, state=last_state(first)
-            ),
-        )
-        self.assertEqual(last_terminal(second)["status"], "awaiting_approval")
-        loaded = decode_state(last_state(second))
-        self.assertEqual(loaded.state.pending["kind"], "approval")
-        self.assertEqual(loaded.state.pending["tool_name"], "publish")
-        # The approved write ran exactly once; the second call awaits approval.
-        self.assertEqual([call["tool_name"] for call in session.tool.calls], ["write"])
-
-    def test_approval_cannot_target_a_different_tool(self) -> None:
-        write = {
-            "name": "write",
-            "description": "Write",
-            "parameters": {"type": "object", "properties": {}},
-        }
-        other = {
-            "name": "other",
-            "description": "Other",
-            "parameters": {"type": "object", "properties": {}},
-        }
-        session = FakeSession(
-            [tool_chunks([{"name": "write"}]), text_chunks("should not run")], tool_responses=[]
-        )
-        config = {"approval_mode": "configured", "approval_tools": ["write", "other"]}
-        first = run_turn(
-            session, base_parameters(query="write", tools=[write, other], runtime=config)
-        )
-        state_text = last_state(first)
-        from pi_strategy.state import decode_state as decode
-
-        state = decode(state_text).state
-        state.pending["tool_name"] = "other"
-        from pi_strategy.state import encode_state
-
-        tampered = encode_state(state)
-        second = run_turn(
-            session,
-            base_parameters(
-                query="同意", tools=[write, other], runtime=config, state=tampered.value
-            ),
-        )
-        self.assertEqual(last_terminal(second)["status"], "awaiting_approval")
-        self.assertEqual(last_terminal(second)["error"]["code"], "pending_invalid")
-        self.assertEqual(len(session.tool.calls), 0)
+        self.assertEqual(estimate_text_tokens(""), 0)
+        self.assertEqual(estimate_text_tokens("abcd"), 1)
+        # One token per CJK character: 4 chars/token would under-count by 4x.
+        self.assertEqual(estimate_text_tokens("四个汉字"), 4)
+        self.assertGreater(estimate_text_tokens("中文" * 100), 100)
 
 
 class FinalizeTests(unittest.TestCase):

@@ -27,17 +27,10 @@ from .budget import RunLedger
 from .config import RequestContext, RuntimeConfig, parse_request
 from .errors import PiError
 from .harness import PiHarness
-from .interaction import (
-    consumed_record,
-    is_consumed,
-    parse_approval_reply,
-    public_approval,
-    render_approval_text,
-    validate_approval_decision,
-)
 from .mcp import McpRuntime, parse_servers
 from .native import NativeEvents, clip, native_log, public_state_ref, run_state_payload
 from .observer import NativeObserver
+from .session_io import SessionIO
 from .skills import SkillCatalog
 from .state import (
     PiState,
@@ -48,46 +41,23 @@ from .state import (
     now_iso,
     sanitize_entries,
     state_summary,
-    validate_state,
 )
 from .stream import DifyModelStream, error_code_from_message
+from .threads import start_real_thread, stdlib_original
 from .tools import ToolRuntime
 
 _SENTINEL = object()
 
 
-def _stdlib_original(module_name: str, attribute: str) -> Any:
-    """Return the stdlib implementation behind a gevent monkey patch.
-
-    The Dify plugin host calls ``gevent.monkey.patch_all()`` on import. Gevent
-    greenlets share their OS thread's asyncio running-loop state, so a second
-    concurrent run dies with "asyncio.run() cannot be called from a running
-    event loop". Runs are therefore hosted on a genuine OS thread; the bridge
-    primitives must then be the thread-safe stdlib ones, because gevent
-    primitives may not cross OS threads.
-    """
-    try:
-        from gevent import monkey  # type: ignore[import-not-found]
-    except Exception:
-        return None
-    saved = getattr(monkey, "saved", None)
-    if not isinstance(saved, dict):
-        return None
-    return saved.get(module_name, {}).get(attribute)
-
-
 def _start_worker_thread(target: Any) -> None:
     """Start ``target`` on a genuine OS thread.
 
-    ``threading.Thread.start`` is not enough: the host's patch also replaces
-    ``_thread.start_new_thread``, so even a pre-patch Thread body would run as a
-    greenlet inside the hub thread and inherit that thread's asyncio state.
+    ``threading.Thread.start`` is not enough: the host's gevent patch also
+    replaces ``_thread.start_new_thread``, so even a pre-patch Thread body would
+    run as a greenlet inside the hub thread and inherit that thread's asyncio
+    state.
     """
-    start = _stdlib_original("_thread", "start_new_thread")
-    if start is None:
-        threading.Thread(target=target, name="pi-strategy-run", daemon=True).start()
-        return
-    start(target, ())
+    start_real_thread(target, name="pi-strategy-run")
 
 
 def install_atomic_stdout() -> None:
@@ -102,7 +72,7 @@ def install_atomic_stdout() -> None:
     if getattr(stream, "_pi_atomic", False):
         logging.getLogger("pi_strategy.runtime").info("atomic stdout already installed")
         return
-    allocate_lock = _stdlib_original("_thread", "allocate_lock")
+    allocate_lock = stdlib_original("_thread", "allocate_lock")
     lock = allocate_lock() if allocate_lock is not None else threading.Lock()
 
     class _AtomicStdout:
@@ -221,9 +191,7 @@ class RunStream:
                 self.run_id,
                 traceback.format_exc(),
             )
-            self._emit(
-                _safe_failure_message("agent_failed", "runtime", run_id=self.run_id, seq=10**9)
-            )
+            self._emit(_safe_failure_message("agent_failed", "runtime", run_id=self.run_id))
             self._emit({"type": "text", "content": "The Pi agent run failed."})
         finally:
             self._emit(_SENTINEL)
@@ -249,6 +217,7 @@ class _Setup:
     model: Model
     skills: SkillCatalog
     mcp: McpRuntime | None
+    io: SessionIO
     session_storage: MemorySessionStorage
     compaction: CompactionSettings
 
@@ -277,7 +246,7 @@ class PiStrategyRuntime:
         setup: _Setup | None = None
         try:
             request = parse_request(parameters)
-            events = NativeEvents(run_id=f"run_{uuid4().hex[:20]}")
+            events = NativeEvents(run_id=run_id or f"run_{uuid4().hex[:20]}")
             ledger = RunLedger(request.runtime, events.run_id)
             _run_log(
                 events,
@@ -316,35 +285,10 @@ class PiStrategyRuntime:
             state.session_id = state.session_id or request.session_id
             state.run_id = events.run_id
 
-            decision = await self._resolve_interaction(request, state, events, emit, ledger)
-            if decision is None:
-                setup = await self._setup(request, state, events, emit, ledger)
-                if setup is None:
-                    return
-                await self._execute_turn(
-                    request, state, setup, events, emit, ledger, decision_input=None
-                )
-                return
-            if decision["kind"] == "terminal":
-                await self._finalize(
-                    request,
-                    state,
-                    events,
-                    emit,
-                    ledger,
-                    status=decision["status"],
-                    answer=decision["answer"],
-                    error=decision.get("error"),
-                    pending=state.pending,
-                    setup=None,
-                )
-                return
             setup = await self._setup(request, state, events, emit, ledger)
             if setup is None:
                 return
-            await self._execute_turn(
-                request, state, setup, events, emit, ledger, decision_input=decision
-            )
+            await self._execute_turn(request, state, setup, events, emit, ledger)
         except asyncio.CancelledError:
             # A host stop cancels the running task; CancelledError is a
             # BaseException and must not fall through to the crash path, which
@@ -366,7 +310,6 @@ class PiStrategyRuntime:
                             status="stopped",
                             answer="The run was stopped. Completed tool results were preserved.",
                             error=None,
-                            pending=state.pending if state else None,
                             setup=setup,
                         )
                     )
@@ -378,7 +321,6 @@ class PiStrategyRuntime:
                         "agent_failed",
                         "runtime",
                         run_id=events.run_id if events is not None else "",
-                        seq=10**9,
                     )
                 )
         except PiError as exc:
@@ -395,10 +337,7 @@ class PiStrategyRuntime:
             else:
                 emit(
                     _safe_failure_message(
-                        exc.code,
-                        exc.stage,
-                        run_id=events.run_id if events is not None else "",
-                        seq=10**9,
+                        exc.code, exc.stage, run_id=events.run_id if events is not None else ""
                     )
                 )
         except Exception:
@@ -422,7 +361,6 @@ class PiStrategyRuntime:
                         "agent_failed",
                         "runtime",
                         run_id=events.run_id if events is not None else "",
-                        seq=10**9,
                     )
                 )
         finally:
@@ -436,67 +374,6 @@ class PiStrategyRuntime:
                 if setup.mcp is not None:
                     await setup.mcp.close()
             self._harness = None
-
-    # -- interaction resolution --------------------------------------------
-    #
-    # The built-in Dify UI has no interaction cards and no `interaction`
-    # parameter: the pending approval was rendered as text when the run ended,
-    # and the next query text is the decision. All pending validation (match,
-    # consumed records, expiry, fingerprints) still applies — only the entry
-    # point is the raw query.
-
-    async def _resolve_interaction(
-        self,
-        request: RequestContext,
-        state: PiState,
-        events: NativeEvents,
-        emit: Any,
-        ledger: RunLedger,
-    ) -> dict[str, Any] | None:
-        pending = state.pending
-        if pending is None:
-            return None
-        kind = str(pending.get("kind") or "")
-        if kind != "approval":
-            # A stale pending from a removed interaction kind (e.g. a saved
-            # ask_user record): discard it and run a normal turn instead of
-            # deadlocking the conversation.
-            state.pending = None
-            _run_log(
-                events,
-                emit,
-                "Pending interaction discarded",
-                {"pending_id": pending.get("id"), "kind": kind or "unknown"},
-            )
-            return None
-        if is_consumed(state.consumed, str(pending.get("id") or "")):
-            return self._pending_error(
-                events, emit, pending, "pending_consumed", "该审批已被处理过。"
-            )
-        try:
-            decision = validate_approval_decision(
-                pending, parse_approval_reply(pending, request.query)
-            )
-        except PiError as exc:
-            return self._pending_error(events, emit, pending, exc.code, exc.message)
-        return {"kind": "approval", **decision}
-
-    def _pending_error(
-        self, events: NativeEvents, emit: Any, pending: dict[str, Any], code: str, message: str
-    ) -> dict[str, Any]:
-        # The reply was not a valid decision: give visible feedback,
-        # re-present the pending approval, and keep waiting.
-        emit(events.text(message))
-        self._project_pending(events, emit, pending)
-        return {
-            "kind": "terminal",
-            "status": "awaiting_approval",
-            "answer": message,
-            "error": {"code": code, "stage": "interaction", "message": message},
-        }
-
-    def _project_pending(self, events: NativeEvents, emit: Any, pending: dict[str, Any]) -> None:
-        emit(events.text(render_approval_text(pending)))
 
     # -- setup --------------------------------------------------------------
 
@@ -541,6 +418,9 @@ class PiStrategyRuntime:
 
         try:
             observer = NativeObserver(events, emit, request.runtime)
+            # One bridge per run: every blocking Dify session call goes through
+            # it so a stalled provider or tool can be abandoned on stop.
+            session_io = SessionIO()
             skills = SkillCatalog.load(
                 app_yaml=request.app_skills_yaml,
                 builtin_dir=Path(__file__).resolve().parent.parent / "skills",
@@ -555,6 +435,8 @@ class PiStrategyRuntime:
                         "diagnostics": len(skills.diagnostics),
                     },
                 )
+            for error in mcp.errors:
+                observer.activity("mcp.error", error)
 
             artifacts: list[Artifact] = []
 
@@ -574,14 +456,13 @@ class PiStrategyRuntime:
                 session=self.session,
                 config=request.runtime,
                 ledger=ledger,
-                run_id=events.run_id,
                 skills=skills,
                 mcp=mcp,
-                approvals=list(state.grants),
                 artifact_sink=artifact_sink,
                 activity_sink=observer.activity,
                 dify_tools=request.tools,
                 stop_requested=self._stop_requested,
+                session_io=session_io,
             )
             # Re-check active skills against current eligibility.
             eligible = skills.eligible_names()
@@ -599,6 +480,7 @@ class PiStrategyRuntime:
                 thinking_tags=request.runtime.thinking_tags,
                 preserve_reasoning_content=request.runtime.preserve_reasoning_content,
                 stop_requested=self._stop_requested,
+                io=session_io,
             )
             system_prompt = _system_prompt(request, skills)
             compaction = CompactionSettings(
@@ -615,6 +497,7 @@ class PiStrategyRuntime:
                 model=model,
                 skills=skills,
                 mcp=mcp,
+                io=session_io,
                 session_storage=storage,
                 compaction=compaction,
             )
@@ -648,9 +531,7 @@ class PiStrategyRuntime:
             compaction=setup.compaction,
             max_turns=max(4, request.runtime.max_model_requests + 2),
             tool_timeout=request.runtime.tool_timeout_seconds,
-            stop_predicate=lambda: setup.tools.pending is not None
-            or ledger.exhausted()
-            or self._stop_requested(),
+            stop_predicate=lambda: ledger.exhausted() or self._stop_requested(),
         )
         harness.subscribe(setup.observer)
         harness.on("tool_result", _tool_result_error_hook)
@@ -675,8 +556,6 @@ class PiStrategyRuntime:
         events: NativeEvents,
         emit: Any,
         ledger: RunLedger,
-        *,
-        decision_input: dict[str, Any] | None,
     ) -> None:
         recovery_used = False
         status: str
@@ -686,50 +565,23 @@ class PiStrategyRuntime:
         retry_text = request.query
         resume_message: CustomMessage | None = None
 
-        if decision_input and decision_input["kind"] == "approval":
-            prepared = await self._apply_approval(
-                request, state, setup, events, emit, ledger, decision_input
-            )
-            if prepared is None:
-                return
-            if prepared.get("terminal"):
-                await self._finalize(
-                    request,
-                    state,
-                    events,
-                    emit,
-                    ledger,
-                    status="failed",
-                    answer=str(prepared.get("answer") or "The approval could not be applied."),
-                    error=prepared.get("error"),
-                    pending=state.pending,
-                    setup=setup,
-                )
-                return
-            storage = prepared["storage"]
-            resume_message = prepared["message"]
-            retry_mode = "resume"
-            try:
-                await setup.harness.close()
-            except Exception:
-                pass
-            setup.harness = self._make_harness(
-                setup, storage, request, events, emit, ledger, _system_prompt(request, setup.skills)
-            )
-        elif decision_input and decision_input["kind"] == "prompt":
-            retry_text = str(decision_input.get("text") or "")
-
         while True:
             try:
                 if retry_mode == "resume":
                     if resume_message is None:
-                        raise PiError("agent_failed", "approval", "The approval result is missing.")
+                        raise PiError("agent_failed", "runtime", "The continuation is missing.")
                     assistant = await setup.harness.resume_with(resume_message)
                 else:
                     assistant = await self._prompt_with_activation(
                         setup, request, retry_text, events, emit
                     )
             except Exception:
+                if self._stop_requested():
+                    # A host stop can surface as an aborted harness turn; it is
+                    # a cooperative stop, not a failure.
+                    status = "stopped"
+                    answer = "The run was stopped. Completed tool results were preserved."
+                    break
                 status = "failed"
                 error = {
                     "code": "agent_failed",
@@ -788,10 +640,6 @@ class PiStrategyRuntime:
             elif self._stopped or (self._stop is not None and self._stop.is_set()):
                 status = "stopped"
                 answer = "The run was stopped. Completed tool results were preserved."
-            elif setup.tools.pending is not None:
-                status = "awaiting_approval"
-                self._project_pending(events, emit, setup.tools.pending)
-                answer = "The agent is waiting for your approval."
             elif ledger.finish_reason:
                 status = "budget_exhausted"
                 answer = _answer_for_code("budget_exhausted")
@@ -806,12 +654,11 @@ class PiStrategyRuntime:
                 answer = _assistant_answer(assistant) or "The run completed without a text answer."
             break
 
-        # Merge skills activated during the run and pending interaction.
+        # Merge skills activated during the run.
         active = {str(item.get("name")): item for item in state.active_skills}
         for activation in setup.tools.activated_skills:
             active[activation["name"]] = {**activation, "activated_at": now_iso()}
         state.active_skills = list(active.values())
-        state.pending = setup.tools.pending
         await self._finalize(
             request,
             state,
@@ -821,7 +668,6 @@ class PiStrategyRuntime:
             status=status,
             answer=answer,
             error=error,
-            pending=state.pending,
             setup=setup,
         )
 
@@ -866,209 +712,6 @@ class PiStrategyRuntime:
                 )
                 text = rest.strip() or "Please proceed using the activated skill."
         return await setup.harness.prompt(text)
-
-    async def _apply_approval(
-        self,
-        request: RequestContext,
-        state: PiState,
-        setup: _Setup,
-        events: NativeEvents,
-        emit: Any,
-        ledger: RunLedger,
-        decision: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        call_id = str(decision.get("tool_call_id") or "")
-        tool_name = str(decision.get("tool_name") or "")
-        spec = setup.tools.resolve(tool_name)
-        pending = state.pending or {}
-        original_call = _original_tool_call(state.entries, call_id)
-        identity_matches = (
-            original_call is not None
-            and original_call.get("name") == pending.get("tool_name")
-            and original_call.get("arguments") == pending.get("arguments")
-        )
-        if (
-            spec is None
-            or not identity_matches
-            or spec.name != str(pending.get("tool_name") or "")
-            or spec.source != str(pending.get("source") or "dify")
-            or spec.identity != pending.get("tool_identity")
-        ):
-            outcome_text = (
-                "The approved tool is no longer available in this application; "
-                "the operation was not executed."
-            )
-            result = ToolResultMessage(
-                toolCallId=call_id,
-                toolName=tool_name,
-                content=[{"type": "text", "text": outcome_text}],
-                details={
-                    "kind": "approval",
-                    "status": "rejected",
-                    "execution_outcome": "not_executed",
-                    "is_error": True,
-                },
-                isError=True,
-            )
-            setup.observer.approval_tool_card(
-                tool_name,
-                pending.get("arguments"),
-                {"status": "not_executed", "execution_outcome": "not_executed"},
-                outcome_text,
-                is_error=True,
-            )
-            return await self._resume_after_approval(
-                request,
-                state,
-                setup,
-                events,
-                emit,
-                pending,
-                decision,
-                result,
-                outcome_text,
-                error={"code": "pending_invalid", "stage": "approval", "message": outcome_text},
-            )
-        if decision.get("decision") == "reject":
-            outcome_text = "The user rejected this tool call; the operation was not executed."
-            result = ToolResultMessage(
-                toolCallId=call_id,
-                toolName=tool_name,
-                content=[{"type": "text", "text": outcome_text}],
-                details={
-                    "kind": "approval",
-                    "status": "rejected",
-                    "execution_outcome": "not_executed",
-                },
-            )
-            setup.observer.approval_tool_card(
-                tool_name,
-                pending.get("arguments"),
-                {"status": "not_executed", "execution_outcome": "not_executed"},
-                outcome_text,
-                is_error=False,
-            )
-            setup.observer.activity(
-                "approval.resolved",
-                {
-                    "pending_id": pending.get("id"),
-                    "tool_call_id": call_id,
-                    "tool": tool_name,
-                    "decision": "rejected",
-                    "scope": decision.get("scope"),
-                },
-            )
-            return await self._resume_after_approval(
-                request, state, setup, events, emit, pending, decision, result, outcome_text
-            )
-        # Approval is re-checked against the current tool set, policy and budget.
-        if decision.get("scope") == "session" and not any(
-            grant.get("tool") == tool_name
-            and grant.get("scope") == "session"
-            and grant.get("tool_identity") == spec.identity
-            for grant in state.grants
-        ):
-            grant = {
-                "tool": tool_name,
-                "source": pending.get("source") or "dify",
-                "tool_identity": spec.identity,
-                "scope": "session",
-                "created_at": now_iso(),
-            }
-            state.grants.append(grant)
-            setup.tools.grants.append(grant)
-        outcome = await setup.tools.execute(
-            spec, call_id, dict(decision.get("arguments") or {}), approved=True
-        )
-        result = ToolResultMessage(
-            toolCallId=call_id,
-            toolName=tool_name,
-            content=[{"type": "text", "text": outcome.text}],
-            details={**outcome.details, "is_error": outcome.is_error},
-            isError=outcome.is_error,
-            timestamp=int(time.time() * 1000),
-        )
-        setup.observer.approval_tool_card(
-            tool_name,
-            decision.get("arguments"),
-            dict(outcome.details),
-            outcome.text,
-            is_error=outcome.is_error,
-        )
-        setup.observer.activity(
-            "approval.resolved",
-            {
-                "pending_id": pending.get("id"),
-                "tool_call_id": call_id,
-                "tool": tool_name,
-                "decision": "approved",
-                "scope": decision.get("scope"),
-                "status": outcome.details.get("status"),
-            },
-        )
-        return await self._resume_after_approval(
-            request, state, setup, events, emit, pending, decision, result, outcome.text
-        )
-
-    async def _resume_after_approval(
-        self,
-        request: RequestContext,
-        state: PiState,
-        setup: _Setup,
-        events: NativeEvents,
-        emit: Any,
-        pending: dict[str, Any],
-        decision: dict[str, Any],
-        result: ToolResultMessage,
-        outcome_text: str,
-        *,
-        error: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        entries = _replace_tool_result(state.entries, result)
-        if entries is None:
-            return {
-                "terminal": True,
-                "answer": (
-                    "The original tool call could not be recovered; the approval was not applied."
-                ),
-                "error": {
-                    "code": "pending_invalid",
-                    "stage": "approval",
-                    "message": "The original tool result is missing.",
-                },
-            }
-        state.entries = sanitize_entries(entries, state.leaf_id, None)
-        state.pending = None
-        state.consumed.append(
-            consumed_record(
-                pending, "approved" if decision.get("decision") == "approve" else "rejected"
-            )
-        )
-        try:
-            validate_state(state)
-        except PiError as exc:
-            return {"terminal": True, "answer": exc.message, "error": exc.public(events.run_id)}
-        storage = build_storage(state)
-        message = CustomMessage(
-            customType="pi.approval",
-            content=(
-                "The user approved this tool call. Its single result is above; continue from it.\n"
-                f"Result: {clip(outcome_text, 2_000)}"
-                if decision.get("decision") == "approve"
-                else "The user rejected this tool call. It was not executed. Continue without it."
-            ),
-            display=True,
-            details={
-                "kind": "approval",
-                "decision": decision.get("decision"),
-                "tool_call_id": decision.get("tool_call_id"),
-                "scope": decision.get("scope"),
-            },
-            timestamp=int(time.time() * 1000),
-        )
-        if error:
-            return {"terminal": True, "answer": error["message"], "error": error}
-        return {"terminal": False, "storage": storage, "message": message}
 
     async def _recover_overflow(
         self,
@@ -1148,7 +791,6 @@ class PiStrategyRuntime:
             status="failed",
             answer=error.message,
             error=error.public(events.run_id),
-            pending=state.pending if state else None,
             setup=None,
         )
 
@@ -1163,7 +805,6 @@ class PiStrategyRuntime:
         status: str,
         answer: str,
         error: dict[str, Any] | None,
-        pending: dict[str, Any] | None,
         setup: _Setup | None,
     ) -> None:
         stats = ledger.snapshot().as_dict()
@@ -1174,11 +815,10 @@ class PiStrategyRuntime:
             if setup is not None and self._harness is not None:
                 try:
                     entries, leaf, _created = await export_session(self._harness.session)
-                    state.entries = sanitize_entries(entries, leaf, pending)
+                    state.entries = sanitize_entries(entries, leaf)
                     state.leaf_id = leaf
                 except Exception:
                     pass
-            state.pending = pending
             state.last_answer = clip(answer, 8_000)
             state.last_status = status
             state.stats = _merge_stats(state.stats, events.run_id, status, stats)
@@ -1241,17 +881,15 @@ class PiStrategyRuntime:
             state_ref=state_ref,
             state_summary=summary,
             error=error,
-            pending=_public_pending(pending),
         )
         # State before terminal, mirroring cc_agent's native finalize: the
         # agent_state variable first, then visible feedback text (completed
-        # answers were already streamed as deltas; the waiting approval was
-        # already projected by _project_pending), then the run log, the final
+        # answers were already streamed as deltas), then the run log, the final
         # answer log + `answer` variable, and one JSON terminal payload.
         if saved_value:
             emit({"type": "state", "name": "agent_state", "value": saved_value})
         is_error_status = status in {"failed", "state_save_failed"}
-        if status not in {"completed", "awaiting_approval"} and answer:
+        if status != "completed" and answer:
             emit(events.text(answer))
         _run_log(
             events,
@@ -1294,9 +932,8 @@ def _run_log(
         emit(logged)
 
 
-def _safe_failure_message(code: str, stage: str, run_id: str = "", seq: int = 0) -> dict[str, Any]:
-    # Crash-path output for failures before a run built its NativeEvents; the
-    # seq argument exists for call-site compatibility and is unused here.
+def _safe_failure_message(code: str, stage: str, run_id: str = "") -> dict[str, Any]:
+    # Crash-path output for failures before a run built its NativeEvents.
     return native_log(
         "Run error",
         {
@@ -1333,8 +970,8 @@ def _system_prompt(request: RequestContext, skills: SkillCatalog) -> str:
         "You are Pi Strategy, running inside a Dify Agent Strategy.",
         "Use only the tools provided in this request. Never claim access to a shell, local "
         "files, or a workspace that is not exposed as a tool.",
-        "Before proposing an operation that changes external state, respect the approval "
-        "policy enforced by the host.",
+        "Tools execute immediately when you call them; there is no approval step and no user "
+        "confirmation to wait for.",
         "Do not invent reasoning, tool activity, files or skill progress. Report only what "
         "actually happened.",
         "If a tool result says an execution outcome is unknown, tell the user to verify the "
@@ -1443,12 +1080,6 @@ def _answer_for_code(code: str) -> str:
     }.get(code, "The model request failed.")
 
 
-def _public_pending(pending: dict[str, Any] | None) -> dict[str, Any] | None:
-    if pending is None:
-        return None
-    return {"kind": "approval", "approval": public_approval(pending)}
-
-
 def _merge_stats(
     previous: dict[str, Any], run_id: str, status: str, stats: dict[str, Any]
 ) -> dict[str, Any]:
@@ -1502,7 +1133,7 @@ def _drop_trailing_request(
         while (
             path
             and path[-1].type == "custom_message"
-            and getattr(path[-1], "customType", "") in {"pi.approval", "pi.continuation"}
+            and getattr(path[-1], "customType", "") in {"pi.continuation"}
         ):
             path.pop()
     # A prompt retry keeps the current user request and every completed tool
@@ -1517,40 +1148,6 @@ def _drop_trailing_request(
         repaired.append(entry)
         previous = entry.id
     return repaired, repaired[-1].id
-
-
-def _original_tool_call(entries: list[dict[str, Any]], call_id: str) -> dict[str, Any] | None:
-    for entry in entries:
-        if entry.get("type") != "message":
-            continue
-        message = entry.get("message") or {}
-        if message.get("role") != "assistant":
-            continue
-        for block in message.get("content") or []:
-            if isinstance(block, dict) and block.get("id") == call_id:
-                return block
-    return None
-
-
-def _replace_tool_result(
-    entries: list[dict[str, Any]], result: ToolResultMessage
-) -> list[dict[str, Any]] | None:
-    replaced = False
-    output: list[dict[str, Any]] = []
-    for raw in entries:
-        if raw.get("type") == "message":
-            message = raw.get("message") or {}
-            if (
-                message.get("role") == "toolResult"
-                and message.get("toolCallId") == result.toolCallId
-            ):
-                item = dict(raw)
-                item["message"] = result.model_dump(mode="json")
-                output.append(item)
-                replaced = True
-                continue
-        output.append(raw)
-    return output if replaced else None
 
 
 def _get(obj: Any, key: str, default: Any = None) -> Any:

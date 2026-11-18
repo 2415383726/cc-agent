@@ -52,6 +52,9 @@ class McpRuntime:
         self._sessions: dict[str, Any] = {}
         self._tools: dict[str, McpTool] = {}
         self._opened = False
+        # Servers that failed to connect this run. One unreachable endpoint must
+        # not take every other server's tools down with it.
+        self.errors: list[dict[str, str]] = []
 
     async def open(self) -> None:
         if self._opened or not self.servers:
@@ -64,7 +67,10 @@ class McpRuntime:
             )
         self._opened = True
         for server in self.servers:
-            await self._connect(server)
+            try:
+                await self._connect(server)
+            except Exception as exc:
+                self.errors.append({"server": server.name, "error": type(exc).__name__})
 
     async def _connect(self, server: McpServer) -> None:
         if server.transport == "sse":
@@ -132,8 +138,9 @@ class McpRuntime:
                 code="tool_failed", stage="mcp", message="The MCP connection is unavailable."
             )
         try:
+            timeout = self.config.mcp_tool_timeout
             return await asyncio.wait_for(
-                session.call_tool(tool.name, arguments or {}), timeout=self.config.mcp_tool_timeout
+                session.call_tool(tool.name, arguments or {}), timeout=timeout or None
             )
         except TimeoutError:
             raise PiError(
@@ -142,7 +149,16 @@ class McpRuntime:
                 message="The remote tool did not respond; its execution outcome is unknown.",
                 details={"execution_outcome": "unknown"},
             ) from None
-        except Exception:
+        except Exception as exc:
+            if _not_executed_failure(exc):
+                raise PiError(
+                    code="tool_failed",
+                    stage="mcp",
+                    message=(
+                        "The remote tool rejected the arguments; the operation was not executed."
+                    ),
+                    details={"execution_outcome": "not_executed"},
+                ) from None
             raise PiError(
                 code="unknown_outcome",
                 stage="mcp",
@@ -253,6 +269,19 @@ def _positive(value: Any, default: float) -> float:
     except (TypeError, ValueError):
         return default
     return number if number > 0 else default
+
+
+def _not_executed_failure(exc: BaseException) -> bool:
+    """True when the MCP layer rejected the call before the server ran it.
+
+    A JSON-RPC ``INVALID_PARAMS`` error and a client-side validation error both
+    mean nothing executed, which is materially different from a lost response.
+    """
+    name = type(exc).__name__
+    if name == "ValidationError":
+        return True
+    error = getattr(exc, "error", None)
+    return name == "McpError" and getattr(error, "code", None) == -32602
 
 
 def _is_app_only(tool: Any) -> bool:

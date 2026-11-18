@@ -121,7 +121,7 @@ class McpToolDeliveryTests(unittest.TestCase):
             ]
         }
         mcp = runtime_with_tools(tool, session=FakeSession(result))
-        config = RuntimeConfig.from_value({"approval_mode": "off"})
+        config = RuntimeConfig()
         delivered = []
 
         def sink(artifact):
@@ -132,7 +132,6 @@ class McpToolDeliveryTests(unittest.TestCase):
             session=None,
             config=config,
             ledger=RunLedger(config, "run"),
-            run_id="run",
             skills=SkillCatalog.load(),
             mcp=mcp,
             artifact_sink=sink,
@@ -157,6 +156,62 @@ class McpToolDeliveryTests(unittest.TestCase):
         self.assertIsNot(mcp_a, mcp_b)
         self.assertEqual(len(delivered_a), 1)
         self.assertEqual(len(delivered_b), 1)
+
+
+class FailSoftTests(unittest.TestCase):
+    def test_one_failing_server_does_not_drop_the_others(self) -> None:
+        async def scenario():
+            runtime = McpRuntime(
+                [McpServer("a", "http://a.test/mcp"), McpServer("b", "http://b.test/sse")],
+                RuntimeConfig(),
+            )
+            attempted = []
+
+            async def connect(server):
+                attempted.append(server.name)
+                if server.name == "a":
+                    raise RuntimeError("dial failed")
+
+            runtime._connect = connect
+            await runtime.open()
+            return attempted, runtime.errors
+
+        attempted, errors = asyncio.run(scenario())
+        self.assertEqual(attempted, ["a", "b"])
+        self.assertEqual([item["server"] for item in errors], ["a"])
+        self.assertEqual(errors[0]["error"], "RuntimeError")
+
+
+class InvalidParamsTests(unittest.TestCase):
+    def test_invalid_params_is_not_executed(self) -> None:
+        from types import SimpleNamespace
+
+        class McpError(Exception):
+            def __init__(self, code: int):
+                self.error = SimpleNamespace(code=code)
+
+        class InvalidSession(FakeSession):
+            async def call_tool(self, name, arguments):
+                raise McpError(-32602)
+
+        tool = McpTool("srv", "write", "write", "", {"type": "object", "properties": {}})
+        mcp = runtime_with_tools(tool, session=InvalidSession())
+        with self.assertRaises(PiError) as failure:
+            asyncio.run(mcp.call("write", {}))
+        self.assertEqual(failure.exception.details["execution_outcome"], "not_executed")
+
+        config = RuntimeConfig()
+        tools = ToolRuntime(
+            session=None,
+            config=config,
+            ledger=RunLedger(config, "run"),
+            skills=SkillCatalog.load(),
+            mcp=mcp,
+        )
+        outcome = asyncio.run(tools.execute(tools.resolve("write"), "c1", {}))
+        self.assertEqual(outcome.details["status"], "not_executed")
+        self.assertEqual(outcome.details["execution_outcome"], "not_executed")
+        self.assertTrue(outcome.is_error)
 
 
 if __name__ == "__main__":

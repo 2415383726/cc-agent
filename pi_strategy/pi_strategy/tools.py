@@ -13,9 +13,9 @@ from .artifacts import Artifact, normalize_dify_responses, normalize_mcp_result
 from .budget import RunLedger
 from .config import RuntimeConfig
 from .errors import BudgetExceeded, PiError
-from .interaction import approval_required, create_approval_pending, public_approval
 from .mcp import McpRuntime
 from .native import clip
+from .session_io import SessionAborted, SessionIO
 from .skills import SkillCatalog
 
 try:  # pragma: no cover - Dify SDK types are present in the plugin runtime
@@ -97,7 +97,7 @@ class PiTool:
 
 
 class ToolRuntime:
-    """One per Dify request; holds the pending interaction and per-run resources."""
+    """One per Dify request; holds per-run resources and activated skills."""
 
     def __init__(
         self,
@@ -105,26 +105,23 @@ class ToolRuntime:
         session: Any,
         config: RuntimeConfig,
         ledger: RunLedger,
-        run_id: str,
         skills: SkillCatalog,
         mcp: McpRuntime | None = None,
-        approvals: list[dict[str, Any]] | None = None,
         artifact_sink: Any = None,
         activity_sink: Any = None,
         dify_tools: list[Any] | None = None,
         stop_requested: Any = None,
+        session_io: SessionIO | None = None,
     ) -> None:
         self.session = session
         self.config = config
         self.ledger = ledger
-        self.run_id = run_id
         self.skills = skills
         self.mcp = mcp
-        self.grants = approvals or []
         self.artifact_sink = artifact_sink
         self.activity_sink = activity_sink
         self.stop_requested = stop_requested or (lambda: False)
-        self.pending: dict[str, Any] | None = None
+        self.session_io = session_io
         self.activated_skills: list[dict[str, Any]] = []
         self.specs = build_specs(dify_tools or [], mcp)
         self._tools: dict[str, PiTool] = {
@@ -139,52 +136,10 @@ class ToolRuntime:
         return tool.spec if tool else None
 
     async def execute(
-        self,
-        spec: ToolSpec,
-        tool_call_id: str,
-        arguments: dict[str, Any],
-        *,
-        approved: bool = False,
+        self, spec: ToolSpec, tool_call_id: str, arguments: dict[str, Any]
     ) -> ToolOutcome:
         if self.stop_requested():
             return _not_executed("The run was stopped; no tool was executed.")
-        if self.pending is not None:
-            return _not_executed("The run is waiting for the user; no tool was executed.")
-        if (
-            not approved
-            and spec.source in {"dify", "mcp"}
-            and approval_required(
-                spec.name,
-                spec.source,
-                spec.annotations,
-                self.config,
-                self.grants,
-                tool_identity=spec.identity,
-            )
-        ):
-            pending = create_approval_pending(
-                tool_call_id=tool_call_id,
-                tool_name=spec.name,
-                arguments=arguments,
-                source=spec.source,
-                annotations=spec.annotations,
-                run_id=self.run_id,
-                timeout_seconds=self.config.approval_timeout_seconds,
-                tool_identity=spec.identity,
-            )
-            self.pending = pending
-            return ToolOutcome(
-                text=(
-                    f"Approval required for tool {spec.name}. The operation was not executed. "
-                    "The user must approve or reject it before it can run."
-                ),
-                details={
-                    "kind": "approval",
-                    "status": "awaiting_approval",
-                    "approval": public_approval(pending),
-                    "execution_outcome": "not_executed",
-                },
-            )
         try:
             self.ledger.before_tool(spec.name, arguments)
         except BudgetExceeded as exc:
@@ -201,7 +156,7 @@ class ToolRuntime:
         if spec.source == "internal":
             return await self._execute_internal(spec, tool_call_id, arguments)
         if spec.source == "dify":
-            return self._execute_dify(spec, arguments)
+            return await self._execute_dify(spec, arguments)
         if spec.source == "mcp":
             return await self._execute_mcp(spec, arguments)
         return ToolOutcome(
@@ -306,20 +261,34 @@ class ToolRuntime:
             text=f"Unknown internal tool {spec.name}.", details={"status": "error"}, is_error=True
         )
 
-    def _execute_dify(self, spec: ToolSpec, arguments: dict[str, Any]) -> ToolOutcome:
+    async def _execute_dify(self, spec: ToolSpec, arguments: dict[str, Any]) -> ToolOutcome:
         entity = spec.entity
         parameters = {
             **(_get(entity, "runtime_parameters") or _get(entity, "tool_configuration") or {}),
             **arguments,
         }
-        try:
+
+        def invoke() -> Any:
+            # The SDK calls are blocking stdio round-trips, so both the invoke
+            # and the generator consumption happen off the run loop.
             responses = self.session.tool.invoke(
                 provider_type=_provider_type(_tool_provider_type(entity)) if entity else "builtin",
                 provider=_tool_provider(entity) if entity else "",
                 tool_name=spec.original_name,
                 parameters=parameters,
             )
-            normalized = normalize_dify_responses(responses)
+            return normalize_dify_responses(responses)
+
+        try:
+            if self.session_io is None:
+                normalized = invoke()
+            else:
+                normalized = await self.session_io.call(
+                    invoke,
+                    timeout=self.config.tool_timeout_seconds,
+                    label="tool",
+                    abort=self.stop_requested,
+                )
             details = {
                 "kind": "tool",
                 "source": "dify",
@@ -337,6 +306,40 @@ class ToolRuntime:
                 text=clip(normalized.text, self.config.max_result_chars),
                 details=details,
                 artifacts=normalized.artifacts,
+            )
+        except SessionAborted:
+            message = (
+                "The run was stopped while the tool was running. The remote execution outcome "
+                "is unknown; verify the business result before repeating a write operation."
+            )
+            self.ledger.record_tool(True, len(message))
+            return ToolOutcome(
+                text=message,
+                details={
+                    "kind": "tool",
+                    "source": "dify",
+                    "status": "unknown",
+                    "execution_outcome": "unknown",
+                    "business_ref": f"{spec.name}:{_safe_call_ref(spec.name)}",
+                },
+                is_error=True,
+            )
+        except TimeoutError:
+            message = (
+                "The tool call did not respond in time. The remote execution outcome is "
+                "unknown; verify the business result before repeating a write operation."
+            )
+            self.ledger.record_tool(True, len(message))
+            return ToolOutcome(
+                text=message,
+                details={
+                    "kind": "tool",
+                    "source": "dify",
+                    "status": "unknown",
+                    "execution_outcome": "unknown",
+                    "business_ref": f"{spec.name}:{_safe_call_ref(spec.name)}",
+                },
+                is_error=True,
             )
         except Exception:
             message = (
@@ -368,14 +371,15 @@ class ToolRuntime:
             normalized = normalize_mcp_result(raw)
         except PiError as exc:
             self.ledger.record_tool(True, len(exc.message))
+            outcome = str(exc.details.get("execution_outcome") or "unknown")
             return ToolOutcome(
                 text=exc.message,
                 details={
                     "kind": "tool",
                     "source": "mcp",
                     "server": spec.server,
-                    "status": "unknown",
-                    "execution_outcome": "unknown",
+                    "status": "not_executed" if outcome == "not_executed" else "unknown",
+                    "execution_outcome": outcome,
                     "business_ref": f"{spec.name}:{_safe_call_ref(spec.name)}",
                 },
                 is_error=True,

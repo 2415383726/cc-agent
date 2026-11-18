@@ -22,7 +22,7 @@ cd ../pi_dify && python3 scripts/build_offline_package.py --arch amd64
 
 ## Pi Strategy（原生输出插件）
 
-`pi_strategy/` 是以复制 pi_dify 为底修改的独立 Dify Agent Strategy 插件：同样固定 0.6.0 的 Python Pi Harness，但把 `piagent.display.v1` 契约层替换为 Dify 原生消息渲染，UX 对齐 `CC Agent (Dify)`（`<think>` 标签、HTML 工具卡、log/variable/json 分发），Dify 自带界面是唯一消费端，不依赖 pi_chat。状态前缀为 `pistrategy-state:v1:gzip-base64:`，与 pi_dify 互不认读；交互不走 `interaction` 参数，pending 交互以文本呈现、下一条 query 文本整体作为答案或审批决定。功能集与 pi_dify 1:1（首版不含 Tasks）。两个 Pi 插件之间不共享代码库；旧 `cc_agent/` 自此冻结归档，不再开发。决策见 [ADR-0011](docs/adr/0011-pi-strategy-native-split.md)，首次 Dify 平台联调证据见 [pi-strategy-live-verification.md](docs/evidence/pi-strategy-live-verification.md)。
+`pi_strategy/` 是以复制 pi_dify 为底修改的独立 Dify Agent Strategy 插件：同样固定 0.6.0 的 Python Pi Harness，但把 `piagent.display.v1` 契约层替换为 Dify 原生消息渲染，UX 对齐 `CC Agent (Dify)`（`<think>` 标签、HTML 工具卡、log/variable/json 分发），Dify 自带界面是唯一消费端，不依赖 pi_chat。状态前缀为 `pistrategy-state:v1:gzip-base64:`，与 pi_dify 互不认读；没有审批交互，工具直接执行，状态只保存 Pi 会话、技能与统计（不保存 pending/授权/消费记录）。功能集为 pi_dify 去掉审批、`visualize` 与 Tasks 后的子集；Dify SDK 的同步调用由 `session_io.py` 桥接到真实 OS 线程，阻塞调用可被停止信号放弃。两个 Pi 插件之间不共享代码库；旧 `cc_agent/` 自此冻结归档，不再开发。决策见 [ADR-0011](docs/adr/0011-pi-strategy-native-split.md)，首次 Dify 平台联调证据见 [pi-strategy-live-verification.md](docs/evidence/pi-strategy-live-verification.md)。
 
 ```bash
 python -B -m unittest discover -s pi_strategy/tests

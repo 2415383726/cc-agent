@@ -95,11 +95,9 @@ class RuntimeConfig:
     state_max_encoded_bytes: int = 190_000
     max_duplicate_tool_calls: int = 2
     max_consecutive_errors: int = 3
-    approval_mode: str = "configured"
-    approval_tools: tuple[str, ...] = ()
-    approval_timeout_seconds: float = 0.0
     skill_max_read_chars: int = 12_000
     mcp_tool_timeout: float = 60.0
+    model_timeout_seconds: float = 180.0
     mcp_tools_exclude: tuple[str, ...] = ()
     tool_timeout_seconds: float = 120.0
     user_skill_prefix: str = "/skill:"
@@ -172,8 +170,8 @@ class RuntimeConfig:
                     setattr(config, key, _as_int(raw, getattr(config, key), 0))
                 elif key in {
                     "max_wall_seconds",
-                    "approval_timeout_seconds",
                     "mcp_tool_timeout",
+                    "model_timeout_seconds",
                     "tool_timeout_seconds",
                 }:
                     setattr(config, key, _as_float(raw, getattr(config, key)))
@@ -185,7 +183,7 @@ class RuntimeConfig:
                     "preserve_reasoning_content",
                 }:
                     setattr(config, key, _as_bool(raw, getattr(config, key)))
-                elif key in {"approval_tools", "mcp_tools_exclude"}:
+                elif key in {"mcp_tools_exclude"}:
                     setattr(config, key, _as_str_list(raw))
                 else:
                     setattr(config, key, _as_str(raw, getattr(config, key)))
@@ -207,12 +205,6 @@ class RuntimeConfig:
                 code="invalid_configuration",
                 stage="config",
                 message="stream_mode must be stream, nonstream or auto.",
-            )
-        if config.approval_mode not in {"off", "configured", "mcp"}:
-            raise PiError(
-                code="invalid_configuration",
-                stage="config",
-                message="approval_mode must be off, configured or mcp.",
             )
         if config.max_model_requests < 1 or config.max_tool_calls < 0:
             raise PiError(
@@ -239,7 +231,6 @@ class RuntimeConfig:
             "tool_stream_mode": self.tool_stream_mode,
             "stream_mode": self.stream_mode,
             "compaction_enabled": self.compaction_enabled,
-            "approval_mode": self.approval_mode,
         }
 
 

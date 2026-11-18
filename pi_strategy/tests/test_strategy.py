@@ -113,9 +113,13 @@ class ConfigurationContractTests(unittest.TestCase):
             "app_id",
         ):
             self.assertIn(required, names)
-        # Native interactions resume from the query text; there is no
-        # structured interaction parameter.
+        # Tools execute directly: there is no approval, no structured
+        # interaction parameter and no query-text decision keyword.
         self.assertNotIn("interaction", names)
+        self.assertNotIn("approval_mode", names)
+        self.assertEqual(
+            set(strategy["output_schema"]["properties"]), {"agent_state", "answer", "json"}
+        )
         provider = yaml.safe_load(
             (ROOT / "provider" / "pi_strategy.yaml").read_text(encoding="utf-8")
         )
@@ -146,6 +150,44 @@ class ConfigurationContractTests(unittest.TestCase):
 
         config = RuntimeConfig.from_value({"mcp_tools_exclude": ["write", "delete"]})
         self.assertEqual(config.mcp_tools_exclude, ("write", "delete"))
+
+
+def tearDownModule() -> None:
+    """Release SDK log handlers while gevent's greenlets are still alive.
+
+    Importing the real strategy pulls in the plugin SDK, which monkey-patches
+    ``threading`` at import. At interpreter shutdown the logging module's
+    handler weakref callbacks run after greenlets are finalized and print a
+    spurious "greenlet is being finalized" traceback. The handlers are dropped
+    here and the logging lock is replaced at exit with a plain no-op so the
+    callbacks cannot touch a dead gevent lock.
+    """
+    import atexit
+    import gc
+    import logging
+
+    for logger in (
+        logging.getLogger(),
+        logging.getLogger("pi_strategy"),
+        logging.getLogger("pi_strategy.runtime"),
+    ):
+        logger.handlers.clear()
+    logging.shutdown()
+    gc.collect()
+
+    def _neutralize_lock() -> None:
+        class _NoLock:
+            def acquire(self, *args, **kwargs):
+                return True
+
+            def release(self) -> None:
+                pass
+
+        logging._lock = _NoLock()  # noqa: SLF001 - test-process exit hygiene
+
+    # Registered after the SDK's monkey patch, so this runs before gevent's
+    # own exit hook (atexit is LIFO).
+    atexit.register(_neutralize_lock)
 
 
 if __name__ == "__main__":

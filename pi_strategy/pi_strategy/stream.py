@@ -8,6 +8,7 @@ non-stream fallback into Pi ``AssistantMessageEventStream`` values.
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import re
 from dataclasses import dataclass, field
@@ -34,6 +35,7 @@ from pi_agent_core.types import (
 from .budget import RunLedger, estimate_text_tokens
 from .config import RuntimeConfig
 from .errors import BudgetExceeded, ContextOverflow, ContextTooLarge
+from .session_io import SessionAborted, SessionIO
 
 try:  # pragma: no cover - Dify SDK is present inside the plugin runtime
     from dify_plugin.entities.model.llm import LLMModelConfig
@@ -240,6 +242,7 @@ class DifyModelStream:
         thinking_tags: bool = True,
         preserve_reasoning_content: bool = False,
         stop_requested: Any = None,
+        io: SessionIO | None = None,
     ) -> None:
         self.session = session
         self.model_config = model_config
@@ -249,6 +252,7 @@ class DifyModelStream:
         self.thinking_tags = thinking_tags
         self.preserve_reasoning_content = preserve_reasoning_content
         self.stop_requested = stop_requested or (lambda: False)
+        self._io = io
         self._producers: set[asyncio.Task] = set()
 
     async def __call__(
@@ -293,6 +297,31 @@ class DifyModelStream:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
+    async def _call(self, func: Any, *args: Any, **kwargs: Any) -> Any:
+        """Call a blocking session method without blocking the run loop."""
+        if self._io is None:
+            return func(*args, **kwargs)
+        return await self._io.call(
+            functools.partial(func, *args, **kwargs),
+            timeout=self.config.model_timeout_seconds,
+            label="model",
+            abort=self.stop_requested,
+        )
+
+    async def _chunks(self, response: Any) -> Any:
+        """Iterate a provider stream, one worker thread for the whole stream."""
+        if self._io is None:
+            for chunk in response:
+                yield chunk
+            return
+        async for chunk in self._io.iterate(
+            response,
+            timeout=self.config.model_timeout_seconds,
+            stop_requested=self.stop_requested,
+            abort=self.stop_requested,
+        ):
+            yield chunk
+
     async def _produce(
         self,
         stream: AssistantMessageEventStream,
@@ -311,7 +340,9 @@ class DifyModelStream:
                 )
                 return
             try:
-                response = self._invoke(prompt_messages, prompt_tools, stream=True)
+                response = await self._call(
+                    self._invoke, prompt_messages, prompt_tools, stream=True
+                )
             except Exception as exc:
                 self.ledger.record_model(None, total_estimate, source="stream_failed")
                 if self.config.stream_fallback and not _is_overflow(exc):
@@ -333,7 +364,7 @@ class DifyModelStream:
         except BudgetExceeded as exc:
             self.ledger.mark(exc.reason)
             _error_stream(model, "budget_exhausted", options, usage=None, stream=stream)
-        except (_AbortedError, asyncio.CancelledError):
+        except (_AbortedError, SessionAborted, asyncio.CancelledError):
             _error_stream(model, "aborted", options, usage=None, stream=stream)
         except Exception:
             _error_stream(model, "provider_failed", options, usage=None, stream=stream)
@@ -351,8 +382,12 @@ class DifyModelStream:
     ) -> AssistantMessageEventStream:
         stream = output if output is not None else AssistantMessageEventStream()
         try:
-            response = self._invoke(prompt_messages, prompt_tools, stream=False)
-            final = _message_from_nonstream(response, model)
+
+            def invoke() -> Any:
+                response = self._invoke(prompt_messages, prompt_tools, stream=False)
+                return _message_from_nonstream(response, model)
+
+            final = await self._call(invoke)
             self.ledger.record_model(
                 final.usage,
                 estimated_tokens,
@@ -441,8 +476,9 @@ class DifyModelStream:
             )
 
         tool_started: dict[str, int] = {}
+        chunks = self._chunks(response)
         try:
-            for chunk in response:
+            async for chunk in chunks:
                 self._check_stop(options)
                 delta = _get(chunk, "delta", chunk)
                 message = _get(delta, "message", delta) or delta
@@ -493,7 +529,7 @@ class DifyModelStream:
                     else:
                         push_text(piece)
         except Exception as exc:
-            aborted = isinstance(exc, _AbortedError)
+            aborted = isinstance(exc, (_AbortedError, SessionAborted))
             marker = "aborted" if aborted else _marker_for(exc)
             self.ledger.record_model(usage, estimated_tokens, source="stream_error")
             final = AssistantMessage(
@@ -514,6 +550,10 @@ class DifyModelStream:
                 )
             )
             return final
+        finally:
+            # Release the stream pump immediately when the loop exits through a
+            # stop/error; waiting for GC would leave it spinning on handoff.
+            await chunks.aclose()
 
         calls, invalid = accumulator.finalize()
         if invalid:
@@ -587,6 +627,8 @@ def _marker_for(exc: Exception) -> str:
         return "context_too_large"
     if isinstance(exc, ContextOverflow) or _is_overflow(exc):
         return "context_overflow"
+    if isinstance(exc, SessionAborted):
+        return "aborted"
     return "provider_failed"
 
 
@@ -616,7 +658,17 @@ def _message_from_nonstream(response: Any, model: Model) -> AssistantMessage:
         blocks.append({"type": "thinking", "thinking": str(reasoning)})
     content = _content_to_text(_get(message, "content"))
     if content:
-        blocks.append({"type": "text", "text": content})
+        if reasoning:
+            blocks.append({"type": "text", "text": content})
+        else:
+            # A provider that inlines reasoning without a reasoning field may
+            # still use <think> tags; split them here as the stream path does.
+            splitter = ThinkingTagSplitter()
+            for kind, piece in [*splitter.feed(content), *splitter.flush()]:
+                if kind == "thinking":
+                    blocks.append({"type": "thinking", "thinking": piece})
+                else:
+                    blocks.append({"type": "text", "text": piece})
     accumulator = ToolCallAccumulator(mode="snapshot")
     accumulator.add_delta(_get(message, "tool_calls"))
     calls, _invalid = accumulator.finalize()

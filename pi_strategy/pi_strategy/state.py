@@ -1,9 +1,9 @@
 """Authoritative cross-turn Pi state stored in the Dify ``agent_state`` variable.
 
-The bundle owns the Pi session entries/leaf, active skills, session grants,
-pending interaction, consumption records and run statistics. It is the only
-cross-turn source of truth; browser caches are drafts and local files are not a
-second store.
+The bundle owns the Pi session entries/leaf, active skills and run statistics.
+It is the only cross-turn source of truth; browser caches are drafts and local
+files are not a second store. Tools execute directly: there is no pending
+interaction, no grant bookkeeping and no consumption record.
 """
 
 from __future__ import annotations
@@ -27,7 +27,6 @@ SCHEMA_VERSION = 1
 DEFAULT_MAX_ENCODED_BYTES = 190_000
 TARGET_ENCODED_BYTES = 170_000
 MAX_PAYLOAD_BYTES = 4 * 1024 * 1024
-MAX_CONSUMED_RECORDS = 40
 
 
 def now_iso() -> str:
@@ -44,9 +43,6 @@ class PiState:
     entries: list[dict[str, Any]] = field(default_factory=list)
     leaf_id: str | None = None
     active_skills: list[dict[str, Any]] = field(default_factory=list)
-    grants: list[dict[str, Any]] = field(default_factory=list)
-    pending: dict[str, Any] | None = None
-    consumed: list[dict[str, Any]] = field(default_factory=list)
     stats: dict[str, Any] = field(default_factory=dict)
     last_answer: str = ""
     last_status: str = "completed"
@@ -120,12 +116,7 @@ def _state_from_payload(payload: dict[str, Any]) -> PiState:
     if not isinstance(entries, list) or any(not isinstance(item, dict) for item in entries):
         raise StateError("agent_state entries must be a list of objects.")
     skills = payload.get("active_skills")
-    grants = payload.get("grants")
-    consumed = payload.get("consumed")
     stats = payload.get("stats")
-    pending = payload.get("pending")
-    if pending is not None and not isinstance(pending, dict):
-        raise StateError("agent_state pending must be an object or null.")
     return PiState(
         revision=_int(payload.get("revision")),
         session_id=str(payload.get("session_id") or ""),
@@ -135,11 +126,6 @@ def _state_from_payload(payload: dict[str, Any]) -> PiState:
         entries=entries,
         leaf_id=payload.get("leaf_id") if isinstance(payload.get("leaf_id"), str) else None,
         active_skills=[item for item in skills or [] if isinstance(item, dict)],
-        grants=[item for item in grants or [] if isinstance(item, dict)],
-        pending=pending,
-        consumed=[item for item in consumed or [] if isinstance(item, dict)][
-            -MAX_CONSUMED_RECORDS:
-        ],
         stats=stats if isinstance(stats, dict) else {},
         last_answer=str(payload.get("last_answer") or ""),
         last_status=str(payload.get("last_status") or "completed"),
@@ -231,7 +217,7 @@ def encode_state(
     target_encoded_bytes: int = TARGET_ENCODED_BYTES,
 ) -> StateSaveResult:
     state.updated_at = now_iso()
-    state.entries = sanitize_entries(state.entries, state.leaf_id, state.pending)
+    state.entries = sanitize_entries(state.entries, state.leaf_id)
     if state.entries:
         last = state.entries[-1]
         details = (last.get("message") or {}).get("details")
@@ -289,18 +275,13 @@ def _payload(state: PiState) -> dict[str, Any]:
         "entries": state.entries,
         "leaf_id": state.leaf_id,
         "active_skills": state.active_skills[-20:],
-        "grants": state.grants[-50:],
-        "pending": state.pending,
-        "consumed": state.consumed[-MAX_CONSUMED_RECORDS:],
         "stats": state.stats,
         "last_answer": state.last_answer,
         "last_status": state.last_status,
     }
 
 
-def sanitize_entries(
-    entries: list[dict[str, Any]], leaf_id: str | None, pending: dict[str, Any] | None = None
-) -> list[dict[str, Any]]:
+def sanitize_entries(entries: list[dict[str, Any]], leaf_id: str | None) -> list[dict[str, Any]]:
     """Drop failed assistant messages and synthesize missing tool results."""
 
     parsed: list[SessionTreeEntry] = []
@@ -359,14 +340,14 @@ def sanitize_entries(
         from pi_agent_core.messages import ToolResultMessage
 
         for call_id in missing:
-            pending_note = (
+            interrupted_note = (
                 "Execution was not completed because the run was interrupted. "
                 "Verify the external outcome before retrying."
             )
             result = ToolResultMessage(
                 toolCallId=call_id,
                 toolName=known_calls.get(call_id) or "unknown_tool",
-                content=[{"type": "text", "text": pending_note}],
+                content=[{"type": "text", "text": interrupted_note}],
                 details={"execution_outcome": "unknown", "synthetic": True},
                 isError=True,
             )
@@ -401,7 +382,6 @@ def _trim_entries(
     groups = _entry_groups(state.entries)
     if len(groups) <= 2:
         return state.entries
-    pending_call = str((state.pending or {}).get("tool_call_id") or "")
 
     def candidate_size(candidate: list[dict[str, Any]]) -> int:
         clone = PiState(
@@ -413,9 +393,6 @@ def _trim_entries(
             entries=candidate,
             leaf_id=state.leaf_id,
             active_skills=state.active_skills,
-            grants=state.grants,
-            pending=state.pending,
-            consumed=state.consumed,
             stats=state.stats,
             last_answer=state.last_answer,
             last_status=state.last_status,
@@ -426,20 +403,8 @@ def _trim_entries(
             return max_encoded_bytes + 1
         return len(base64.b64encode(gzip.compress(raw_bytes, mtime=0)))
 
-    pending_group = -1
-    if pending_call:
-        pending_group = next(
-            (
-                index
-                for index, group in enumerate(groups)
-                if _group_contains_call(group, pending_call)
-            ),
-            -1,
-        )
     built = state.entries
     for drop_count in range(1, len(groups) - 1):
-        if pending_group >= 0 and drop_count > pending_group:
-            break
         omitted = [entry for group in groups[:drop_count] for entry in group]
         kept = [entry for group in groups[drop_count:] for entry in group]
         if not kept:
@@ -479,20 +444,6 @@ def _entry_groups(entries: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
     if current:
         groups.append(current)
     return groups or [[]]
-
-
-def _group_contains_call(group: list[dict[str, Any]], call_id: str) -> bool:
-    for entry in group:
-        if entry.get("type") != "message":
-            continue
-        message = entry.get("message") or {}
-        if message.get("role") == "assistant":
-            for block in message.get("content") or []:
-                if isinstance(block, dict) and block.get("id") == call_id:
-                    return True
-        if message.get("role") == "toolResult" and message.get("toolCallId") == call_id:
-            return True
-    return False
 
 
 def _storage_summary(entries: list[dict[str, Any]]) -> str:
@@ -545,7 +496,8 @@ def _shrink_entry_bodies(entries: list[dict[str, Any]], target_bytes: int) -> li
     live-verified with a 9KB budget, the old 64KB floor skipped shrinking
     entirely and every subsequent turn failed with state_save_failed. Caps
     shrink in steps so the default 190KB configuration keeps its historical
-    2000-char clips.
+    2000-char clips. User text is clipped too: one oversized pasted message
+    would otherwise make every turn fail to save.
     """
     budget = max(1_024, target_bytes)
 
@@ -593,6 +545,22 @@ def _shrink_entry_bodies(entries: list[dict[str, Any]], target_bytes: int) -> li
                     }
                     for block in message.get("content") or []
                 ]
+            elif role == "user":
+                content = message.get("content")
+                if isinstance(content, str):
+                    message["content"] = _squash(content, cap)
+                elif isinstance(content, list):
+                    message["content"] = [
+                        {
+                            **block,
+                            "text": (
+                                _squash(str(block.get("text") or ""), cap)
+                                if isinstance(block, dict) and block.get("type") == "text"
+                                else block
+                            ),
+                        }
+                        for block in content
+                    ]
             shrunk = dict(entry)
             shrunk["message"] = message
             result.append(shrunk)
@@ -637,8 +605,6 @@ def state_summary(state: PiState) -> dict[str, Any]:
         "entry_count": len(state.entries),
         "leaf_id": state.leaf_id,
         "active_skills": [item.get("name") for item in state.active_skills],
-        "pending": (state.pending or {}).get("kind"),
-        "grants": len(state.grants),
         "last_status": state.last_status,
     }
 

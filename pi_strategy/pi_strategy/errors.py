@@ -19,11 +19,6 @@ SAFE_ERROR_CODES = frozenset(
         "context_too_large",
         "context_overflow",
         "budget_exhausted",
-        "pending_invalid",
-        "pending_expired",
-        "pending_consumed",
-        "approval_rejected",
-        "approval_unknown",
         "tool_failed",
         "tool_unknown",
         "provider_failed",
@@ -99,11 +94,6 @@ class StateError(PiError):
         self, message: str = "The saved Pi state is invalid.", code: str = "invalid_state"
     ) -> None:
         super().__init__(code=code, stage="state", message=message)
-
-
-class PendingError(PiError):
-    def __init__(self, code: str, message: str, details: dict[str, Any] | None = None) -> None:
-        super().__init__(code=code, stage="interaction", message=message, details=details or {})
 
 
 class ToolPolicyError(PiError):

@@ -127,7 +127,7 @@ class SkillRuntimeTests(unittest.TestCase):
 
 
 class RecoveryTests(unittest.TestCase):
-    def test_text_reply_clears_pending_and_resumes(self) -> None:
+    def test_write_tool_executes_without_an_interaction(self) -> None:
         write = {
             "name": "write",
             "description": "Write",
@@ -137,16 +137,11 @@ class RecoveryTests(unittest.TestCase):
             [tool_chunks([{"name": "write"}]), text_chunks("Continuing")],
             tool_responses=[[{"type": "text", "message": "written"}]],
         )
-        config = {"approval_mode": "configured", "approval_tools": ["write"]}
-        first = run_turn(session, base_parameters(query="write it", tools=[write], runtime=config))
-        self.assertIsNotNone(decode_state(last_state(first)).state.pending)
-        second = run_turn(
-            session,
-            base_parameters(query="同意", tools=[write], runtime=config, state=last_state(first)),
-        )
-        self.assertEqual(last_terminal(second)["status"], "completed")
-        self.assertIsNone(decode_state(last_state(second)).state.pending)
+        outbox = run_turn(session, base_parameters(query="write it", tools=[write]))
+        self.assertEqual(last_terminal(outbox)["status"], "completed")
+        self.assertEqual(len(session.tool.calls), 1)
         self.assertEqual(len(session.model.llm.calls), 2)
+        self.assertEqual(last_terminal(outbox)["answer"], "Continuing")
 
     def test_state_from_another_conversation_is_rejected(self) -> None:
         session = FakeSession([text_chunks("first")])

@@ -199,6 +199,13 @@ class StreamModeTests(unittest.TestCase):
         self.assertTrue(session.model.llm.calls[0]["stream"])
         self.assertFalse(session.model.llm.calls[1]["stream"])
 
+    def test_nonstream_think_tags_are_split(self) -> None:
+        session = FakeSession([{"message": {"content": "<think>plan</think>answer"}, "usage": {}}])
+        _, final = consume(build_stream(session, stream_mode="nonstream"))
+        self.assertEqual([block["type"] for block in final.content], ["thinking", "text"])
+        self.assertEqual(final.content[0]["thinking"], "plan")
+        self.assertEqual(final.content[1]["text"], "answer")
+
     def test_abort_signal_is_cooperative(self) -> None:
         class Signal:
             aborted = True

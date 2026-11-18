@@ -74,7 +74,7 @@ class NativeObserver:
     def _message_start(self, message: Any) -> None:
         role = getattr(message, "role", None)
         if role == "custom":
-            # Host notes (skill activations, approval resume notes) stay logs;
+            # Host notes (skill activations, continuation notes) stay logs;
             # echoing them as text would interleave with the answer stream.
             self._log(
                 _activity_label(str(getattr(message, "customType", "") or "host.note")),
@@ -162,38 +162,10 @@ class NativeObserver:
         self._reasoning_open = False
         return "</think>"
 
-    def approval_tool_card(
-        self,
-        tool_name: str,
-        arguments: Any,
-        details: dict[str, Any],
-        result_text: str,
-        *,
-        is_error: bool,
-    ) -> None:
-        """Render the tool card for an approval-resumed execution.
-
-        The resumed tool runs outside the harness scheduler, so no
-        ``tool_execution_*`` events fire and the ordinary tool-card path never
-        sees it; without this card the user would only see the model's summary.
-        Mirrors the ``CC Agent (Dify)`` resume UX.
-        """
-        safe_details = details if isinstance(details, dict) else {}
-        card = _tool_card(
-            str(tool_name or "unknown_tool"),
-            clip_arguments(arguments if isinstance(arguments, dict) else {}),
-            result_text,
-            is_error=is_error,
-            display_status=display_status_for(safe_details, is_error),
-        )
-        self._text(self._close_reasoning_prefix() + card)
-
 
 def display_status_for(details: dict[str, Any], is_error: bool) -> str:
     """Map a tool outcome's details onto the card display status."""
     status = str(details.get("status") or ("error" if is_error else "ok"))
-    if status == "awaiting_approval":
-        return status
     if details.get("execution_outcome") == "unknown":
         return "unknown"
     if status == "not_executed":
@@ -211,7 +183,7 @@ def _activity_label(event_type: str) -> str:
         "skill.activate": "Skill activated",
         "skill.rejected": "Skill rejected",
         "skill.read": "Skill Read",
-        "approval.resolved": "Approval resolved",
+        "mcp.error": "MCP error",
         "compaction.start": "Compaction started",
         "compaction.end": "Compaction finished",
     }.get(event_type, event_type.replace("_", " ").replace(".", " ").strip().title() or "Activity")
@@ -236,7 +208,7 @@ def _tool_card(
     safe_result = html.escape(
         _truncate(clip(_display_text(result), result_limit), TOOL_CARD_RESULT_CHARS)
     )
-    ok = display_status in {"ok", "awaiting_approval"}
+    ok = display_status == "ok"
     dot_color = (
         "#10b981"
         if ok
@@ -246,12 +218,14 @@ def _tool_card(
             else "#ef4444"
         )
     )
-    title = {
-        "ok": "已运行",
-        "awaiting_approval": "等待确认",
-        "unknown": "结果未知",
-        "not_executed": "未执行",
-    }.get(display_status, "运行失败")
+    dot_shadow = {
+        "#10b981": "rgba(16, 185, 129, 0.2)",
+        "#f59e0b": "rgba(245, 158, 11, 0.2)",
+        "#ef4444": "rgba(239, 68, 68, 0.2)",
+    }[dot_color]
+    title = {"ok": "已运行", "unknown": "结果未知", "not_executed": "未执行"}.get(
+        display_status, "运行失败"
+    )
     result_label = "错误" if is_error else "结果"
     duration_note = f" · {duration_ms} ms" if duration_ms else ""
     sections = f"""
@@ -273,7 +247,7 @@ def _tool_card(
         '<div style="margin: 12px 0; border: 1px solid rgba(128, 128, 128, 0.2); border-radius: 8px; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif;">'
         "<details style=\"width: 100%;\">"
         '<summary style="padding: 10px 16px; background-color: rgba(128, 128, 128, 0.04); cursor: pointer; display: flex; align-items: center; gap: 8px; list-style: none; outline: none; user-select: none;">'
-        f'<span style="display: block; width: 6px; height: 6px; border-radius: 50%; background-color: {dot_color}; box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2); flex-shrink: 0;"></span>'
+        f'<span style="display: block; width: 6px; height: 6px; border-radius: 50%; background-color: {dot_color}; box-shadow: 0 0 0 2px {dot_shadow}; flex-shrink: 0;"></span>'
         f'<span style="font-weight: 600; font-size: 13px; opacity: 0.9;">{title}{duration_note}</span>'
         '<span style="display: inline-flex; align-items: center; padding: 2px 10px; background-color: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.15); border-radius: 999px; color: #6366f1; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; font-weight: 600;">'
         ">_&nbsp;"

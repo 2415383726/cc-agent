@@ -228,7 +228,23 @@ class StateCodecTests(unittest.TestCase):
         self.assertIn("unknown", joined)
         self.assertIn("trimmed", joined)
 
-    def test_storage_trimming_keeps_pending_group_and_valid_leaf(self) -> None:
+    def test_oversized_user_message_is_shrunk_and_saved(self) -> None:
+        """One huge pasted user message must not make every turn unsavable."""
+        import os
+
+        state = PiState.fresh("conv")
+        state.entries = [user("u1", None, "问题：" + os.urandom(120_000).hex())]
+        state.leaf_id = "u1"
+        result = encode_state(state, max_encoded_bytes=9_000, target_encoded_bytes=8_100)
+        self.assertTrue(result.persisted, result.error)
+        self.assertLessEqual(result.encoded_bytes, 9_000)
+        loaded = decode_state(result.value)
+        self.assertIsNone(loaded.error)
+        content = loaded.state.entries[0]["message"]["content"]
+        self.assertLess(len(content), 5_000)
+        self.assertTrue(content.startswith("问题："))
+
+    def test_storage_trimming_keeps_a_valid_leaf(self) -> None:
         state = PiState.fresh("conv")
         entries = []
         parent = None
@@ -242,7 +258,6 @@ class StateCodecTests(unittest.TestCase):
             parent = aid
         state.entries = entries
         state.leaf_id = parent
-        state.pending = {"kind": "approval", "id": "q", "tool_call_id": "last"}
         result = encode_state(state, max_encoded_bytes=7_000, target_encoded_bytes=5_000)
         self.assertTrue(result.persisted)
         self.assertTrue(result.compacted)
@@ -265,7 +280,7 @@ class StateCodecTests(unittest.TestCase):
 
     def test_sanitize_rebuilds_parent_chain(self) -> None:
         entries = [user("u1", "ghost", "hello"), assistant("a1", "u1", "hi")]
-        cleaned = sanitize_entries(entries, "a1", None)
+        cleaned = sanitize_entries(entries, "a1")
         self.assertIsNone(cleaned[0]["parentId"])
         self.assertEqual(cleaned[1]["parentId"], "u1")
 

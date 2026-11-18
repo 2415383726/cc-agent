@@ -60,7 +60,7 @@ class ConcurrentRunStreamTests(unittest.TestCase):
         self.assertEqual(results.get("slow"), ["start:slow", "end:slow"])
         self.assertEqual(results.get("fast"), ["start:fast", "end:fast"])
 
-    def test_close_stops_a_pending_run_without_blocking(self) -> None:
+    def test_close_stops_an_inflight_run_without_blocking(self) -> None:
         session = FakeSession([base_parameters(query="hi")])
         self.assertIsNotNone(session)
 
@@ -95,6 +95,7 @@ class HostStopCancellationTests(unittest.TestCase):
         import asyncio
 
         from _support import base_parameters, json_payloads, last_state
+
         from pi_strategy.runtime import PiStrategyRuntime
         from pi_strategy.state import decode_state
 
@@ -106,7 +107,8 @@ class HostStopCancellationTests(unittest.TestCase):
 
         async def scenario() -> None:
             task = asyncio.current_task()
-            assert task is not None
+            if task is None:  # pragma: no cover - a task always exists here
+                raise RuntimeError("no current task")
 
             def emit_and_cancel(item: dict) -> None:
                 outbox.append(item)
@@ -133,6 +135,70 @@ class HostStopCancellationTests(unittest.TestCase):
         saved = last_state(outbox)
         self.assertTrue(saved.startswith("pistrategy-state:v1:gzip-base64:"))
         loaded = decode_state(saved)
+        self.assertIsNone(loaded.error)
+        self.assertEqual(loaded.state.last_status, "stopped")
+
+
+class RunIdentityTests(unittest.TestCase):
+    def test_run_stream_id_is_the_reported_run_id(self) -> None:
+        from _support import base_parameters, text_chunks
+
+        from pi_strategy.runtime import PiStrategyRuntime
+
+        session = FakeSession([text_chunks("hi")])
+        stream = RunStream(PiStrategyRuntime(session), base_parameters())
+        outbox = [item for item in stream]
+        payloads = [item["payload"] for item in outbox if item.get("type") == "json"]
+        self.assertTrue(stream.run_id.startswith("run_"))
+        self.assertEqual(payloads[-1]["stats"]["run_id"], stream.run_id)
+
+
+class BlockedSessionCallTests(unittest.TestCase):
+    """A blocked Dify session call must not pin the run.
+
+    The tool/llm invocations are synchronous stdio round-trips bridged through
+    SessionIO; a stop abandons the call, finalizes as ``stopped`` and still
+    saves state instead of hanging until the tool timeout.
+    """
+
+    def test_stop_abandons_a_blocked_tool_call(self) -> None:
+        from _support import base_parameters, last_state, last_terminal, run_turn, tool_chunks
+
+        from pi_strategy.state import decode_state
+        from pi_strategy.threads import stdlib_original
+
+        allocate = stdlib_original("_thread", "allocate_lock")
+        gate = allocate() if allocate is not None else threading.Lock()
+        gate.acquire()
+
+        class BlockingTool:
+            def invoke(self, **_kwargs):
+                gate.acquire()
+                return [{"type": "text", "message": "late"}]
+
+        session = FakeSession([tool_chunks([{"name": "write"}])])
+        session.tool = BlockingTool()
+        stop = threading.Event()
+        timer = threading.Timer(0.2, stop.set)
+        timer.start()
+        started = time.monotonic()
+        try:
+            outbox = run_turn(
+                session,
+                base_parameters(
+                    query="write",
+                    tools=[{"name": "write", "parameters": {"type": "object", "properties": {}}}],
+                    runtime={"max_model_requests": 2, "tool_timeout_seconds": 60},
+                ),
+                stop=stop,
+            )
+        finally:
+            gate.release()
+            timer.cancel()
+        self.assertLess(time.monotonic() - started, 5.0)
+        self.assertEqual(last_terminal(outbox)["status"], "stopped")
+        self.assertNotIn("late", str(outbox))
+        loaded = decode_state(last_state(outbox))
         self.assertIsNone(loaded.error)
         self.assertEqual(loaded.state.last_status, "stopped")
 

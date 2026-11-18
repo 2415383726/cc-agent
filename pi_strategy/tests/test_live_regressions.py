@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from pi_strategy.config import RuntimeConfig, parse_request
+from pi_strategy.config import RuntimeConfig
 from pi_strategy.stream import ThinkingTagSplitter
 
 
