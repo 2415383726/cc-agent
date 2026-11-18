@@ -24,7 +24,7 @@ daemon **只读包内 `requirements.txt`**，不读 `pyproject.toml` / `uv.lock`
 
 1. **requirements 重写**：各插件 `scripts/build_offline_package.py` 打包时把 `requirements.txt` 替换为 `--no-index` + `--find-links ./wheels` + `requirements.lock.txt` 全文。修改构建脚本时不得丢失这一步。
 2. **wheels 单架构**：`scripts/download_offline_wheels.py` 用 `--only-binary=:all: --implementation cp --python-version 3.12 --abi cp312`，平台取 `manylinux_2_28_{x86_64,aarch64}` 与 `manylinux2014_{x86_64,aarch64}`。`--arch arm64` 出的包只含 `py3-none-any` 与 `*aarch64*` wheel。
-3. **版本必须递增**：每次重新出包 bump `manifest.yaml` 的 `version`（同步 `meta.version`、`pyproject.toml`）。同一 `plugin_id` 重复安装会被 daemon 静默拒绝，Dify 只认 `plugin_unique_identifier`。
+3. **版本必须递增**：每次重新出包 bump `manifest.yaml` 的 `version` 并同步 `pyproject.toml`。`meta.version` 是 Dify 清单格式版本，保持模板值（pi 系为 `0.0.1`），不要当作插件版本递增。同一 `plugin_id` 重复安装会被 daemon 静默拒绝，Dify 只认 `plugin_unique_identifier`。
 4. **tiktoken 运行期缓存**：`dify_plugin` 的 `recalc_llm_max_tokens` 路径会调 `tiktoken.encoding_for_model("gpt2")`，tiktoken 0.8.0 首次调用会从 `openaipublic.blob.core.windows.net` 下载分词器。每个插件：
    - `_assets/tiktoken_cache/` 内置两个文件，文件名 = 下载 URL 的 sha1：
      - `6d1cbeee0f20b3d9449abfede4726ed8212e3aee`（gpt2 vocab.bpe）

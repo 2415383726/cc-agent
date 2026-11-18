@@ -3,9 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import shutil
 import subprocess
-import sys
 import tempfile
 import time
 import zipfile
@@ -49,7 +47,10 @@ def main() -> int:
     parser.add_argument(
         "--resolve-only",
         action="store_true",
-        help="Only resolve wheels for the target platform (used when the architecture cannot execute here).",
+        help=(
+            "Only resolve wheels for the target platform "
+            "(used when the architecture cannot execute here)."
+        ),
     )
     parser.add_argument("--output", type=Path, help="Optional evidence JSON path.")
     args = parser.parse_args()

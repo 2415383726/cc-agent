@@ -143,8 +143,8 @@ and per model request/stream chunk); `0` disables the bound.
 python3 scripts/download_offline_wheels.py --arch amd64 --arch arm64
 python3 scripts/build_offline_package.py --arch amd64
 python3 scripts/build_offline_package.py --arch arm64
-python3 scripts/verify_offline_package.py dist/pi_strategy-0.1.0-offline-linux-amd64.difypkg --arch amd64
-python3 scripts/verify_offline_package.py dist/pi_strategy-0.1.0-offline-linux-arm64.difypkg --arch arm64 --resolve-only
+python3 scripts/verify_offline_package.py dist/pi_strategy-0.2.0-offline-linux-amd64.difypkg --arch amd64
+python3 scripts/verify_offline_package.py dist/pi_strategy-0.2.0-offline-linux-arm64.difypkg --arch arm64 --resolve-only
 ```
 
 Each package contains `wheels/` for exactly one architecture,

@@ -1,6 +1,6 @@
 [project]
 name = "pi-strategy-native"
-version = "0.1.0"
+version = "0.2.0"
 description = "Pi harness Dify Agent Strategy with Dify-native output"
 requires-python = ">=3.12"
 dependencies = [
@@ -35,3 +35,5 @@ ignore = [
 # Tool cards are one inline HTML/CSS template per line; wrapping them would
 # change the rendered markup.
 "pi_strategy/observer.py" = ["E501"]
+# Build/verify scripts invoke uv and pip with fixed argv from the lock file.
+"scripts/*.py" = ["S603"]

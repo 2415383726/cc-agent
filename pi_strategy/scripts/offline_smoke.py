@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
-from collections import deque
 from types import SimpleNamespace
 
 
@@ -47,6 +46,11 @@ class Session:
 
 
 def main() -> int:
+    # The Dify plugin host monkey-patches threading/ssl at SDK import. Import it
+    # here so the packaged smoke exercises the same real-thread bridge the host
+    # uses (SessionIO must not rely on an unpatched threading module).
+    import dify_plugin  # noqa: F401
+
     from pi_strategy.runtime import PiStrategyRuntime
 
     outbox = []
