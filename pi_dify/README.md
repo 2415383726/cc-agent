@@ -181,9 +181,9 @@ python3 scripts/verify_offline_package.py dist/pi_dify-0.1.0-offline-linux-arm64
 
 Each package contains `wheels/` for exactly one architecture,
 `requirements.lock.txt`, `VERSION_MANIFEST.json`, third-party notices and
-license texts. The amd64 verification installs with `--no-index` from only the
-bundled wheels and runs a fake-Dify text turn. The arm64 verification only
-resolves the wheel set on this host; it is not execution evidence.
+license texts. Packaging invariants, verification (including arm64 execution
+under qemu) and air-gapped deployment live in
+[../docs/packaging.md](../docs/packaging.md).
 
 ## Tests
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import re
 import subprocess
 import sys
@@ -207,8 +209,89 @@ def render_manifest(arch: str) -> str:
     return "\n".join(rendered) + "\n"
 
 
+def wheel_metadata(wheel_path: Path) -> dict[str, object]:
+    with zipfile.ZipFile(wheel_path) as archive:
+        metadata_path = next(
+            (name for name in archive.namelist() if name.endswith(".dist-info/METADATA")), None
+        )
+        if metadata_path is None:
+            raise RuntimeError(f"Missing METADATA in wheel: {wheel_path.name}")
+        raw = archive.read(metadata_path).decode("utf-8", errors="replace")
+        metadata = Parser().parsestr(raw)
+        licenses: list[tuple[str, bytes]] = []
+        prefix = metadata_path[: -len("METADATA")]
+        for name in archive.namelist():
+            if not name.startswith(prefix):
+                continue
+            tail = name[len(prefix) :]
+            if (
+                tail.startswith("licenses/") or tail.upper().startswith("LICENSE")
+            ) and not tail.endswith("/"):
+                licenses.append((tail, archive.read(name)))
+        return {
+            "name": metadata["Name"],
+            "version": metadata["Version"],
+            "license": metadata.get("License-Expression") or metadata.get("License") or "",
+            "home": metadata.get("Home-page") or "",
+            "licenses": licenses,
+        }
+
+
+def build_evidence(arch: str) -> tuple[dict[str, object], dict[str, bytes]]:
+    locked = read_lock_requirements()
+    wheels = []
+    licenses: dict[str, bytes] = {}
+    notices = [
+        "# Third-party notices",
+        "",
+        "This offline Dify plugin package bundles the following Python distributions.",
+        "Each row records the exact version; license texts are included under LICENSES/.",
+        "",
+        "| Package | Version | License |",
+        "| --- | --- | --- |",
+    ]
+    for wheel_path in sorted(WHEELS_DIR.glob("*.whl")):
+        if not wheel_matches_arch(wheel_path.name, arch):
+            continue
+        meta = wheel_metadata(wheel_path)
+        name = str(meta["name"])
+        version = str(meta["version"])
+        wheel_hash = hashlib.sha256(wheel_path.read_bytes()).hexdigest()
+        wheels.append(
+            {
+                "name": name,
+                "version": version,
+                "file": wheel_path.name,
+                "sha256": wheel_hash,
+                "license": meta["license"],
+            }
+        )
+        notices.append(f"| {name} | {version} | {meta['license'] or 'see LICENSES/'} |")
+        for license_name, content in meta["licenses"]:
+            key = f"LICENSES/{normalize_name(name)}-{version}/{license_name}"
+            licenses[key] = content
+    notices.append("")
+    notices.append(
+        "CC Agent's own source is distributed with the repository's license and notices; "
+        "it has no bundled frontend."
+    )
+    evidence = {
+        "plugin": parse_manifest_identity()[0],
+        "plugin_version": parse_manifest_identity()[1],
+        "architecture": arch,
+        "python": "3.12",
+        "locked_requirements": locked,
+        "wheels": wheels,
+        "wheel_count": len(wheels),
+        "frontend": "none (no frontend is bundled; AG-UI consumers live outside the package)",
+    }
+    licenses["THIRD_PARTY_NOTICES.md"] = "\n".join(notices).encode("utf-8")
+    return evidence, licenses
+
+
 def build_package(output_path: Path, arch: str) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    evidence, licenses = build_evidence(arch)
 
     with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for file_path in sorted(ROOT.rglob("*")):
@@ -220,7 +303,21 @@ def build_package(output_path: Path, arch: str) -> Path:
             if relative_path == Path("manifest.yaml"):
                 archive.writestr("manifest.yaml", render_manifest(arch))
                 continue
+            if relative_path == Path("requirements.txt"):
+                # Pin the packaged requirements to the verified lock and force
+                # dependency resolution from the bundled wheels: the plugin
+                # daemon runs `uv pip install -r requirements.txt` in the
+                # extracted package directory, so without these directives an
+                # install reaches PyPI and is not offline.
+                archive.writestr(
+                    "requirements.txt",
+                    "--no-index\n--find-links ./wheels\n" + LOCK_FILE.read_text(encoding="utf-8"),
+                )
+                continue
             archive.write(file_path, arcname=relative_path.as_posix())
+        archive.writestr("VERSION_MANIFEST.json", json.dumps(evidence, indent=2, sort_keys=True))
+        for name, content in licenses.items():
+            archive.writestr(name, content)
 
     return output_path
 
@@ -250,7 +347,13 @@ def main() -> int:
     output_path = output_path if output_path.is_absolute() else ROOT / output_path
 
     artifact = build_package(output_path, args.arch)
-    print(f"Offline package created: {artifact}")
+    digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+    print(
+        json.dumps(
+            {"artifact": str(artifact), "sha256": digest, "bytes": artifact.stat().st_size},
+            indent=2,
+        )
+    )
     return 0
 
 

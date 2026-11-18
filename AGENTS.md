@@ -25,6 +25,7 @@ python -B -m unittest discover -s pi_strategy/tests
 python pi_strategy/scripts/build_offline_package.py --arch amd64
 ```
 
+Offline `.difypkg` packaging for air-gapped hosts (bundled wheels, pinned requirements, tiktoken runtime cache, verification) is defined in [docs/packaging.md](docs/packaging.md); follow it whenever plugin dependencies change or an offline package is rebuilt.
 
 From `pi_chat/`, use `npm install`, `npm run dev`, `npm run test`, `npm run build`, and `npm run check:static`.
 
@@ -66,6 +67,7 @@ From `copilotkit-dify/`, use `npm install`, `npm run dev`, `npm run test`, and `
 - Preserve context-overflow recovery: compact and retry once, then finish with `context_overflow`.
 - Unhandled strategy errors emit `agent_failed` JSON rather than raw tracebacks.
 - Configuration secrets must never enter prompts, logs, tool metadata, or final outputs.
+- Offline packages must install and run with zero network: the packaged `requirements.txt` starts with `--no-index --find-links ./wheels` plus the lock, and the plugin resolves tiktoken's gpt2 files from `_assets/tiktoken_cache/` (method: [docs/packaging.md](docs/packaging.md)).
 - Target Dify compatibility is at least 1.7.0; do not lower it as part of unrelated changes.
 
 ## Tests

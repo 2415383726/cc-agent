@@ -1,6 +1,6 @@
 [project]
 name = "cc_agent"
-version = "0.0.4"
+version = "0.0.5"
 description = "Dify-native CC Agent strategy"
 requires-python = ">=3.12"
 

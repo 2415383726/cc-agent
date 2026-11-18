@@ -222,9 +222,11 @@ npm run build
 离线包（Python 3.12，依赖 wheel 已在 `cc_agent/wheels/`）：
 
 ```bash
-python cc_agent/scripts/build_offline_package.py
+python cc_agent/scripts/build_offline_package.py --arch arm64
 ```
 
-脚本验证 Linux amd64/arm64 的离线依赖解析，再生成 `cc_agent/dist/*.difypkg`。更新依赖时需同时维护依赖声明、锁文件和离线 wheels。
+脚本生成 `cc_agent/dist/*.difypkg`（包内 `requirements.txt` 已重写为
+`--no-index --find-links ./wheels` + 锁文件，并内置 `_assets/tiktoken_cache/`）。
+打包不变量、断网/arm64 验证与内网部署见 [docs/packaging.md](docs/packaging.md)。
 
 手工验收：连续两轮传递 `agent_state`，确认任务和授权保留；调用一个 Dify 外部工具并检查结果展示；在 AG-UI 中完成一次 `UserPrompt` 中断与恢复；确认 Dify blob 附件可展示和下载。

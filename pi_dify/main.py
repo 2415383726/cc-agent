@@ -1,7 +1,17 @@
+import os
 import sys
 from pathlib import Path
 
 sys.path.append("../..")
+
+# Air-gapped installs: dify_plugin's recalc_llm_max_tokens path calls
+# tiktoken.encoding_for_model("gpt2"), which would otherwise download the vocab
+# files on first use. Resolve them from the bundled cache instead; tiktoken
+# reads TIKTOKEN_CACHE_DIR lazily at call time, so setting it here is enough.
+os.environ.setdefault(
+    "TIKTOKEN_CACHE_DIR",
+    str(Path(__file__).resolve().parent / "_assets" / "tiktoken_cache"),
+)
 
 from dify_plugin import DifyPluginEnv, Plugin
 
